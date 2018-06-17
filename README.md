@@ -1,0 +1,2 @@
+# mycc
+c++ code
