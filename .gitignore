@@ -1,0 +1,7 @@
+# IDE
+.vscode
+
+# temp
+*.o
+core.*
+.git-credentials
