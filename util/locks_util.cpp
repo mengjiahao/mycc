@@ -7,8 +7,11 @@
 
 namespace mycc
 {
-namespace port
+namespace util
 {
+
+namespace
+{ // anonymous namespace
 
 static int PthreadCall(const char *label, int result)
 {
@@ -31,9 +34,11 @@ static void MakeTimeout(struct timespec *pts, uint64_t millis)
   pts->tv_nsec = pts->tv_nsec % 1000000000;
 }
 
+} // namespace
+
 Mutex::Mutex()
 {
-#ifdef NDEBUG
+#ifdef MUTEX_DEBUG
   locked_ = false;
   owner_ = 0;
 #endif
@@ -43,7 +48,7 @@ Mutex::Mutex()
 
 Mutex::Mutex(bool adaptive)
 {
-#ifdef NDEBUG
+#ifdef MUTEX_DEBUG
   locked_ = false;
   owner_ = 0;
 #endif
@@ -141,7 +146,7 @@ bool Mutex::isLocked()
 
 void Mutex::assertHeld()
 {
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   assert(locked_);
   if (0 == pthread_equal(owner_, pthread_self()))
   {
@@ -154,7 +159,7 @@ void Mutex::assertHeld()
 
 void Mutex::afterLock()
 {
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   locked_ = true;
   owner_ = pthread_self();
 #endif
@@ -162,7 +167,7 @@ void Mutex::afterLock()
 
 void Mutex::beforeUnlock()
 {
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   locked_ = false;
   owner_ = 0;
 #endif
@@ -178,11 +183,11 @@ CondVar::~CondVar() { PthreadCall("destroy cv", pthread_cond_destroy(&cv_)); }
 
 void CondVar::wait()
 {
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
 #endif
   PthreadCall("wait cv", pthread_cond_wait(&cv_, &mu_->mu_));
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->afterLock();
 #endif
 }
@@ -193,11 +198,11 @@ bool CondVar::timedWait(uint64_t abs_time_us)
   ts.tv_sec = static_cast<time_t>(abs_time_us / 1000000);
   ts.tv_nsec = static_cast<suseconds_t>((abs_time_us % 1000000) * 1000);
 
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
 #endif
   int32_t err = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->afterLock();
 #endif
 
@@ -214,11 +219,11 @@ bool CondVar::timedWait(uint64_t abs_time_us)
 
 bool CondVar::timedWaitAbsolute(const struct timespec &absolute_time)
 {
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
 #endif
   int32_t status = pthread_cond_timedwait(&cv_, &mu_->mu_, &absolute_time);
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->afterLock();
 #endif
 
@@ -240,11 +245,11 @@ bool CondVar::timedWaitRelative(uint64_t rel_time_us)
   ts.tv_sec = now.tv_sec + static_cast<time_t>(rel_time_us / 1000000);
   ts.tv_nsec = static_cast<suseconds_t>(((now.tv_usec + rel_time_us) % 1000000) * 1000);
 
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
 #endif
   bool ret = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
-#ifndef NDEBUG
+#ifdef MUTEX_DEBUG
   mu_->afterLock();
 #endif
 
@@ -276,7 +281,8 @@ void CondVar::broadcast()
   PthreadCall("broadcast cv", pthread_cond_broadcast(&cv_));
 }
 
-RWMutex::RWMutex() {
+RWMutex::RWMutex()
+{
   PthreadCall("init rwmutex", pthread_rwlock_init(&mu_, nullptr));
 }
 
@@ -293,15 +299,23 @@ void RWMutex::readLock() { PthreadCall("read lock", pthread_rwlock_rdlock(&mu_))
     before another thread can successfully lock it.
     \sa unlock() lockForRead()
 */
-bool RWMutex::tryReadLock() {
+bool RWMutex::tryReadLock()
+{
   int32_t ret = pthread_rwlock_tryrdlock(&mu_);
-  switch (ret) {
-    case 0: return true;
-    case EBUSY: return false;
-    case EINVAL: abort();
-    case EAGAIN: abort();
-    case EDEADLK: abort();
-    default: abort();
+  switch (ret)
+  {
+  case 0:
+    return true;
+  case EBUSY:
+    return false;
+  case EINVAL:
+    abort();
+  case EAGAIN:
+    abort();
+  case EDEADLK:
+    abort();
+  default:
+    abort();
   }
   return false;
 }
@@ -317,15 +331,23 @@ void RWMutex::writeLock() { PthreadCall("write lock", pthread_rwlock_wrlock(&mu_
     before another thread can successfully lock it.
     \sa unlock() lockForWrite()
 */
-bool RWMutex::tryWriteLock() {
+bool RWMutex::tryWriteLock()
+{
   int32_t ret = pthread_rwlock_trywrlock(&mu_);
-  switch (ret) {
-    case 0: return true;
-    case EBUSY: return false;
-    case EINVAL: abort();
-    case EAGAIN: abort();
-    case EDEADLK: abort();
-    default: abort();
+  switch (ret)
+  {
+  case 0:
+    return true;
+  case EBUSY:
+    return false;
+  case EINVAL:
+    abort();
+  case EAGAIN:
+    abort();
+  case EDEADLK:
+    abort();
+  default:
+    abort();
   }
   return false;
 }
@@ -336,62 +358,74 @@ bool RWMutex::tryWriteLock() {
     in program termination.
     \sa lockForRead() lockForWrite() tryLockForRead() tryLockForWrite()
 */
-void RWMutex::unlock() {
+void RWMutex::unlock()
+{
   PthreadCall("unlock rwmutex", pthread_rwlock_unlock(&mu_));
 }
 
 void RWMutex::readUnlock() { PthreadCall("read unlock", pthread_rwlock_unlock(&mu_)); }
 
 void RWMutex::writeUnlock() { PthreadCall("write unlock", pthread_rwlock_unlock(&mu_)); }
-  
-RefMutex::RefMutex() {
+
+RefMutex::RefMutex()
+{
   refs_ = 0;
   PthreadCall("init refmutex", pthread_mutex_init(&mu_, nullptr));
 }
 
-RefMutex::~RefMutex() {
+RefMutex::~RefMutex()
+{
   PthreadCall("destroy refmutex", pthread_mutex_destroy(&mu_));
 }
 
-void RefMutex::ref() {
+void RefMutex::ref()
+{
   ++refs_;
 }
-void RefMutex::unref() {
+void RefMutex::unref()
+{
   --refs_;
-  if (refs_ == 0) {
+  if (refs_ == 0)
+  {
     delete this;
   }
 }
 
-void RefMutex::lock() {
+void RefMutex::lock()
+{
   PthreadCall("lock refmutex", pthread_mutex_lock(&mu_));
 }
 
-void RefMutex::unlock() {
+void RefMutex::unlock()
+{
   PthreadCall("unlock refmutex", pthread_mutex_unlock(&mu_));
 }
 
-RecordMutex::~RecordMutex() {
+RecordMutex::~RecordMutex()
+{
   mutex_.lock();
-  
   std::unordered_map<string, RefMutex *>::const_iterator it = records_.begin();
-  for (; it != records_.end(); it++) {
+  for (; it != records_.end(); it++)
+  {
     delete it->second;
   }
   mutex_.unlock();
 }
 
-
-void RecordMutex::lock(const string &key) {
+void RecordMutex::lock(const string &key)
+{
   mutex_.lock();
   std::unordered_map<string, RefMutex *>::const_iterator it = records_.find(key);
 
-  if (it != records_.end()) {
+  if (it != records_.end())
+  {
     RefMutex *ref_mutex = it->second;
     ref_mutex->ref();
     mutex_.unlock();
     ref_mutex->lock();
-  } else {
+  }
+  else
+  {
     RefMutex *ref_mutex = new RefMutex();
 
     records_.insert(std::make_pair(key, ref_mutex));
@@ -401,13 +435,16 @@ void RecordMutex::lock(const string &key) {
   }
 }
 
-void RecordMutex::unlock(const string &key) {
+void RecordMutex::unlock(const string &key)
+{
   mutex_.lock();
   std::unordered_map<string, RefMutex *>::const_iterator it = records_.find(key);
-  
-  if (it != records_.end()) {
+
+  if (it != records_.end())
+  {
     RefMutex *ref_mutex = it->second;
-    if (ref_mutex->isLastRef()) {
+    if (ref_mutex->isLastRef())
+    {
       records_.erase(it);
     }
     ref_mutex->unlock();
@@ -416,27 +453,33 @@ void RecordMutex::unlock(const string &key) {
   mutex_.unlock();
 }
 
-CondLock::CondLock() {
+CondLock::CondLock()
+{
   PthreadCall("init condlock", pthread_mutex_init(&mutex_, nullptr));
 }
 
-CondLock::~CondLock() {
+CondLock::~CondLock()
+{
   PthreadCall("destroy condlock", pthread_mutex_unlock(&mutex_));
 }
 
-void CondLock::lock() {
+void CondLock::lock()
+{
   PthreadCall("lock condlock", pthread_mutex_lock(&mutex_));
 }
 
-void CondLock::unlock() {
+void CondLock::unlock()
+{
   PthreadCall("unlock condlock", pthread_mutex_unlock(&mutex_));
 }
 
-void CondLock::wait() {
+void CondLock::wait()
+{
   PthreadCall("condlock wait", pthread_cond_wait(&cond_, &mutex_));
 }
 
-void CondLock::timedWait(uint64_t timeout) {
+void CondLock::timedWait(uint64_t timeout)
+{
   /*
    * pthread_cond_timedwait api use absolute API
    * so we need gettimeofday + timeout
@@ -452,13 +495,15 @@ void CondLock::timedWait(uint64_t timeout) {
   pthread_cond_timedwait(&cond_, &mutex_, &tsp);
 }
 
-void CondLock::signal() {
+void CondLock::signal()
+{
   PthreadCall("condlock signal", pthread_cond_signal(&cond_));
 }
 
-void CondLock::broadcast() {
+void CondLock::broadcast()
+{
   PthreadCall("condlock broadcast", pthread_cond_broadcast(&cond_));
 }
 
-} // namespace port
+} // namespace util
 } // namespace mycc

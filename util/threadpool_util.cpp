@@ -330,7 +330,7 @@ void ThreadPoolImpl::Impl::startBGThreads()
 #if defined(_GNU_SOURCE) && defined(__GLIBC_PREREQ)
 #if __GLIBC_PREREQ(2, 12)
     auto th_handle = p_t.native_handle();
-    string thread_priority = Env::PriorityToString(getThreadPriority());
+    string thread_priority = env_->PriorityToString(getThreadPriority());
     string thread_name_stream;
     StringFormatTo(&thread_name_stream, "threadpool:%s%" PRIu64, thread_priority.c_str(), bgthreads_.size());
     pthread_setname_np(th_handle, thread_name_stream.c_str());

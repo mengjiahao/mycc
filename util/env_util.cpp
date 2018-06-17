@@ -124,33 +124,159 @@ int32_t LockOrUnlock(int32_t fd, bool lock)
 
 } // namespace
 
-uint64_t Env::NowMicros()
+/// PosixEnv
+
+class PosixEnv : public Env
+{
+public:
+  PosixEnv();
+
+  virtual ~PosixEnv()
+  {
+    for (const auto tid : threads_to_join_)
+    {
+      ::pthread_join(tid, nullptr);
+    }
+    for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
+    {
+      thread_pools_[pool_id].joinAllThreads();
+    }
+  }
+
+  virtual uint64_t NowMicros() override;
+  virtual uint64_t NowNanos() override;
+  virtual uint64_t NowChronoNanos() override;
+  virtual void SleepForMicros(int32_t micros) override;
+  virtual Status GetCurrentTimeEpoch(int64_t *unix_time) override;
+  virtual string TimeToString(uint64_t time) override;
+  virtual bool IsAbsolutePath(StringPiece path) override;
+  virtual StringPiece Dirname(StringPiece path) override;
+  virtual StringPiece Basename(StringPiece path) override;
+  virtual StringPiece PathExtension(StringPiece path) override;
+  virtual string CleanPath(StringPiece path) override;
+  virtual string StripBasename(const string &full_path) override;
+  virtual bool SplitPath(const string &path,
+                         std::vector<string> *element,
+                         bool *isdir) override;
+  virtual std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) override;
+  virtual std::pair<StringPiece, StringPiece> SplitPath(StringPiece path) override;
+  virtual string JoinInitPath(std::initializer_list<StringPiece> paths) override;
+  virtual Status NewSequentialFile(const string &fname,
+                                   std::unique_ptr<SequentialFile> *result,
+                                   const EnvOptions &options) override;
+  virtual Status NewRandomAccessFile(const string &fname,
+                                     std::unique_ptr<RandomAccessFile> *result,
+                                     const EnvOptions &options) override;
+  virtual Status OpenWritableFile(const string &fname,
+                                  std::unique_ptr<WritableFile> *result,
+                                  const EnvOptions &options,
+                                  bool reopen = false) override;
+  virtual Status ReopenWritableFile(const string &fname,
+                                    std::unique_ptr<WritableFile> *result,
+                                    const EnvOptions &options) override;
+  virtual Status NewWritableFile(const string &fname,
+                                 std::unique_ptr<WritableFile> *result,
+                                 const EnvOptions &options) override;
+  virtual Status NewRandomRWFile(const string &fname,
+                                 std::unique_ptr<RandomRWFile> *result,
+                                 const EnvOptions &options) override;
+  virtual Status NewMemoryMappedFileBuffer(
+      const string &fname,
+      std::unique_ptr<MemoryMappedFileBuffer> *result) override;
+  virtual Status NewDirectory(const string &name,
+                              std::unique_ptr<Directory> *result) override;
+  virtual Status FileExists(const string &fname) override;
+  virtual bool IsDirectory(const string &dname) override;
+  virtual Status Stat(const string &fname, FileStatistics *stat) override;
+  virtual Status GetFileSize(const string &fname, uint64_t *file_size) override;
+  virtual Status GetFileModificationTime(const string &fname,
+                                         uint64_t *file_mtime) override;
+  virtual Status GetDirChildren(const string &dir,
+                                std::vector<string> *result) override;
+  virtual Status GetDirChildrenRecursively(const string &dir,
+                                           std::vector<string> *result) override;
+  virtual Status GetChildrenFileAttributes(const string &dir,
+                                           std::vector<FileAttributes> *result) override;
+  virtual bool MatchPath(const string &path, const string &pattern) override;
+  virtual Status DeleteFile(const string &fname) override;
+  virtual Status CreateDir(const string &dirname) override;
+  virtual Status CreateDirIfMissing(const string &dirname) override;
+  virtual Status CreateDirRecursively(const string &dirname) override;
+  virtual Status CreatePath(const string &path) override;
+  virtual Status DeleteDir(const string &dirname) override;
+  virtual Status DeleteDirRecursively(const string &dirname, int64_t *undeleted_files,
+                                      int64_t *undeleted_dirs) override;
+  virtual Status RenameFile(const string &src, const string &target) override;
+  virtual Status LinkFile(const string &src, const string &target) override;
+  virtual Status AreFilesSame(const string &first,
+                              const string &second, bool *res) override;
+  virtual Status LockFile(const string &fname, FileLock **lock) override;
+  virtual Status UnlockFile(FileLock *lock) override;
+  virtual uint64_t Du(const string &path) override;
+  // A utility routine: write "data" to the named file.
+  virtual Status WriteStringToFile(const StringPiece &data,
+                                   const string &fname,
+                                   bool should_sync = false) override;
+  virtual Status ReadFileToString(const string &fname,
+                                  string *data) override;
+  virtual string GenerateUniqueId() override;
+  virtual string PriorityToString(Priority priority) override;
+  virtual uint64_t GetThreadID() override;
+  virtual uint64_t GetStdThreadId() override;
+  virtual void StartNewPthread(void (*function)(void *arg), void *arg) override;
+  virtual Thread *StartNewThread(const ThreadOptions &thread_options,
+                                 const string &name,
+                                 std::function<void()> fn) override;
+  virtual ThreadPool *NewThreadPool(int32_t num_threads) override;
+  // Allow increasing the number of worker threads.
+  virtual void SetBackgroundThreads(int32_t num, Priority pri) override;
+  virtual int32_t GetBackgroundThreads(Priority pri) override;
+  // Allow increasing the number of worker threads.
+  virtual void
+  IncBackgroundThreadsIfNeeded(int32_t num, Priority pri) override;
+  virtual void LowerThreadPoolIOPriority(Priority pool = LOW) override;
+  virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) override;
+  virtual void Schedule(void (*function)(void *arg1), void *arg,
+                        Priority pri = LOW, void *tag = nullptr,
+                        void (*unschedFunction)(void *arg) = nullptr) override;
+  virtual int32_t UnSchedule(void *arg, Priority pri) override;
+  virtual void StartThread(void (*function)(void *arg), void *arg) override;
+  virtual void WaitForJoin() override;
+  virtual uint32_t GetThreadPoolQueueLen(Priority pri = LOW) const override;
+
+private:
+  std::vector<ThreadPoolImpl> thread_pools_;
+  pthread_mutex_t mu_;
+  std::vector<pthread_t> threads_to_join_;
+}; // namespace util
+
+uint64_t PosixEnv::NowMicros()
 {
   struct timeval tv;
   ::gettimeofday(&tv, nullptr);
   return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 }
 
-uint64_t Env::NowNanos()
+uint64_t PosixEnv::NowNanos()
 {
   struct timespec ts;
   ::clock_gettime(CLOCK_MONOTONIC, &ts); // for linux
   return static_cast<uint64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 }
 
-uint64_t Env::NowChronoNanos()
+uint64_t PosixEnv::NowChronoNanos()
 {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
              std::chrono::steady_clock::now().time_since_epoch())
       .count();
 }
 
-void Env::SleepForMicros(int32_t micros)
+void PosixEnv::SleepForMicros(int32_t micros)
 {
   ::usleep(micros);
 }
 
-Status Env::GetCurrentTimeEpoch(int64_t *unix_time)
+Status PosixEnv::GetCurrentTimeEpoch(int64_t *unix_time)
 {
   time_t ret = ::time(nullptr);
   if (ret == (time_t)-1)
@@ -161,7 +287,7 @@ Status Env::GetCurrentTimeEpoch(int64_t *unix_time)
   return Status::OK();
 }
 
-string Env::TimeToString(uint64_t secondsSince1970)
+string PosixEnv::TimeToString(uint64_t secondsSince1970)
 {
   const time_t seconds = (time_t)secondsSince1970;
   struct tm t;
@@ -184,27 +310,27 @@ string Env::TimeToString(uint64_t secondsSince1970)
 
 /// path
 
-bool Env::IsAbsolutePath(StringPiece path)
+bool PosixEnv::IsAbsolutePath(StringPiece path)
 {
   return !path.empty() && path[0] == '/';
 }
 
-StringPiece Env::Dirname(StringPiece path)
+StringPiece PosixEnv::Dirname(StringPiece path)
 {
   return SplitPath(path).first;
 }
 
-StringPiece Env::Basename(StringPiece path)
+StringPiece PosixEnv::Basename(StringPiece path)
 {
   return SplitPath(path).second;
 }
 
-StringPiece Env::PathExtension(StringPiece path)
+StringPiece PosixEnv::PathExtension(StringPiece path)
 {
   return SplitBasename(path).second;
 }
 
-string Env::CleanPath(StringPiece unclean_path)
+string PosixEnv::CleanPath(StringPiece unclean_path)
 {
   string path = unclean_path.toString();
   const char *src = path.c_str();
@@ -308,7 +434,7 @@ string Env::CleanPath(StringPiece unclean_path)
   return path;
 }
 
-string Env::StripBasename(const string &full_path)
+string PosixEnv::StripBasename(const string &full_path)
 {
   const char kSeparator = '/';
   uint64_t pos = full_path.rfind(kSeparator);
@@ -322,9 +448,9 @@ string Env::StripBasename(const string &full_path)
   }
 }
 
-bool Env::SplitPath(const string &path,
-                    std::vector<string> *element,
-                    bool *isdir)
+bool PosixEnv::SplitPath(const string &path,
+                         std::vector<string> *element,
+                         bool *isdir)
 {
   if (path.empty() || path[0] != '/' || path.size() > Env::kMaxPathLength)
   {
@@ -353,7 +479,7 @@ bool Env::SplitPath(const string &path,
 // Return the parts of the basename of path, split on the final ".".
 // If there is no "." in the basename or "." is the final character in the
 // basename, the second value will be empty.
-std::pair<StringPiece, StringPiece> Env::SplitBasename(StringPiece path)
+std::pair<StringPiece, StringPiece> PosixEnv::SplitBasename(StringPiece path)
 {
   path = Basename(path);
 
@@ -368,7 +494,7 @@ std::pair<StringPiece, StringPiece> Env::SplitBasename(StringPiece path)
 // If there is no "/" in the path, the first part of the output is the scheme and host, and
 // the second is the path. If the only "/" in the path is the first character,
 // it is included in the first part of the output.
-std::pair<StringPiece, StringPiece> Env::SplitPath(StringPiece path)
+std::pair<StringPiece, StringPiece> PosixEnv::SplitPath(StringPiece path)
 {
   uint64_t pos = path.rfind('/'); // for unix
   // Handle the case with no '/' in 'path'.
@@ -386,7 +512,7 @@ std::pair<StringPiece, StringPiece> Env::SplitPath(StringPiece path)
       StringPiece(path.data() + pos + 1, path.size() - (pos + 1)));
 }
 
-string Env::JoinInitPath(std::initializer_list<StringPiece> paths)
+string PosixEnv::JoinInitPath(std::initializer_list<StringPiece> paths)
 {
   string result;
 
@@ -428,9 +554,9 @@ string Env::JoinInitPath(std::initializer_list<StringPiece> paths)
   return result;
 }
 
-Status Env::NewSequentialFile(const string &fname,
-                              std::unique_ptr<SequentialFile> *result,
-                              const EnvOptions &options)
+Status PosixEnv::NewSequentialFile(const string &fname,
+                                   std::unique_ptr<SequentialFile> *result,
+                                   const EnvOptions &options)
 {
   result->reset();
   int32_t fd = -1;
@@ -475,9 +601,9 @@ Status Env::NewSequentialFile(const string &fname,
   return Status::OK();
 }
 
-Status Env::NewRandomAccessFile(const string &fname,
-                                std::unique_ptr<RandomAccessFile> *result,
-                                const EnvOptions &options)
+Status PosixEnv::NewRandomAccessFile(const string &fname,
+                                     std::unique_ptr<RandomAccessFile> *result,
+                                     const EnvOptions &options)
 {
   result->reset();
   Status s;
@@ -531,10 +657,10 @@ Status Env::NewRandomAccessFile(const string &fname,
   return s;
 }
 
-Status Env::OpenWritableFile(const string &fname,
-                             std::unique_ptr<WritableFile> *result,
-                             const EnvOptions &options,
-                             bool reopen)
+Status PosixEnv::OpenWritableFile(const string &fname,
+                                  std::unique_ptr<WritableFile> *result,
+                                  const EnvOptions &options,
+                                  bool reopen)
 {
   result->reset();
   Status s;
@@ -594,23 +720,23 @@ Status Env::OpenWritableFile(const string &fname,
   return s;
 }
 
-Status Env::ReopenWritableFile(const string &fname,
-                               std::unique_ptr<WritableFile> *result,
-                               const EnvOptions &options)
+Status PosixEnv::ReopenWritableFile(const string &fname,
+                                    std::unique_ptr<WritableFile> *result,
+                                    const EnvOptions &options)
 {
   return OpenWritableFile(fname, result, options, true);
 }
 
-Status Env::NewWritableFile(const string &fname,
-                            std::unique_ptr<WritableFile> *result,
-                            const EnvOptions &options)
+Status PosixEnv::NewWritableFile(const string &fname,
+                                 std::unique_ptr<WritableFile> *result,
+                                 const EnvOptions &options)
 {
   return OpenWritableFile(fname, result, options, false);
 }
 
-Status Env::NewRandomRWFile(const string &fname,
-                            std::unique_ptr<RandomRWFile> *result,
-                            const EnvOptions &options)
+Status PosixEnv::NewRandomRWFile(const string &fname,
+                                 std::unique_ptr<RandomRWFile> *result,
+                                 const EnvOptions &options)
 {
   int32_t fd = -1;
   while (fd < 0)
@@ -632,7 +758,7 @@ Status Env::NewRandomRWFile(const string &fname,
   return Status::OK();
 }
 
-Status Env::NewMemoryMappedFileBuffer(
+Status PosixEnv::NewMemoryMappedFileBuffer(
     const string &fname,
     std::unique_ptr<MemoryMappedFileBuffer> *result)
 {
@@ -681,8 +807,8 @@ Status Env::NewMemoryMappedFileBuffer(
   return status;
 }
 
-Status Env::NewDirectory(const string &name,
-                         std::unique_ptr<Directory> *result)
+Status PosixEnv::NewDirectory(const string &name,
+                              std::unique_ptr<Directory> *result)
 {
   result->reset();
   int32_t fd;
@@ -700,17 +826,17 @@ Status Env::NewDirectory(const string &name,
   return Status::OK();
 }
 
-Status Env::FileExists(const string &fname)
+Status PosixEnv::FileExists(const string &fname)
 {
   int32_t result = ::access(fname.c_str(), F_OK);
-  if (result == 0)
+  if (0 == result)
   {
     return Status::OK();
   }
   return IOError("accessing file " + fname + " error, " + ToString(result), errno);
 }
 
-bool Env::IsDirectory(const string &dname)
+bool PosixEnv::IsDirectory(const string &dname)
 {
   struct stat statbuf;
   if (::stat(dname.c_str(), &statbuf) == 0)
@@ -720,7 +846,7 @@ bool Env::IsDirectory(const string &dname)
   return false; // stat() failed return false
 }
 
-Status Env::Stat(const string &fname, FileStatistics *stats)
+Status PosixEnv::Stat(const string &fname, FileStatistics *stats)
 {
   Status s;
   struct stat sbuf;
@@ -740,7 +866,7 @@ Status Env::Stat(const string &fname, FileStatistics *stats)
   return s;
 }
 
-Status Env::GetFileSize(const string &fname, uint64_t *size)
+Status PosixEnv::GetFileSize(const string &fname, uint64_t *size)
 {
   Status s;
   struct stat sbuf;
@@ -756,8 +882,8 @@ Status Env::GetFileSize(const string &fname, uint64_t *size)
   return s;
 }
 
-Status Env::GetFileModificationTime(const string &fname,
-                                    uint64_t *file_mtime)
+Status PosixEnv::GetFileModificationTime(const string &fname,
+                                         uint64_t *file_mtime)
 {
   struct stat s;
   if (::stat(fname.c_str(), &s) != 0)
@@ -768,8 +894,8 @@ Status Env::GetFileModificationTime(const string &fname,
   return Status::OK();
 }
 
-Status Env::GetDirChildren(const string &dir,
-                           std::vector<string> *result)
+Status PosixEnv::GetDirChildren(const string &dir,
+                                std::vector<string> *result)
 {
   result->clear();
   DIR *d = ::opendir(dir.c_str());
@@ -790,7 +916,7 @@ Status Env::GetDirChildren(const string &dir,
   return Status::OK();
 }
 
-Status Env::GetDirChildrenRecursively(const string &dir, std::vector<string> *result)
+Status PosixEnv::GetDirChildrenRecursively(const string &dir, std::vector<string> *result)
 {
   result->clear();
   DIR *d = ::opendir(dir.c_str());
@@ -825,8 +951,8 @@ Status Env::GetDirChildrenRecursively(const string &dir, std::vector<string> *re
   return Status::OK();
 }
 
-Status Env::GetChildrenFileAttributes(const string &dir,
-                                      std::vector<FileAttributes> *result)
+Status PosixEnv::GetChildrenFileAttributes(const string &dir,
+                                           std::vector<FileAttributes> *result)
 {
   std::vector<string> child_fnames;
   Status s = GetDirChildren(dir, &child_fnames);
@@ -856,12 +982,12 @@ Status Env::GetChildrenFileAttributes(const string &dir,
   return Status::OK();
 }
 
-bool Env::MatchPath(const string &path, const string &pattern)
+bool PosixEnv::MatchPath(const string &path, const string &pattern)
 {
   return ::fnmatch(pattern.c_str(), path.c_str(), FNM_PATHNAME) == 0;
 }
 
-Status Env::DeleteFile(const string &fname)
+Status PosixEnv::DeleteFile(const string &fname)
 {
   Status result;
   if (::unlink(fname.c_str()) != 0)
@@ -871,7 +997,7 @@ Status Env::DeleteFile(const string &fname)
   return result;
 };
 
-Status Env::CreateDir(const string &name)
+Status PosixEnv::CreateDir(const string &name)
 {
   Status result;
   if (::mkdir(name.c_str(), 0755) != 0)
@@ -881,7 +1007,7 @@ Status Env::CreateDir(const string &name)
   return result;
 };
 
-Status Env::CreateDirIfMissing(const string &name)
+Status PosixEnv::CreateDirIfMissing(const string &name)
 {
   Status result;
   if (::mkdir(name.c_str(), 0755) != 0)
@@ -900,7 +1026,7 @@ Status Env::CreateDirIfMissing(const string &name)
   return result;
 };
 
-Status Env::CreateDirRecursively(const string &dirname)
+Status PosixEnv::CreateDirRecursively(const string &dirname)
 {
   StringPiece remaining_dir(dirname);
   std::vector<StringPiece> sub_dirs;
@@ -939,7 +1065,7 @@ Status Env::CreateDirRecursively(const string &dirname)
 // Algorithm takes the pessimistic view and works top-down to ensure
 // each directory in path exists, rather than optimistically creating
 // the last element and working backwards.
-Status Env::CreatePath(const string &path)
+Status PosixEnv::CreatePath(const string &path)
 {
   char *pp;
   char *sp;
@@ -964,7 +1090,7 @@ Status Env::CreatePath(const string &path)
   return result;
 }
 
-Status Env::DeleteDir(const string &name)
+Status PosixEnv::DeleteDir(const string &name)
 {
   Status result;
   if (::rmdir(name.c_str()) != 0)
@@ -974,9 +1100,9 @@ Status Env::DeleteDir(const string &name)
   return result;
 };
 
-Status Env::DeleteDirRecursively(const string &dirname,
-                                 int64_t *undeleted_files,
-                                 int64_t *undeleted_dirs)
+Status PosixEnv::DeleteDirRecursively(const string &dirname,
+                                      int64_t *undeleted_files,
+                                      int64_t *undeleted_dirs)
 {
   *undeleted_files = 0;
   *undeleted_dirs = 0;
@@ -1046,8 +1172,8 @@ Status Env::DeleteDirRecursively(const string &dirname,
   return ret;
 }
 
-Status Env::RenameFile(const string &src,
-                       const string &target)
+Status PosixEnv::RenameFile(const string &src,
+                            const string &target)
 {
   Status result;
   if (::rename(src.c_str(), target.c_str()) != 0)
@@ -1057,8 +1183,8 @@ Status Env::RenameFile(const string &src,
   return result;
 }
 
-Status Env::LinkFile(const string &src,
-                     const string &target)
+Status PosixEnv::LinkFile(const string &src,
+                          const string &target)
 {
   Status result;
   if (::link(src.c_str(), target.c_str()) != 0)
@@ -1072,8 +1198,8 @@ Status Env::LinkFile(const string &src,
   return result;
 }
 
-Status Env::AreFilesSame(const std::string &first,
-                         const std::string &second, bool *res)
+Status PosixEnv::AreFilesSame(const std::string &first,
+                              const std::string &second, bool *res)
 {
   struct stat statbuf[2];
   if (::stat(first.c_str(), &statbuf[0]) != 0)
@@ -1098,7 +1224,7 @@ Status Env::AreFilesSame(const std::string &first,
   return Status::OK();
 }
 
-Status LockFile(const std::string &fname, FileLock **lock)
+Status PosixEnv::LockFile(const std::string &fname, FileLock **lock)
 {
   *lock = NULL;
   Status result;
@@ -1122,7 +1248,7 @@ Status LockFile(const std::string &fname, FileLock **lock)
   return result;
 }
 
-Status UnlockFile(FileLock *lock)
+Status PosixEnv::UnlockFile(FileLock *lock)
 {
   Status result;
   if (LockOrUnlock(lock->fd, false) == -1)
@@ -1134,7 +1260,7 @@ Status UnlockFile(FileLock *lock)
   return result;
 }
 
-uint64_t Env::Du(const string &filename)
+uint64_t PosixEnv::Du(const string &filename)
 {
   struct stat statbuf;
   uint64_t sum;
@@ -1172,12 +1298,12 @@ uint64_t Env::Du(const string &filename)
   return sum;
 }
 
-Status Env::WriteStringToFile(const StringPiece &data, const string &fname,
-                              bool should_sync)
+Status PosixEnv::WriteStringToFile(const StringPiece &data, const string &fname,
+                                   bool should_sync)
 {
   std::unique_ptr<WritableFile> file;
   EnvOptions soptions;
-  Status s = Env::NewWritableFile(fname, &file, soptions);
+  Status s = NewWritableFile(fname, &file, soptions);
   if (!s.ok())
   {
     return s;
@@ -1189,17 +1315,17 @@ Status Env::WriteStringToFile(const StringPiece &data, const string &fname,
   }
   if (!s.ok())
   {
-    Env::DeleteFile(fname);
+    DeleteFile(fname);
   }
   return s;
 }
 
-Status Env::ReadFileToString(const string &fname, string *data)
+Status PosixEnv::ReadFileToString(const string &fname, string *data)
 {
   EnvOptions soptions;
   data->clear();
   std::unique_ptr<SequentialFile> file;
-  Status s = Env::NewSequentialFile(fname, &file, soptions);
+  Status s = NewSequentialFile(fname, &file, soptions);
   if (!s.ok())
   {
     return s;
@@ -1224,7 +1350,7 @@ Status Env::ReadFileToString(const string &fname, string *data)
   return s;
 }
 
-string Env::GenerateUniqueId()
+string PosixEnv::GenerateUniqueId()
 {
   string uuid_file = "/proc/sys/kernel/random/uuid";
 
@@ -1232,7 +1358,7 @@ string Env::GenerateUniqueId()
   if (s.ok())
   {
     std::string uuid;
-    s = Env::ReadFileToString(uuid_file, &uuid);
+    s = ReadFileToString(uuid_file, &uuid);
     if (s.ok())
     {
       return uuid;
@@ -1242,7 +1368,7 @@ string Env::GenerateUniqueId()
   Random64 r(time(nullptr));
   uint64_t random_uuid_portion =
       r.uniform(std::numeric_limits<uint64_t>::max());
-  uint64_t nanos_uuid_portion = Env::NowNanos();
+  uint64_t nanos_uuid_portion = NowNanos();
   char uuid2[200];
   snprintf(uuid2,
            200,
@@ -1252,7 +1378,7 @@ string Env::GenerateUniqueId()
   return uuid2;
 }
 
-string Env::PriorityToString(Env::Priority priority)
+string PosixEnv::PriorityToString(Env::Priority priority)
 {
   switch (priority)
   {
@@ -1268,18 +1394,18 @@ string Env::PriorityToString(Env::Priority priority)
   return "Invalid";
 }
 
-uint64_t Env::GetThreadID()
+uint64_t PosixEnv::GetThreadID()
 {
   return Gettid(pthread_self());
 }
 
-uint64_t Env::GetStdThreadId()
+uint64_t PosixEnv::GetStdThreadId()
 {
   std::hash<std::thread::id> hasher;
   return hasher(std::this_thread::get_id());
 }
 
-void Env::StartNewPthread(void (*function)(void *arg), void *arg)
+void PosixEnv::StartNewPthread(void (*function)(void *arg), void *arg)
 {
   pthread_t t;
   StartThreadState *state = new StartThreadState;
@@ -1289,95 +1415,58 @@ void Env::StartNewPthread(void (*function)(void *arg), void *arg)
               ::pthread_create(&t, nullptr, &StartThreadWrapper, state));
 }
 
-Thread *Env::StartNewThread(const ThreadOptions &thread_options, const string &name,
-                            std::function<void()> fn)
+Thread *PosixEnv::StartNewThread(const ThreadOptions &thread_options, const string &name,
+                                 std::function<void()> fn)
 {
   return new StdThread(thread_options, name, fn);
 }
 
-ThreadPool *Env::NewThreadPool(int32_t num_threads)
+ThreadPool *PosixEnv::NewThreadPool(int32_t num_threads)
 {
   ThreadPoolImpl *thread_pool = new ThreadPoolImpl();
   thread_pool->setBackgroundThreads(num_threads);
   return thread_pool;
 }
 
-/// PosixEnv
-
-class PosixEnv : public Env
+// Allow increasing the number of worker threads.
+void PosixEnv::SetBackgroundThreads(int32_t num, Priority pri)
 {
-public:
-  PosixEnv();
+  assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+  thread_pools_[pri].setBackgroundThreads(num);
+}
 
-  virtual ~PosixEnv()
-  {
-    for (const auto tid : threads_to_join_)
-    {
-      ::pthread_join(tid, nullptr);
-    }
-    for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
-    {
-      thread_pools_[pool_id].joinAllThreads();
-    }
-  }
+int32_t PosixEnv::GetBackgroundThreads(Priority pri)
+{
+  assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+  return thread_pools_[pri].getBackgroundThreads();
+}
 
-  // Allow increasing the number of worker threads.
-  virtual void SetBackgroundThreads(int32_t num, Priority pri) override
-  {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-    thread_pools_[pri].setBackgroundThreads(num);
-  }
+// Allow increasing the number of worker threads.
+void PosixEnv::IncBackgroundThreadsIfNeeded(int32_t num, Priority pri)
+{
+  assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
+  thread_pools_[pri].incBackgroundThreadsIfNeeded(num);
+}
 
-  virtual int32_t GetBackgroundThreads(Priority pri) override
-  {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-    return thread_pools_[pri].getBackgroundThreads();
-  }
-
-  // Allow increasing the number of worker threads.
-  virtual void IncBackgroundThreadsIfNeeded(int32_t num, Priority pri) override
-  {
-    assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-    thread_pools_[pri].incBackgroundThreadsIfNeeded(num);
-  }
-
-  virtual void LowerThreadPoolIOPriority(Priority pool = LOW) override
-  {
-    assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
+void PosixEnv::LowerThreadPoolIOPriority(Priority pool)
+{
+  assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
 #ifdef OS_LINUX
-    thread_pools_[pool].lowerIOPriority();
+  thread_pools_[pool].lowerIOPriority();
 #else
-    (void)pool;
+  (void)pool;
 #endif
-  }
+}
 
-  virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) override
-  {
-    assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
+void PosixEnv::LowerThreadPoolCPUPriority(Priority pool)
+{
+  assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
 #ifdef OS_LINUX
-    thread_pools_[pool].lowerCPUPriority();
+  thread_pools_[pool].lowerCPUPriority();
 #else
-    (void)pool;
+  (void)pool;
 #endif
-  }
-
-  virtual void Schedule(void (*function)(void *arg1), void *arg,
-                        Priority pri = LOW, void *tag = nullptr,
-                        void (*unschedFunction)(void *arg) = nullptr) override;
-
-  virtual int32_t UnSchedule(void *arg, Priority pri) override;
-
-  virtual void StartThread(void (*function)(void *arg), void *arg) override;
-
-  virtual void WaitForJoin() override;
-
-  virtual uint32_t GetThreadPoolQueueLen(Priority pri = LOW) const override;
-
-private:
-  std::vector<ThreadPoolImpl> thread_pools_;
-  pthread_mutex_t mu_;
-  std::vector<pthread_t> threads_to_join_;
-};
+}
 
 PosixEnv::PosixEnv()
     : thread_pools_(Priority::TOTAL)
@@ -1432,9 +1521,9 @@ uint32_t PosixEnv::GetThreadPoolQueueLen(Priority pri) const
   return thread_pools_[pri].getQueueLen();
 }
 
-//
-// Default Posix Env
-//
+/*
+ * Default Posix Env
+ */
 static pthread_once_t once = PTHREAD_ONCE_INIT;
 static Env *default_env = nullptr;
 static void InitDefaultEnv() { default_env = new PosixEnv(); }

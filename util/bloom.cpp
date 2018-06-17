@@ -157,7 +157,7 @@ Status BloomFilter::load(const string &filename)
 
   std::unique_ptr<SequentialFile> load_file;
   EnvOptions env_options;
-  s = Env::NewSequentialFile(filename, &load_file, env_options);
+  s = env_->NewSequentialFile(filename, &load_file, env_options);
   if (!s.ok())
   {
     return s;
@@ -195,7 +195,7 @@ Status BloomFilter::dump(const string &filename)
 
   std::unique_ptr<WritableFile> dump_file;
   EnvOptions env_options;
-  s = Env::NewWritableFile(filename, &dump_file, env_options);
+  s = env_->NewWritableFile(filename, &dump_file, env_options);
   if (!s.ok())
   {
     return s;
@@ -213,7 +213,7 @@ Status BloomFilter::dump(const string &filename)
 
   if (!s.ok())
   {
-    Env::DeleteFile(filename);
+    env_->DeleteFile(filename);
     return s;
   }
   return Status::OK();

@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <functional>
 #include <memory>
+#include "env_util.h"
 #include "status.h"
 #include "stringpiece.h"
 #include "types_util.h"
@@ -20,7 +21,7 @@ public:
   static uint64_t BloomHash(const StringPiece &key);
 
   BloomFilter()
-      : hash_func_(BloomHash), total_bits_(0), num_probes_(0), data_(nullptr) {}
+      : hash_func_(BloomHash), total_bits_(0), num_probes_(0), data_(nullptr), env_(Env::Default()) {}
   ~BloomFilter() { destroy(); }
 
   string toString();
@@ -55,6 +56,7 @@ private:
   uint64_t total_bits_;
   uint32_t num_probes_;
   uint8_t *data_;
+  Env *env_;
 };
 
 } // namespace util

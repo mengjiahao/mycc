@@ -13,7 +13,7 @@
 
 namespace mycc
 {
-namespace port
+namespace util
 {
 
 /**
@@ -73,7 +73,8 @@ private:
 
   friend class CondVar;
   pthread_mutex_t mu_;
-#ifndef NDEBUG
+
+#ifdef MUTEX_DEBUG
   pthread_t owner_;
   bool locked_;
 #endif
@@ -84,7 +85,7 @@ private:
 class CondVar
 {
 public:
-  explicit CondVar(port::Mutex *mu);
+  explicit CondVar(Mutex *mu);
   ~CondVar();
   void wait();
   // Timed condition wait.  Returns true if timeout occurred.
@@ -98,7 +99,7 @@ public:
 
 private:
   pthread_cond_t cv_;
-  port::Mutex *mu_;
+  Mutex *mu_;
 
   DISALLOW_COPY_AND_ASSIGN(CondVar);
 };
@@ -131,14 +132,14 @@ private:
 class ReadLock
 {
 public:
-  explicit ReadLock(port::RWMutex *mu) : mu_(mu)
+  explicit ReadLock(RWMutex *mu) : mu_(mu)
   {
     this->mu_->readLock();
   }
   ~ReadLock() { this->mu_->readUnlock(); }
 
 private:
-  port::RWMutex *const mu_;
+  RWMutex *const mu_;
   DISALLOW_COPY_AND_ASSIGN(ReadLock);
 };
 
@@ -148,11 +149,11 @@ private:
 class ReadUnlock
 {
 public:
-  explicit ReadUnlock(port::RWMutex *mu) : mu_(mu) { mu->assertHeld(); }
+  explicit ReadUnlock(RWMutex *mu) : mu_(mu) { mu->assertHeld(); }
   ~ReadUnlock() { mu_->readUnlock(); }
 
 private:
-  port::RWMutex *const mu_;
+  RWMutex *const mu_;
   DISALLOW_COPY_AND_ASSIGN(ReadUnlock);
 };
 
@@ -164,14 +165,14 @@ private:
 class WriteLock
 {
 public:
-  explicit WriteLock(port::RWMutex *mu) : mu_(mu)
+  explicit WriteLock(RWMutex *mu) : mu_(mu)
   {
     this->mu_->writeLock();
   }
   ~WriteLock() { this->mu_->writeUnlock(); }
 
 private:
-  port::RWMutex *const mu_;
+  RWMutex *const mu_;
   DISALLOW_COPY_AND_ASSIGN(WriteLock);
 };
 
@@ -336,7 +337,7 @@ private:
   DISALLOW_COPY_AND_ASSIGN(CondLock);
 };
 
-} // namespace port
+} // namespace util
 } // namespace mycc
 
 #endif // MYCC_UTIL_LOCKS_UTIL_H_

@@ -158,39 +158,39 @@ public:
   static Env *Default();
 
   // Returns the number of micro-seconds since some fixed point in time.
-  static uint64_t NowMicros();
+  virtual uint64_t NowMicros() = 0;
 
   // Returns the number of nano-seconds since some fixed point in time.
-  static uint64_t NowNanos();
+  virtual uint64_t NowNanos() = 0;
 
-  static uint64_t NowChronoNanos();
+  virtual uint64_t NowChronoNanos() = 0;
 
-  static void SleepForMicros(int32_t micros);
+  virtual void SleepForMicros(int32_t micros) = 0;
 
   // Get the number of seconds since the Epoch, 1970-01-01 00:00:00 (UTC).
   // Only overwrites *unix_time on success.
-  static Status GetCurrentTimeEpoch(int64_t *unix_time);
+  virtual Status GetCurrentTimeEpoch(int64_t *unix_time) = 0;
 
   // Converts seconds-since-Jan-01-1970 to a printable string
-  static string TimeToString(uint64_t time);
+  virtual string TimeToString(uint64_t time) = 0;
 
   /// path ops
 
   // Return true if path is absolute.
-  static bool IsAbsolutePath(StringPiece path);
+  virtual bool IsAbsolutePath(StringPiece path) = 0;
 
   // Returns the part of the path before the final "/".  If there is a single
   // leading "/" in the path, the result will be the leading "/".  If there is
   // no "/" in the path, the result is the empty prefix of the input.
-  static StringPiece Dirname(StringPiece path);
+  virtual StringPiece Dirname(StringPiece path) = 0;
 
   // Returns the part of the path after the final "/".  If there is no
   // "/" in the path, the result is the same as the input.
-  static StringPiece Basename(StringPiece path);
+  virtual StringPiece Basename(StringPiece path) = 0;
 
   // Returns the part of the basename of path after the final ".".  If
   // there is no "." in the basename, the result is empty.
-  static StringPiece PathExtension(StringPiece path);
+  virtual StringPiece PathExtension(StringPiece path) = 0;
 
   // Collapse duplicate "/"s, resolve ".." and "." path elements, remove
   // trailing "/".
@@ -199,18 +199,18 @@ public:
   // invoke any system calls (getcwd(2)) in order to resolve relative
   // paths with respect to the actual working directory.  That is, this is purely
   // string manipulation, completely independent of process state.
-  static string CleanPath(StringPiece path);
+  virtual string CleanPath(StringPiece path) = 0;
 
   // Obtains the base name from a full path.
-  static string StripBasename(const string &full_path);
+  virtual string StripBasename(const string &full_path) = 0;
 
-  static bool SplitPath(const string &path,
-                        std::vector<string> *element,
-                        bool *isdir);
+  virtual bool SplitPath(const string &path,
+                         std::vector<string> *element,
+                         bool *isdir) = 0;
 
-  static std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path);
+  virtual std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) = 0;
 
-  static std::pair<StringPiece, StringPiece> SplitPath(StringPiece path);
+  virtual std::pair<StringPiece, StringPiece> SplitPath(StringPiece path) = 0;
 
   // Join multiple paths together, without introducing unnecessary path
   // separators.
@@ -227,10 +227,10 @@ public:
   // string path = JoinPath(FLAGS_test_srcdir, filename);
   // string path = JoinPath("/full", "path", "to", "filename);
 
-  static string JoinInitPath(std::initializer_list<StringPiece> paths);
+  virtual string JoinInitPath(std::initializer_list<StringPiece> paths) = 0;
 
   template <typename... T>
-  static string JoinPath(const T &... args)
+  string JoinPath(const T &... args)
   {
     return JoinInitPath({args...});
   }
@@ -241,9 +241,9 @@ public:
   // not exist, returns a non-OK status.
   //
   // The returned file will only be accessed by one thread at a time.
-  static Status NewSequentialFile(const string &fname,
-                                  std::unique_ptr<SequentialFile> *result,
-                                  const EnvOptions &options);
+  virtual Status NewSequentialFile(const string &fname,
+                                   std::unique_ptr<SequentialFile> *result,
+                                   const EnvOptions &options) = 0;
 
   // Create a brand new random access read-only file with the
   // specified name.  On success, stores a pointer to the new file in
@@ -252,9 +252,9 @@ public:
   // status.
   //
   // The returned file may be concurrently accessed by multiple threads.
-  static Status NewRandomAccessFile(const string &fname,
-                                    std::unique_ptr<RandomAccessFile> *result,
-                                    const EnvOptions &options);
+  virtual Status NewRandomAccessFile(const string &fname,
+                                     std::unique_ptr<RandomAccessFile> *result,
+                                     const EnvOptions &options) = 0;
 
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
@@ -263,35 +263,35 @@ public:
   // returns non-OK.
   // reopen arg means append.
   // The returned file will only be accessed by one thread at a time.
-  static Status OpenWritableFile(const string &fname,
-                                 std::unique_ptr<WritableFile> *result,
-                                 const EnvOptions &options,
-                                 bool reopen = false);
+  virtual Status OpenWritableFile(const string &fname,
+                                  std::unique_ptr<WritableFile> *result,
+                                  const EnvOptions &options,
+                                  bool reopen = false) = 0;
 
   // AppendWritableFile
-  static Status ReopenWritableFile(const string &fname,
-                                   std::unique_ptr<WritableFile> *result,
-                                   const EnvOptions &options);
+  virtual Status ReopenWritableFile(const string &fname,
+                                    std::unique_ptr<WritableFile> *result,
+                                    const EnvOptions &options) = 0;
 
-  static Status NewWritableFile(const string &fname,
-                                std::unique_ptr<WritableFile> *result,
-                                const EnvOptions &options);
+  virtual Status NewWritableFile(const string &fname,
+                                 std::unique_ptr<WritableFile> *result,
+                                 const EnvOptions &options) = 0;
 
   // Open `fname` for random read and write, if file doesn't exist the file
   // will be created.  On success, stores a pointer to the new file in
   // *result and returns OK.  On failure returns non-OK.
   //
   // The returned file will only be accessed by one thread at a time.
-  static Status NewRandomRWFile(const string &fname,
-                                std::unique_ptr<RandomRWFile> *result,
-                                const EnvOptions &options);
+  virtual Status NewRandomRWFile(const string &fname,
+                                 std::unique_ptr<RandomRWFile> *result,
+                                 const EnvOptions &options) = 0;
 
   // Opens `fname` as a memory-mapped file for read and write (in-place updates
   // only, i.e., no appends). On success, stores a raw buffer covering the whole
   // file in `*result`. The file must exist prior to this call.
-  static Status NewMemoryMappedFileBuffer(
+  virtual Status NewMemoryMappedFileBuffer(
       const string &fname,
-      std::unique_ptr<MemoryMappedFileBuffer> *result);
+      std::unique_ptr<MemoryMappedFileBuffer> *result) = 0;
 
   // Create an object that represents a directory. Will fail if directory
   // doesn't exist. If the directory exists, it will open the directory
@@ -300,33 +300,33 @@ public:
   // On success, stores a pointer to the new Directory in
   // *result and returns OK. On failure stores nullptr in *result and
   // returns non-OK.
-  static Status NewDirectory(const string &name,
-                             std::unique_ptr<Directory> *result);
+  virtual Status NewDirectory(const string &name,
+                              std::unique_ptr<Directory> *result) = 0;
 
   // Returns OK if the named file exists.
-  static Status FileExists(const string &fname);
+  virtual Status FileExists(const string &fname) = 0;
 
   // Returns true if the named directory exists and is a directory.
-  static bool IsDirectory(const string &dname);
+  virtual bool IsDirectory(const string &dname) = 0;
 
   // Obtains statistics for the given path.
-  static Status Stat(const string &fname, FileStatistics *stat);
+  virtual Status Stat(const string &fname, FileStatistics *stat) = 0;
 
   // Store the size of fname in *file_size.
-  static Status GetFileSize(const string &fname, uint64_t *file_size);
+  virtual Status GetFileSize(const string &fname, uint64_t *file_size) = 0;
 
   // Store the last modification time of fname in *file_mtime.
-  static Status GetFileModificationTime(const string &fname,
-                                        uint64_t *file_mtime);
+  virtual Status GetFileModificationTime(const string &fname,
+                                         uint64_t *file_mtime) = 0;
 
   // Store in *result the names of the children of the specified directory.
   // The names are relative to "dir".
   // Original contents of *results are dropped.
-  static Status GetDirChildren(const string &dir,
-                               std::vector<string> *result);
+  virtual Status GetDirChildren(const string &dir,
+                                std::vector<string> *result) = 0;
 
-  static Status GetDirChildrenRecursively(const string &dir,
-                                          std::vector<string> *result);
+  virtual Status GetDirChildrenRecursively(const string &dir,
+                                           std::vector<string> *result) = 0;
 
   // Store in *result the attributes of the children of the specified directory.
   // In case the implementation lists the directory prior to iterating the files
@@ -334,34 +334,34 @@ public:
   // result.
   // The name attributes are relative to "dir".
   // Original contents of *results are dropped.
-  static Status GetChildrenFileAttributes(const string &dir,
-                                          std::vector<FileAttributes> *result);
+  virtual Status GetChildrenFileAttributes(const string &dir,
+                                           std::vector<FileAttributes> *result) = 0;
 
   /// \brief Returns true if the path matches the given pattern. The wildcards
   /// allowed in pattern are described in FileSystem::GetMatchingPaths.
-  static bool MatchPath(const string &path, const string &pattern);
+  virtual bool MatchPath(const string &path, const string &pattern) = 0;
 
   // Delete the named file.
-  static Status DeleteFile(const string &fname);
+  virtual Status DeleteFile(const string &fname) = 0;
 
   // Create the specified directory. Returns error if directory exists.
-  static Status CreateDir(const string &dirname);
+  virtual Status CreateDir(const string &dirname) = 0;
 
   // Creates directory if missing. Return Ok if it exists, or successful in Creating.
-  static Status CreateDirIfMissing(const string &dirname);
+  virtual Status CreateDirIfMissing(const string &dirname) = 0;
 
   /// \brief Creates the specified directory and all the necessary
   /// subdirectories. Typical return codes.
   ///  * OK - successfully created the directory and sub directories, even if
   ///         they were already created.
   ///  * PERMISSION_DENIED - dirname or some subdirectory is not writable.
-  static Status CreateDirRecursively(const string &dirname);
+  virtual Status CreateDirRecursively(const string &dirname) = 0;
 
   // Ensure all directories in path exist
-  static Status CreatePath(const string &path);
+  virtual Status CreatePath(const string &path) = 0;
 
   // Delete the specified directory.
-  static Status DeleteDir(const string &dirname);
+  virtual Status DeleteDir(const string &dirname) = 0;
 
   /// \brief Deletes the specified directory and all subdirectories and files
   /// underneath it. undeleted_files and undeleted_dirs stores the number of
@@ -370,17 +370,17 @@ public:
   /// REQUIRES: undeleted_files, undeleted_dirs to be not null.
   /// Typical return codes
   ///  * OK - dirname exists and we were able to delete everything underneath.
-  static Status DeleteDirRecursively(const string &dirname, int64_t *undeleted_files,
-                                     int64_t *undeleted_dirs);
+  virtual Status DeleteDirRecursively(const string &dirname, int64_t *undeleted_files,
+                                      int64_t *undeleted_dirs) = 0;
 
   // Rename file src to target.
-  static Status RenameFile(const string &src, const string &target);
+  virtual Status RenameFile(const string &src, const string &target) = 0;
 
   // Hard Link file src to target.
-  static Status LinkFile(const string &src, const string &target);
+  virtual Status LinkFile(const string &src, const string &target) = 0;
 
-  static Status AreFilesSame(const string &first,
-                             const string &second, bool *res);
+  virtual Status AreFilesSame(const string &first,
+                              const string &second, bool *res) = 0;
 
   // Lock the specified file.  Used to prevent concurrent access to
   // the same db by multiple processes.  On failure, stores nullptr in
@@ -396,68 +396,66 @@ public:
   // to go away.
   //
   // May create the named file if it does not already exist.
-  static Status LockFile(const string &fname, FileLock **lock);
+  virtual Status LockFile(const string &fname, FileLock **lock) = 0;
 
   // Release the lock acquired by a previous successful call to LockFile.
   // REQUIRES: lock was returned by a successful LockFile() call
   // REQUIRES: lock has not already been unlocked.
-  static Status UnlockFile(FileLock *lock);
+  virtual Status UnlockFile(FileLock *lock) = 0;
 
-  static uint64_t Du(const string &path);
+  virtual uint64_t Du(const string &path) = 0;
 
   // A utility routine: write "data" to the named file.
-  static Status WriteStringToFile(const StringPiece &data,
-                                  const string &fname,
-                                  bool should_sync = false);
+  virtual Status WriteStringToFile(const StringPiece &data,
+                                   const string &fname,
+                                   bool should_sync = false) = 0;
 
   // A utility routine: read contents of named file into *data
-  static Status ReadFileToString(const string &fname,
-                                 string *data);
+  virtual Status ReadFileToString(const string &fname,
+                                  string *data) = 0;
 
   // Generates a unique id that can be used to identify a db
-  static string GenerateUniqueId();
+  virtual string GenerateUniqueId() = 0;
 
-  static string PriorityToString(Priority priority);
+  virtual string PriorityToString(Priority priority) = 0;
 
   // Returns the ID of the current thread.
-  static uint64_t GetThreadID();
+  virtual uint64_t GetThreadID() = 0;
 
-  static uint64_t GetStdThreadId();
+  virtual uint64_t GetStdThreadId() = 0;
 
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
-  static void StartNewPthread(void (*function)(void* arg), void* arg);
+  virtual void StartNewPthread(void (*function)(void *arg), void *arg) = 0;
 
   /// Returns a new thread that is running fn() and is identified
   /// (for debugging/performance-analysis) by "name".
   /// Caller takes ownership of the result and must delete it eventually
   /// (the deletion will block until fn() stops running).
-  static Thread *StartNewThread(const ThreadOptions &thread_options,
-                                const string &name,
-                                std::function<void()> fn);
+  virtual Thread *StartNewThread(const ThreadOptions &thread_options,
+                                 const string &name,
+                                 std::function<void()> fn) = 0;
 
   // NewThreadPool() is a function that could be used to create a ThreadPool
   // with `num_threads` background threads.
-  static ThreadPool *NewThreadPool(int32_t num_threads);
-
-  ///////////////////////////////////////////////////////////////////////////
+  virtual ThreadPool *NewThreadPool(int32_t num_threads) = 0;
 
   // The number of background worker threads of a specific thread pool
   // for this environment. 'LOW' is the default pool.
   // default number: 1
-  virtual void SetBackgroundThreads(int32_t number, Priority pri = LOW){};
-  virtual int32_t GetBackgroundThreads(Priority pri = LOW) { return 0; };
+  virtual void SetBackgroundThreads(int32_t number, Priority pri = LOW) = 0;
+  virtual int32_t GetBackgroundThreads(Priority pri = LOW) = 0;
 
   // Enlarge number of background worker threads of a specific thread pool
   // for this environment if it is smaller than specified. 'LOW' is the default
   // pool.
-  virtual void IncBackgroundThreadsIfNeeded(int32_t number, Priority pri){};
+  virtual void IncBackgroundThreadsIfNeeded(int32_t number, Priority pri) = 0;
 
   // Lower IO priority for threads from the specified pool.
-  virtual void LowerThreadPoolIOPriority(Priority pool = LOW) {}
+  virtual void LowerThreadPoolIOPriority(Priority pool = LOW) = 0;
 
   // Lower CPU priority for threads from the specified pool.
-  virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) {}
+  virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) = 0;
 
   // Arrange to run "(*function)(arg)" once in a background thread, in
   // the thread pool specified by pri. By default, jobs go to the 'LOW'
@@ -470,24 +468,21 @@ public:
   // registered at the time of Schedule is invoked with arg as a parameter.
   virtual void Schedule(void (*function)(void *arg), void *arg,
                         Priority pri = LOW, void *tag = nullptr,
-                        void (*unschedFunction)(void *arg) = nullptr){};
+                        void (*unschedFunction)(void *arg) = nullptr) = 0;
 
   // Arrange to remove jobs for given arg from the queue_ if they are not
   // already scheduled. Caller is expected to have exclusive lock on arg.
-  virtual int32_t UnSchedule(void *arg, Priority pri) { return 0; }
+  virtual int32_t UnSchedule(void *arg, Priority pri) = 0;
 
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
-  virtual void StartThread(void (*function)(void *arg), void *arg){};
+  virtual void StartThread(void (*function)(void *arg), void *arg) = 0;
 
   // Wait for all threads started by StartThread to terminate.
-  virtual void WaitForJoin() {}
+  virtual void WaitForJoin() = 0;
 
   // Get thread pool queue length for specific thread pool.
-  virtual uint32_t GetThreadPoolQueueLen(Priority pri = LOW) const
-  {
-    return 0;
-  }
+  virtual uint32_t GetThreadPoolQueueLen(Priority pri = LOW) const = 0;
 
   Env() {}
   virtual ~Env() {}

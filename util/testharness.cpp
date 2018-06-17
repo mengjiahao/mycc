@@ -72,12 +72,12 @@ int32_t RunAllTests()
 
 void Timer::start()
 {
-  start_ = util::Env::NowNanos();
+  start_ = env_->NowNanos();
 }
 
 uint64_t Timer::elapsedNanos(bool reset)
 {
-  uint64_t now = util::Env::NowNanos();
+  uint64_t now = env_->NowNanos();
   uint64_t elapsed = now - start_;
   if (reset)
   {

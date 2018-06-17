@@ -19,6 +19,8 @@ class BloomTest
 {
 };
 
+Env *g_env = Env::Default();
+
 TEST(BloomTest, simple_test)
 {
   Status s;
@@ -165,7 +167,7 @@ NO_TEST(BloomTest, multithread_with_perf)
       uint64_t elapsed_one = timer_one.elapsedNanos();
       PANIC_GT(count, 0);
       PRINT_INFO("#standard bloom, thread[0x%016" PRIx64 "] avg add latency %lf nanos/key, count=%" PRIu64 "\n",
-                 Env::GetStdThreadId(), (double)elapsed_one / count, count);
+                 g_env->GetStdThreadId(), (double)elapsed_one / count, count);
     };
     for (uint64_t t = 0; t < num_threads; ++t)
     {
@@ -201,7 +203,7 @@ NO_TEST(BloomTest, multithread_with_perf)
       uint64_t elapsed_one = timer_one.elapsedNanos();
       PANIC_GE(count, 0);
       PRINT_INFO("#standard bloom, thread[0x%016" PRIu64 "] avg hit latency %lf nanos/key, count=%" PRIu64 "\n",
-                 Env::GetStdThreadId(), (double)elapsed_one / count, count);
+                 g_env->GetStdThreadId(), (double)elapsed_one / count, count);
     };
     for (uint64_t t = 0; t < num_threads; ++t)
     {
@@ -240,7 +242,7 @@ NO_TEST(BloomTest, multithread_with_perf)
       uint64_t elapsed_one = timer_one.elapsedNanos();
       PANIC_GT(count, 0);
       PRINT_INFO("#standard bloom, thread[0x%016" PRIu64 "] avg miss latency %lf nanos/key, count=%" PRIu64 "\n",
-                 Env::GetStdThreadId(), (double)elapsed_one / count, count);
+                 g_env->GetStdThreadId(), (double)elapsed_one / count, count);
     };
     for (uint64_t t = 0; t < num_threads; ++t)
     {
