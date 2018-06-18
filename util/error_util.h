@@ -1,0 +1,123 @@
+
+#ifndef MYCC_UTIL_ERROR_UTIL_H_
+#define MYCC_UTIL_ERROR_UTIL_H_
+
+#include <errno.h>
+#include <execinfo.h> // linux
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "macros_util.h"
+
+namespace mycc
+{
+namespace util
+{
+
+#define STR_ERRORNO() (errno == 0 ? "None" : strerror(errno))
+
+#define PANIC(fmt, ...)                                                           \
+  fprintf(stderr, "PANIC [%s:%d](%s) errno: %d %s, " fmt,                         \
+          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+  fflush(stderr);                                                                 \
+  abort()
+
+#define PANIC_ENFORCE(c, fmt, ...)                 \
+  if (!(c))                                        \
+  {                                                \
+    PANIC("%s is False, " fmt, #c, ##__VA_ARGS__); \
+  }
+
+/// Print error utils
+
+#define PRINT_INFO(fmt, ...)                                \
+  fprintf(stderr, "INFO [%s:%d](%s) " fmt,                  \
+          __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); \
+  fflush(stderr)
+
+#define PRINT_WARN(fmt, ...)                                                      \
+  fprintf(stderr, "WARN [%s:%d](%s) errno: %d %s, " fmt,                          \
+          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+  fflush(stderr)
+
+#define PRINT_ERROR(fmt, ...)                                                     \
+  fprintf(stderr, "ERROR [%s:%d](%s) errno: %d %s, " fmt,                         \
+          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+  fflush(stderr)
+
+#define PRINT_FATAL(fmt, ...)                                                     \
+  fprintf(stderr, "FATAL [%s:%d](%s) errno: %d %s, " fmt,                         \
+          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+  fflush(stderr)                                                                  \
+      abort()
+
+// panic utils
+
+#define PANIC_TRUE(c)               \
+  if (!(c))                         \
+  {                                 \
+    PANIC("%s is not TRUE \n", #c); \
+  }
+
+#define PANIC_FALSE(c)               \
+  if (c)                             \
+  {                                  \
+    PANIC("%s is not FALSE \n", #c); \
+  }
+
+#define PANIC_EQ(c, val)                   \
+  if ((c) != (val))                        \
+  {                                        \
+    PANIC("%s is not EQ %s \n", #c, #val); \
+  }
+
+#define PANIC_NE(c, val)                   \
+  if ((c) == (val))                        \
+  {                                        \
+    PANIC("%s is not NE %s \n", #c, #val); \
+  }
+
+#define PANIC_GE(c, val)                   \
+  if ((c) < (val))                         \
+  {                                        \
+    PANIC("%s is not GE %s \n", #c, #val); \
+  }
+
+#define PANIC_GT(c, val)                   \
+  if ((c) <= (val))                        \
+  {                                        \
+    PANIC("%s is not GT %s \n", #c, #val); \
+  }
+
+#define PANIC_LE(c, val)                   \
+  if ((c) > (val))                         \
+  {                                        \
+    PANIC("%s is not LE %s \n", #c, #val); \
+  }
+
+#define PANIC_LT(c, val)                   \
+  if ((c) >= (val))                        \
+  {                                        \
+    PANIC("%s is not LT %s \n", #c, #val); \
+  }
+
+#define EXIT_FAIL(fmt, ...) \
+    PRINT_ERROR(fmt, ##__VA_ARGS__); \
+    PRINT_ERROR("\n Exit fail \n"); \
+    exit(EXIT_FAILURE)
+
+#define PRINT_STACK_TRACE(fmt, ...)                                           \
+  do                                                                          \
+  {                                                                           \
+    fprintf(stderr, "FATAL (%s:%d: errno: %s) " fmt "\n", __FILE__, __LINE__, \
+            errno == 0 ? "None" : strerror(errno), ##__VA_ARGS__);            \
+    void *buffer[255];                                                        \
+    const int32_t calls = backtrace(buffer, sizeof(buffer) / sizeof(void *));     \
+    backtrace_symbols_fd(buffer, calls, 1);                                   \
+    \                                                                         \
+  } while (0)
+
+} // namespace util
+} // namespace mycc
+
+#endif // MYCC_UTIL_ERROR_UTIL_H_

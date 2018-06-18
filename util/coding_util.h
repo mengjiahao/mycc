@@ -2,6 +2,7 @@
 #ifndef MYCC_UTIL_CODING_UTIL_H_
 #define MYCC_UTIL_CODING_UTIL_H_
 
+#include <endian.h>
 #include <stdint.h>
 #include <string.h>
 #include <string>
@@ -14,8 +15,28 @@ namespace mycc
 namespace util
 {
 
+inline bool IsBigEndian()
+{
+#if __linux__
+  return __BYTE_ORDER == __BIG_ENDIAN;
+#elif defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_IA64) || defined(_M_X64)
+  // known little architectures
+  return false;
+#else // unknown
+  int32_t x = 1;
+  return reinterpret_cast<unsigned char &>(x) == 0;
+#endif
+}
+
+inline bool IsLittleEndian()
+{
+  return !IsBigEndian();
+}
+
 #if defined(OS_LINUX)
+#include <arpa/inet.h>
 #include <byteswap.h>
+
 inline uint16_t ByteSwap(uint16_t x)
 {
   return bswap_16(x);
@@ -114,6 +135,48 @@ inline uint64_t HostToNet64(uint64_t x)
     return ByteSwap(x);
   else
     return x;
+}
+
+// Read an integer (signed or unsigned) from |buf| in Big Endian order.
+// Note: this loop is unrolled with -O1 and above.
+// NOTE(szym): glibc dns-canon.c and SpdyFrameBuilder use
+// ntohs(*(uint16_t*)ptr) which is potentially unaligned.
+// This would cause SIGBUS on ARMv5 or earlier and ARMv6-M.
+template <typename T>
+inline void ReadBigEndian(const char buf[], T *out)
+{
+  *out = buf[0];
+  for (size_t i = 1; i < sizeof(T); ++i)
+  {
+    *out <<= 8;
+    // Must cast to uint8_t to avoid clobbering by sign extension.
+    *out |= static_cast<uint8_t>(buf[i]);
+  }
+}
+
+// Write an integer (signed or unsigned) |val| to |buf| in Big Endian order.
+// Note: this loop is unrolled with -O1 and above.
+template <typename T>
+inline void WriteBigEndian(char buf[], T val)
+{
+  for (size_t i = 0; i < sizeof(T); ++i)
+  {
+    buf[sizeof(T) - i - 1] = static_cast<char>(val & 0xFF);
+    val >>= 8;
+  }
+}
+
+// Specializations to make clang happy about the (dead code) shifts above.
+template <>
+inline void ReadBigEndian<uint8_t>(const char buf[], uint8_t *out)
+{
+  *out = buf[0];
+}
+
+template <>
+inline void WriteBigEndian<uint8_t>(char buf[], uint8_t val)
+{
+  buf[0] = static_cast<char>(val);
 }
 
 // The maximum length of a varint in bytes for 64-bit.

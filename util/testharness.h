@@ -9,98 +9,13 @@
 #include <stdlib.h>
 #include <sstream>
 #include "env_util.h"
+#include "error_util.h"
 #include "types_util.h"
 
 namespace mycc
 {
 namespace test
 {
-
-/// Print error utils
-
-#define STR_ERRORNO() (errno == 0 ? "None" : strerror(errno))
-
-#define PRINT_INFO(fmt, ...)                                \
-  fprintf(stderr, "INFO [%s:%d](%s) " fmt,                  \
-          __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); \
-  fflush(stderr)
-
-#define PRINT_WARN(fmt, ...)                                                      \
-  fprintf(stderr, "WARN [%s:%d](%s) errno: %d %s, " fmt,                          \
-          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
-  fflush(stderr)
-
-#define PRINT_ERROR(fmt, ...)                                                     \
-  fprintf(stderr, "ERROR [%s:%d](%s) errno: %d %s, " fmt,                         \
-          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
-  fflush(stderr)
-
-#define PRINT_FATAL(fmt, ...)                                                     \
-  fprintf(stderr, "FATAL [%s:%d](%s) errno: %d %s, " fmt,                         \
-          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
-  fflush(stderr)                                                                  \
-      abort()
-
-// panic utils
-#define PANIC(fmt, ...)                                                           \
-  fprintf(stderr, "PANIC [%s:%d](%s) errno: %d %s, " fmt,                         \
-          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
-  fflush(stderr);                                                                 \
-  abort()
-
-#define PANIC_ENFORCE(c, fmt, ...)                 \
-  if (!(c))                                        \
-  {                                                \
-    PANIC("%s is False, " fmt, #c, ##__VA_ARGS__); \
-  }
-
-#define PANIC_TRUE(c)               \
-  if (!(c))                         \
-  {                                 \
-    PANIC("%s is not TRUE \n", #c); \
-  }
-
-#define PANIC_FALSE(c)               \
-  if (c)                             \
-  {                                  \
-    PANIC("%s is not FALSE \n", #c); \
-  }
-
-#define PANIC_EQ(c, val)                   \
-  if ((c) != (val))                        \
-  {                                        \
-    PANIC("%s is not EQ %s \n", #c, #val); \
-  }
-
-#define PANIC_NE(c, val)                   \
-  if ((c) == (val))                        \
-  {                                        \
-    PANIC("%s is not NE %s \n", #c, #val); \
-  }
-
-#define PANIC_GE(c, val)                   \
-  if ((c) < (val))                         \
-  {                                        \
-    PANIC("%s is not GE %s \n", #c, #val); \
-  }
-
-#define PANIC_GT(c, val)                   \
-  if ((c) <= (val))                        \
-  {                                        \
-    PANIC("%s is not GT %s \n", #c, #val); \
-  }
-
-#define PANIC_LE(c, val)                   \
-  if ((c) > (val))                         \
-  {                                        \
-    PANIC("%s is not LE %s \n", #c, #val); \
-  }
-
-#define PANIC_LT(c, val)                   \
-  if ((c) >= (val))                        \
-  {                                        \
-    PANIC("%s is not LT %s \n", #c, #val); \
-  }
 
 // Run some of the tests registered by the TEST() macro.
 // E.g., suppose the tests are:

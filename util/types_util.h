@@ -9,6 +9,7 @@
 #include <stdint.h> // For intptr_t.
 #include <limits>
 #include <string>
+#include "macros_util.h"
 
 namespace mycc
 {

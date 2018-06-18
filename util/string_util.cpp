@@ -53,6 +53,18 @@ char *Append4(char *out, const StringPiece &x1, const StringPiece &x2,
   return out + x4.size();
 }
 
+static char *UIntToHexBufferInternal(uint64_t value, char *buffer, int64_t num_byte)
+{
+  static const char hexdigits[] = "0123456789abcdef";
+  int64_t digit_byte = 2 * num_byte;
+  for (int64_t i = digit_byte - 1; i >= 0; --i)
+  {
+    buffer[i] = hexdigits[uint32_t(value) & 0xf];
+    value >>= 4;
+  }
+  return buffer + digit_byte;
+}
+
 template <typename T>
 bool DoSplitAndParseAsInts(StringPiece text, char delim,
                            std::function<bool(StringPiece, T *)> converter,
@@ -74,17 +86,53 @@ bool DoSplitAndParseAsInts(StringPiece text, char delim,
 
 // string ascii
 
+string DebugString(const string &src)
+{
+  uint64_t src_len = src.size();
+  string dst;
+  dst.resize(src_len << 2);
+
+  uint64_t j = 0;
+  for (uint64_t i = 0; i < src_len; ++i)
+  {
+    uint8_t c = src[i];
+    if (IsAsciiVisible(c))
+    {
+      dst[j++] = c;
+    }
+    else
+    {
+      dst[j++] = '\\';
+      dst[j++] = 'x';
+      dst[j++] = ToHexAscii(c >> 4);
+      dst[j++] = ToHexAscii(c & 0xF);
+    }
+  }
+
+  return dst.substr(0, j);
+}
+
 string StringToHex(const char *str, uint64_t len)
 {
   uint64_t len_size = 3 * len + 1;
   char tmp[len_size];
-  tmp[len_size] = '\0';
   uint64_t n = 0;
   for (uint64_t i = 0; i < len && n < len_size; ++i)
   {
     n += snprintf(tmp + n, len_size - n, "\\%02x", (uint8_t)str[i]);
   }
+  tmp[len_size] = '\0';
   return string(tmp, n);
+}
+
+void StringToUpper(string *str)
+{
+  std::transform(str->begin(), str->end(), str->begin(), ::toupper);
+}
+
+void StringToLower(string *str)
+{
+  std::transform(str->begin(), str->end(), str->begin(), ::tolower);
 }
 
 // Return lower-cased version of s.
@@ -288,7 +336,7 @@ uint64_t StringParseUint64(const string &value)
   return num;
 }
 
-int32_t StringParseInt(const string &value)
+int32_t StringParseInt32(const string &value)
 {
   size_t endchar;
   int32_t num = std::stoi(value.c_str(), &endchar);
@@ -298,6 +346,46 @@ int32_t StringParseInt(const string &value)
 double StringParseDouble(const string &value)
 {
   return std::stod(value);
+}
+
+size_t StringParseSizeT(const string &value)
+{
+  return static_cast<size_t>(StringParseUint64(value));
+}
+
+bool SerializeVectorInt32(const std::vector<int32_t> &vec, string *value)
+{
+  *value = "";
+  for (uint64_t i = 0; i < vec.size(); ++i)
+  {
+    if (i > 0)
+    {
+      *value += ",";
+    }
+    *value += ToString(vec[i]);
+  }
+  return true;
+}
+
+std::vector<int32_t> StringParseVectorInt32(const string &value)
+{
+  std::vector<int32_t> result;
+  size_t start = 0;
+  while (start < value.size())
+  {
+    size_t end = value.find(',', start);
+    if (end == string::npos)
+    {
+      result.push_back(StringParseInt32(value.substr(start)));
+      break;
+    }
+    else
+    {
+      result.push_back(StringParseInt32(value.substr(start, end - start)));
+      start = end + 1;
+    }
+  }
+  return result;
 }
 
 StringPiece Uint64ToHexString(uint64_t v, char *buf)
@@ -498,6 +586,162 @@ bool SafeStrToUint64(StringPiece str, uint64_t *value)
   return true;
 }
 
+char *WriteHexUInt16ToBuffer(uint16_t value, char *buffer)
+{
+  return UIntToHexBufferInternal(value, buffer, sizeof(value));
+}
+
+char *WriteHexUInt32ToBuffer(uint32_t value, char *buffer)
+{
+  return UIntToHexBufferInternal(value, buffer, sizeof(value));
+}
+
+char *WriteHexUInt64ToBuffer(uint64_t value, char *buffer)
+{
+  return UIntToHexBufferInternal(value, buffer, sizeof(value));
+}
+
+char *UInt16ToHexString(uint16_t value, char *buffer)
+{
+  *WriteHexUInt16ToBuffer(value, buffer) = '\0';
+  return buffer;
+}
+
+char *UInt32ToHexString(uint32_t value, char *buffer)
+{
+  *WriteHexUInt32ToBuffer(value, buffer) = '\0';
+  return buffer;
+}
+
+char *UInt64ToHexString(uint64_t value, char *buffer)
+{
+  *WriteHexUInt64ToBuffer(value, buffer) = '\0';
+  return buffer;
+}
+
+string UInt16ToHexString(uint16_t value)
+{
+  char buffer[2 * sizeof(value) + 1];
+  return std::string(buffer, WriteHexUInt16ToBuffer(value, buffer));
+}
+
+string UInt32ToHexString(uint32_t value)
+{
+  char buffer[2 * sizeof(value) + 1];
+  return std::string(buffer, WriteHexUInt32ToBuffer(value, buffer));
+}
+
+string UInt64ToHexString(uint64_t value)
+{
+  char buffer[2 * sizeof(value) + 1];
+  return std::string(buffer, WriteHexUInt64ToBuffer(value, buffer));
+}
+
+// -----------------------------------------------------------------
+// Double to string or buffer.
+// Make sure buffer size >= kMaxDoubleStringSize
+// -----------------------------------------------------------------
+char *WriteDoubleToBuffer(double value, char *buffer)
+{
+  // DBL_DIG is 15 on almost all platforms.
+  // If it's too big, the buffer will overflow
+  //     STATIC_ASSERT(DBL_DIG < 20, "DBL_DIG is too big");
+
+  if (value >= std::numeric_limits<double>::infinity())
+  {
+    strcpy(buffer, "inf"); // NOLINT
+    return buffer + 3;
+  }
+  else if (value <= -std::numeric_limits<double>::infinity())
+  {
+    strcpy(buffer, "-inf"); // NOLINT
+    return buffer + 4;
+  }
+  else if (IsNaN(value))
+  {
+    strcpy(buffer, "nan"); // NOLINT
+    return buffer + 3;
+  }
+
+  return buffer + ::snprintf(buffer, kMaxDoubleStringSize, "%.*g", DBL_DIG, value);
+}
+
+// -------------------------------------------------------------
+// Float to string or buffer.
+// Makesure buffer size >= kMaxFloatStringSize
+// -------------------------------------------------------------
+char *WriteFloatToBuffer(float value, char *buffer)
+{
+  // FLT_DIG is 6 on almost all platforms.
+  // If it's too big, the buffer will overflow
+  //     STATIC_ASSERT(FLT_DIG < 10, "FLT_DIG is too big");
+  if (value >= std::numeric_limits<double>::infinity())
+  {
+    strcpy(buffer, "inf"); // NOLINT
+    return buffer + 3;
+  }
+  else if (value <= -std::numeric_limits<double>::infinity())
+  {
+    strcpy(buffer, "-inf"); // NOLINT
+    return buffer + 4;
+  }
+  else if (IsNaN(value))
+  {
+    strcpy(buffer, "nan"); // NOLINT
+    return buffer + 3;
+  }
+
+  return buffer + ::snprintf(buffer, kMaxFloatStringSize, "%.*g", FLT_DIG, value);
+}
+
+char *DoubleToString(double n, char *buffer)
+{
+  WriteDoubleToBuffer(n, buffer);
+  return buffer;
+}
+
+char *FloatToString(float n, char *buffer)
+{
+  WriteFloatToBuffer(n, buffer);
+  return buffer;
+}
+
+string Int64ToString(int64_t num)
+{
+  char buf[32];
+  ::snprintf(buf, sizeof(buf), PRId64_FORMAT, num);
+  return string(buf);
+}
+
+string Uint64ToString(uint64_t num)
+{
+  char buf[32];
+  ::snprintf(buf, sizeof(buf), PRIu64_FORMAT, num);
+  return string(buf);
+}
+
+string Int32ToString(int32_t num)
+{
+  return Int64ToString(static_cast<int64_t>(num));
+}
+
+string Uint32ToString(uint32_t num)
+{
+  return Uint64ToString(static_cast<uint64_t>(num));
+}
+
+string DoubleToString(double value)
+{
+  char buffer[kMaxDoubleStringSize];
+  return string(buffer, WriteDoubleToBuffer(value, buffer));
+}
+
+string FloatToString(float value)
+{
+  char buffer[kMaxFloatStringSize];
+  return string(buffer, WriteFloatToBuffer(value, buffer));
+}
+
 // string human-readable
 
 string HumanReadableNum(int64_t value)
@@ -633,6 +877,18 @@ string HumanReadableElapsedTime(double seconds)
   seconds /= 365.2425;
   StringFormatAppend(&human_readable, "%0.3g years", seconds);
   return human_readable;
+}
+
+// for micros < 10ms, print "XX us".
+// for micros < 10sec, print "XX ms".
+// for micros >= 10 sec, print "XX sec".
+// for micros <= 1 hour, print Y:X M:S".
+// for micros > 1 hour, print Z:Y:X H:M:S".
+int32_t AppendHumanMicros(uint64_t micros, char *output, int64_t len)
+{
+  return ::snprintf(output, len, "%02" PRIu64 ":%02" PRIu64 ":%05.3f H:M:S",
+                    micros / 1000000 / 3600, (micros / 1000000 / 60) % 60,
+                    static_cast<double>(micros % 60000000) / 1000000);
 }
 
 // string ops

@@ -66,7 +66,13 @@ inline bool IsHexDigit(char c)
          (c >= 'a' && c <= 'f');
 }
 
-inline char IntToHexDigit(uint8_t v)
+/// @brief judge a number if it's nan
+inline bool IsNaN(double value)
+{
+  return !(value > value) && !(value <= value);
+}
+
+inline char ToHexAscii(uint8_t v)
 {
   if (v <= 9)
   {
@@ -75,7 +81,7 @@ inline char IntToHexDigit(uint8_t v)
   return 'A' + v - 10;
 }
 
-inline uint8_t HexDigitToInt(char c)
+inline uint8_t FromHexAscii(char c)
 {
   if (!IsHexDigit(c))
     return 0;
@@ -98,7 +104,16 @@ inline char ToUpperAscii(char c)
   return (c >= 'a' && c <= 'z') ? (c + ('A' - 'a')) : c;
 }
 
+inline char *StringAsArray(string *str)
+{
+  return str->empty() ? nullptr : &*str->begin();
+}
+
+string DebugString(const string &src);
 string StringToHex(const char *str, uint64_t len);
+
+void StringToUpper(string *str);
+void StringToLower(string *str);
 
 // Return lower-cased version of s.
 string Lowercase(StringPiece s);
@@ -184,6 +199,10 @@ uint32_t StringParseUint32(const string &value);
 uint64_t StringParseUint64(const string &value);
 int32_t StringParseInt32(const string &value);
 double StringParseDouble(const string &value);
+size_t StringParseSizeT(const string &value);
+
+bool SerializeVectorInt32(const std::vector<int32_t> &vec, string *value);
+std::vector<int32_t> StringParseVectorInt32(const string &value);
 
 // Convert a 64-bit fingerprint value to an ASCII representation that
 // is terminated by a '\0'.
@@ -215,6 +234,41 @@ bool SafeStrToInt64(StringPiece str, int64_t *value);
 // Return false with overflow or invalid input.
 bool SafeStrToUint64(StringPiece str, uint64_t *value);
 
+/// ---------------------------------------------------------------
+/// @brief converting numbers  to buffer, buffer size should be big enough
+/// ---------------------------------------------------------------
+const int kMaxIntegerStringSize = 32;
+const int kMaxDoubleStringSize = 32;
+const int kMaxFloatStringSize = 24;
+const int kMaxIntStringSize = kMaxIntegerStringSize;
+
+/// @brief write number to buffer as string
+/// @return end of result
+/// @note without '\0' appended
+/// private functions for common library, don't use them in your code
+char* WriteDoubleToBuffer(double n, char* buffer);
+char* WriteFloatToBuffer(float n, char* buffer);
+char* WriteInt32ToBuffer(int32_t i, char* buffer);
+char* WriteUInt32ToBuffer(uint32_t u, char* buffer);
+char* WriteInt64ToBuffer(int64_t i, char* buffer);
+char* WriteUInt64ToBuffer(uint64_t u64, char* buffer);
+
+/// @brief write number to buffer as string
+/// @return start of buffer
+/// @note with '\0' appended
+char* DoubleToString(double n, char* buffer);
+char* FloatToString(float n, char* buffer);
+char* UInt16ToHexString(uint16_t value, char* buffer);
+char* UInt32ToHexString(uint32_t value, char* buffer);
+char* UInt64ToHexString(uint64_t value, char* buffer);
+
+string Int64ToString(int64_t num);
+string Uint64ToString(uint64_t num);
+string Int32ToString(int32_t num);
+string Uint32ToString(uint32_t num);
+string FloatToString(float n);
+string DoubleToString(double n);
+
 // string human-readable
 
 // Converts from an int64 to a human readable string representing the
@@ -234,6 +288,13 @@ string HumanReadableNumBytes(int64_t num_bytes);
 //   39420000.0  -> "1.25 years"
 //   -10         -> "-10 s"
 string HumanReadableElapsedTime(double seconds);
+
+// for micros < 10ms, print "XX us".
+// for micros < 10sec, print "XX ms".
+// for micros >= 10 sec, print "XX sec".
+// for micros <= 1 hour, print Y:X M:S".
+// for micros > 1 hour, print Z:Y:X H:M:S".
+int32_t AppendHumanMicros(uint64_t micros, char *output, int64_t len);
 
 /// string ops
 

@@ -55,7 +55,7 @@ public:
 
   void lock();
   bool tryLock();
-  bool timedLock(uint64_t millis);
+  bool timedLock(uint64_t time_us);
   void unlock();
   bool isLocked();
   // this will assert if the mutex is not locked
@@ -82,6 +82,23 @@ private:
   DISALLOW_COPY_AND_ASSIGN(Mutex);
 };
 
+class MutexLock
+{
+public:
+  explicit MutexLock(Mutex *mu) : mu_(mu)
+  {
+    mu_->lock();
+  }
+  ~MutexLock()
+  {
+    mu_->unlock();
+  }
+
+private:
+  Mutex *const mu_;
+  DISALLOW_COPY_AND_ASSIGN(MutexLock);
+};
+
 class CondVar
 {
 public:
@@ -95,7 +112,7 @@ public:
   bool timedWaitRelative(uint64_t rel_time_us);
   bool timedWaitRelative(const struct timespec &relative_time);
   void signal();
-  void broadcast();
+  void signalall();
 
 private:
   pthread_cond_t cv_;
@@ -326,7 +343,7 @@ public:
   void lock();
   void unlock();
   void wait();
-  void timedWait(uint64_t timeout_ms);
+  void timedWait(uint64_t time_us);
   void signal();
   void broadcast();
 
@@ -335,6 +352,92 @@ private:
   pthread_cond_t cond_;
 
   DISALLOW_COPY_AND_ASSIGN(CondLock);
+};
+
+class BlockingCounter
+{
+public:
+  explicit BlockingCounter(uint64_t cnt) : cond_(&mutex_), counter_(cnt) {}
+
+  bool decrement()
+  {
+    MutexLock lock(&mutex_);
+    --counter_;
+
+    if (counter_ == 0)
+    {
+      cond_.signalall();
+    }
+
+    return counter_ == 0u;
+  }
+
+  void reset(uint64_t cnt)
+  {
+    MutexLock lock(&mutex_);
+    counter_ = cnt;
+  }
+
+  void wait()
+  {
+    MutexLock lock(&mutex_);
+
+    while (counter_ != 0)
+    {
+      cond_.wait();
+    }
+  }
+
+private:
+  Mutex mutex_;
+  CondVar cond_;
+  uint64_t counter_;
+  DISALLOW_COPY_AND_ASSIGN(BlockingCounter);
+};
+
+class AutoResetEvent
+{
+public:
+  AutoResetEvent()
+      : cv_(&mutex_), signaled_(false)
+  {
+  }
+  
+  /// Wait for signal
+  void wait()
+  {
+    MutexLock lock(&mutex_);
+    while (!signaled_)
+    {
+      cv_.wait();
+    }
+    signaled_ = false;
+  }
+
+  bool timedWaitRelative(int64_t timeout_us)
+  {
+    MutexLock lock(&mutex_);
+    if (!signaled_)
+    {
+      cv_.timedWaitRelative(timeout_us);
+    }
+    bool ret = signaled_;
+    signaled_ = false;
+    return ret;
+  }
+
+  /// Signal one
+  void set()
+  {
+    MutexLock lock(&mutex_);
+    signaled_ = true;
+    cv_.signal();
+  }
+
+private:
+  Mutex mutex_;
+  CondVar cv_;
+  bool signaled_;
 };
 
 } // namespace util

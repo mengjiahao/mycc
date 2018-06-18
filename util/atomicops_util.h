@@ -24,14 +24,14 @@ enum AtomicMemoryOrder
 // This built-in function implements an atomic load operation. It returns the contents of *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE, and __ATOMIC_CONSUME.
 template <typename T>
-T AtomicLoadN(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicLoadN(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_load_n(ptr, memorder);
 }
 
 // This is the generic version of an atomic load. It returns the contents of *ptr in *ret.
 template <typename T>
-void AtomicLoad(T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+void AtomicLoad(volatile T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_load(ptr, ret, memorder);
 }
@@ -39,14 +39,14 @@ void AtomicLoad(T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC
 // This built-in function implements an atomic store operation. It writes val into *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, and __ATOMIC_RELEASE.
 template <typename T>
-void AtomicStoreN(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+void AtomicStoreN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_store_n(ptr, val, memorder);
 }
 
 // This is the generic version of an atomic store. It stores the value of *val into *ptr.
 template <typename T>
-void AtomicStore(T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+void AtomicStore(volatile T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_store(ptr, val, memorder);
 }
@@ -55,7 +55,7 @@ void AtomicStore(T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMI
 // It writes val into *ptr, and returns the previous contents of *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE, and __ATOMIC_ACQ_REL.
 template <typename T>
-T AtomicExchangeN(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicExchangeN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_exchange_n(ptr, val, memorder);
 }
@@ -63,7 +63,7 @@ T AtomicExchangeN(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMI
 // This is the generic version of an atomic exchange. It stores the contents of *val into *ptr.
 // The original value of *ptr is copied into *ret.
 template <typename T>
-void AtomicExchange(T *ptr, T *val, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+void AtomicExchange(volatile T *ptr, T *val, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_exchange(ptr, val, ret, memorder);
 }
@@ -80,7 +80,7 @@ void AtomicExchange(T *ptr, T *val, T *ret, AtomicMemoryOrder memorder = MEMORY_
 // This memory order cannot be __ATOMIC_RELEASE nor __ATOMIC_ACQ_REL.
 // It also cannot be a stronger order than that specified by success_memorder.
 template <typename T>
-bool AtomicCompareExchangeN(T *ptr, T *expected, T desired, bool weak,
+bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool weak,
                             AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange_n(ptr, expected, desired, weak,
@@ -91,7 +91,7 @@ bool AtomicCompareExchangeN(T *ptr, T *expected, T desired, bool weak,
 // The function is virtually identical to __atomic_compare_exchange_n,
 // except the desired value is also a pointer.
 template <typename T>
-bool AtomicCompareExchange(T *ptr, T *expected, T *desired, bool weak,
+bool AtomicCompareExchange(volatile T *ptr, T *expected, T *desired, bool weak,
                            AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange(ptr, expected, desired, weak,
@@ -106,37 +106,37 @@ bool AtomicCompareExchange(T *ptr, T *expected, T *desired, bool weak,
 // It must not be a boolean type.
 // All memory orders are valid.
 template <typename T>
-T AtomicAddFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicAddFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_add_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicSubFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicSubFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_sub_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicAndFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicAndFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_and_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicXorFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicXorFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_xor_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicOrFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicOrFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_or_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicNandFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicNandFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_nand_fetch(ptr, val, memorder);
 }
@@ -148,49 +148,49 @@ T AtomicNandFetch(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMI
 // The same constraints on arguments apply as for the corresponding __atomic_op_fetch built-in functions.
 // All memory orders are valid.
 template <typename T>
-T AtomicFetchAdd(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchAdd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_add(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchSub(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchSub(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_sub(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchAnd(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchAnd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_and(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchXor(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchXor(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_xor(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchOr(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchOr(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_or(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchNand(T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicFetchNand(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_nand(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicIncrement(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicIncrement(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_add_fetch(ptr, 1, memorder);
 }
 
 template <typename T>
-T AtomicDecrement(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicDecrement(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_sub_fetch(ptr, 1, memorder);
 }
@@ -202,7 +202,7 @@ T AtomicDecrement(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_C
 // For other types only part of the value may be set.
 // All memory orders are valid.
 template <typename T>
-bool AtomicTestAndSet(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+bool AtomicTestAndSet(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_test_and_set(ptr, memorder);
 }
@@ -212,7 +212,7 @@ bool AtomicTestAndSet(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_S
 // For other types it may only clear partially. If the type is not bool prefer using __atomic_store.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, and __ATOMIC_RELEASE.
 template <typename T>
-bool AtomicClear(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+bool AtomicClear(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_clear(ptr, memorder);
 }
@@ -222,6 +222,356 @@ bool AtomicClear(T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CS
 void AtomicThreadFence(AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_thread_fence(memorder);
+}
+
+/// asm atomicops
+
+#if !defined(__i386__) && !defined(__x86_64__)
+#error "Arch not supprot asm atomic!"
+#endif
+
+#define ATOMICOPS_COMPILER_BARRIER() __asm__ __volatile__("" \
+                                                          :  \
+                                                          :  \
+                                                          : "memory")
+typedef int32_t Atomic32;
+typedef intptr_t Atomic64;
+// Use AtomicWord for a machine-sized pointer.  It will use the Atomic32 or
+// Atomic64 routines below, depending on your architecture.
+typedef intptr_t AtomicWord;
+
+// This struct is not part of the public API of this module; clients may not
+// use it.  (However, it's exported via BASE_EXPORT because clients implicitly
+// do use it at link time by inlining these functions.)
+// Features of this x86.  Values may not be correct before main() is run,
+// but are set conservatively.
+static const bool k_has_amd_lock_mb_bug = false; // Processor has AMD memory-barrier bug; do lfence
+                                                 // after acquire compare-and-swap.
+
+// 32-bit low-level operations on any platform.
+
+// Atomically execute:
+//      result = *ptr;
+//      if (*ptr == old_value)
+//        *ptr = new_value;
+//      return result;
+//
+// I.e., replace "*ptr" with "new_value" if "*ptr" used to be "old_value".
+// Always return the old value of "*ptr"
+//
+// This routine implies no memory barriers.
+Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32 *ptr,
+                                  Atomic32 old_value,
+                                  Atomic32 new_value);
+
+// Atomically store new_value into *ptr, returning the previous value held in
+// *ptr.  This routine implies no memory barriers.
+Atomic32 NoBarrier_AtomicExchange(volatile Atomic32 *ptr, Atomic32 new_value);
+
+// Atomically increment *ptr by "increment".  Returns the new value of
+// *ptr with the increment applied.  This routine implies no memory barriers.
+Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32 *ptr, Atomic32 increment);
+
+Atomic32 Barrier_AtomicIncrement(volatile Atomic32 *ptr,
+                                 Atomic32 increment);
+
+// These following lower-level operations are typically useful only to people
+// implementing higher-level synchronization operations like spinlocks,
+// mutexes, and condition-variables.  They combine CompareAndSwap(), a load, or
+// a store with appropriate memory-ordering instructions.  "Acquire" operations
+// ensure that no later memory access can be reordered ahead of the operation.
+// "Release" operations ensure that no previous memory access can be reordered
+// after the operation.  "Barrier" operations have both "Acquire" and "Release"
+// semantics.   A MemoryBarrier() has "Barrier" semantics, but does no memory
+// access.
+Atomic32 Acquire_CompareAndSwap(volatile Atomic32 *ptr,
+                                Atomic32 old_value,
+                                Atomic32 new_value);
+Atomic32 Release_CompareAndSwap(volatile Atomic32 *ptr,
+                                Atomic32 old_value,
+                                Atomic32 new_value);
+
+void MemoryBarrier();
+void NoBarrier_Store(volatile Atomic32 *ptr, Atomic32 value);
+void Acquire_Store(volatile Atomic32 *ptr, Atomic32 value);
+void Release_Store(volatile Atomic32 *ptr, Atomic32 value);
+
+Atomic32 NoBarrier_Load(volatile const Atomic32 *ptr);
+Atomic32 Acquire_Load(volatile const Atomic32 *ptr);
+Atomic32 Release_Load(volatile const Atomic32 *ptr);
+
+// 64-bit atomic operations (only available on 64-bit processors).
+
+Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64 *ptr,
+                                  Atomic64 old_value,
+                                  Atomic64 new_value);
+Atomic64 NoBarrier_AtomicExchange(volatile Atomic64 *ptr, Atomic64 new_value);
+Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64 *ptr, Atomic64 increment);
+Atomic64 Barrier_AtomicIncrement(volatile Atomic64 *ptr, Atomic64 increment);
+
+Atomic64 Acquire_CompareAndSwap(volatile Atomic64 *ptr,
+                                Atomic64 old_value,
+                                Atomic64 new_value);
+Atomic64 Release_CompareAndSwap(volatile Atomic64 *ptr,
+                                Atomic64 old_value,
+                                Atomic64 new_value);
+void NoBarrier_Store(volatile Atomic64 *ptr, Atomic64 value);
+void Acquire_Store(volatile Atomic64 *ptr, Atomic64 value);
+void Release_Store(volatile Atomic64 *ptr, Atomic64 value);
+Atomic64 NoBarrier_Load(volatile const Atomic64 *ptr);
+Atomic64 Acquire_Load(volatile const Atomic64 *ptr);
+Atomic64 Release_Load(volatile const Atomic64 *ptr);
+
+/// internal asm atomicops
+
+inline Atomic32 NoBarrier_CompareAndSwap(volatile Atomic32 *ptr,
+                                         Atomic32 old_value,
+                                         Atomic32 new_value)
+{
+  Atomic32 prev;
+  __asm__ __volatile__("lock; cmpxchgl %1,%2"
+                       : "=a"(prev)
+                       : "q"(new_value), "m"(*ptr), "0"(old_value)
+                       : "memory");
+  return prev;
+}
+
+inline Atomic32 NoBarrier_AtomicExchange(volatile Atomic32 *ptr,
+                                         Atomic32 new_value)
+{
+  __asm__ __volatile__("xchgl %1,%0" // The lock prefix is implicit for xchg.
+                       : "=r"(new_value)
+                       : "m"(*ptr), "0"(new_value)
+                       : "memory");
+  return new_value; // Now it's the previous value.
+}
+
+inline Atomic32 NoBarrier_AtomicIncrement(volatile Atomic32 *ptr,
+                                          Atomic32 increment)
+{
+  Atomic32 temp = increment;
+  __asm__ __volatile__("lock; xaddl %0,%1"
+                       : "+r"(temp), "+m"(*ptr)
+                       :
+                       : "memory");
+  // temp now holds the old value of *ptr
+  return temp + increment;
+}
+
+inline Atomic32 Barrier_AtomicIncrement(volatile Atomic32 *ptr,
+                                        Atomic32 increment)
+{
+  Atomic32 temp = increment;
+  __asm__ __volatile__("lock; xaddl %0,%1"
+                       : "+r"(temp), "+m"(*ptr)
+                       :
+                       : "memory");
+  // temp now holds the old value of *ptr
+  if (k_has_amd_lock_mb_bug)
+  {
+    __asm__ __volatile__("lfence"
+                         :
+                         :
+                         : "memory");
+  }
+  return temp + increment;
+}
+
+inline Atomic32 Acquire_CompareAndSwap(volatile Atomic32 *ptr,
+                                       Atomic32 old_value,
+                                       Atomic32 new_value)
+{
+  Atomic32 x = NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+  if (k_has_amd_lock_mb_bug)
+  {
+    __asm__ __volatile__("lfence"
+                         :
+                         :
+                         : "memory");
+  }
+  return x;
+}
+
+inline Atomic32 Release_CompareAndSwap(volatile Atomic32 *ptr,
+                                       Atomic32 old_value,
+                                       Atomic32 new_value)
+{
+  return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+}
+
+inline void NoBarrier_Store(volatile Atomic32 *ptr, Atomic32 value)
+{
+  *ptr = value;
+}
+
+inline void MemoryBarrier()
+{
+  __asm__ __volatile__("mfence"
+                       :
+                       :
+                       : "memory");
+}
+
+inline void Acquire_Store(volatile Atomic32 *ptr, Atomic32 value)
+{
+  *ptr = value;
+  MemoryBarrier();
+}
+
+inline void Release_Store(volatile Atomic32 *ptr, Atomic32 value)
+{
+  ATOMICOPS_COMPILER_BARRIER();
+  *ptr = value; // An x86 store acts as a release barrier.
+  // See comments in Atomic64 version of Release_Store(), below.
+}
+
+inline Atomic32 NoBarrier_Load(volatile const Atomic32 *ptr)
+{
+  return *ptr;
+}
+
+inline Atomic32 Acquire_Load(volatile const Atomic32 *ptr)
+{
+  Atomic32 value = *ptr; // An x86 load acts as a acquire barrier.
+  // See comments in Atomic64 version of Release_Store(), below.
+  ATOMICOPS_COMPILER_BARRIER();
+  return value;
+}
+
+inline Atomic32 Release_Load(volatile const Atomic32 *ptr)
+{
+  MemoryBarrier();
+  return *ptr;
+}
+
+// 64-bit low-level operations on 64-bit platform.
+
+inline Atomic64 NoBarrier_CompareAndSwap(volatile Atomic64 *ptr,
+                                         Atomic64 old_value,
+                                         Atomic64 new_value)
+{
+  Atomic64 prev;
+  __asm__ __volatile__("lock; cmpxchgq %1,%2"
+                       : "=a"(prev)
+                       : "q"(new_value), "m"(*ptr), "0"(old_value)
+                       : "memory");
+  return prev;
+}
+
+inline Atomic64 NoBarrier_AtomicExchange(volatile Atomic64 *ptr,
+                                         Atomic64 new_value)
+{
+  __asm__ __volatile__("xchgq %1,%0" // The lock prefix is implicit for xchg.
+                       : "=r"(new_value)
+                       : "m"(*ptr), "0"(new_value)
+                       : "memory");
+  return new_value; // Now it's the previous value.
+}
+
+inline Atomic64 NoBarrier_AtomicIncrement(volatile Atomic64 *ptr,
+                                          Atomic64 increment)
+{
+  Atomic64 temp = increment;
+  __asm__ __volatile__("lock; xaddq %0,%1"
+                       : "+r"(temp), "+m"(*ptr)
+                       :
+                       : "memory");
+  // temp now contains the previous value of *ptr
+  return temp + increment;
+}
+
+inline Atomic64 Barrier_AtomicIncrement(volatile Atomic64 *ptr,
+                                        Atomic64 increment)
+{
+  Atomic64 temp = increment;
+  __asm__ __volatile__("lock; xaddq %0,%1"
+                       : "+r"(temp), "+m"(*ptr)
+                       :
+                       : "memory");
+  // temp now contains the previous value of *ptr
+  if (k_has_amd_lock_mb_bug)
+  {
+    __asm__ __volatile__("lfence"
+                         :
+                         :
+                         : "memory");
+  }
+  return temp + increment;
+}
+
+inline void NoBarrier_Store(volatile Atomic64 *ptr, Atomic64 value)
+{
+  *ptr = value;
+}
+
+inline void Acquire_Store(volatile Atomic64 *ptr, Atomic64 value)
+{
+  *ptr = value;
+  MemoryBarrier();
+}
+
+inline void Release_Store(volatile Atomic64 *ptr, Atomic64 value)
+{
+  ATOMICOPS_COMPILER_BARRIER();
+
+  *ptr = value; // An x86 store acts as a release barrier
+                // for current AMD/Intel chips as of Jan 2008.
+                // See also Acquire_Load(), below.
+
+  // When new chips come out, check:
+  //  IA-32 Intel Architecture Software Developer's Manual, Volume 3:
+  //  System Programming Guide, Chatper 7: Multiple-processor management,
+  //  Section 7.2, Memory Ordering.
+  // Last seen at:
+  //   http://developer.intel.com/design/pentium4/manuals/index_new.htm
+  //
+  // x86 stores/loads fail to act as barriers for a few instructions (clflush
+  // maskmovdqu maskmovq movntdq movnti movntpd movntps movntq) but these are
+  // not generated by the compiler, and are rare.  Users of these instructions
+  // need to know about cache behaviour in any case since all of these involve
+  // either flushing cache lines or non-temporal cache hints.
+}
+
+inline Atomic64 NoBarrier_Load(volatile const Atomic64 *ptr)
+{
+  return *ptr;
+}
+
+inline Atomic64 Acquire_Load(volatile const Atomic64 *ptr)
+{
+  Atomic64 value = *ptr; // An x86 load acts as a acquire barrier,
+                         // for current AMD/Intel chips as of Jan 2008.
+                         // See also Release_Store(), above.
+  ATOMICOPS_COMPILER_BARRIER();
+  return value;
+}
+
+inline Atomic64 Release_Load(volatile const Atomic64 *ptr)
+{
+  MemoryBarrier();
+  return *ptr;
+}
+
+inline Atomic64 Acquire_CompareAndSwap(volatile Atomic64 *ptr,
+                                       Atomic64 old_value,
+                                       Atomic64 new_value)
+{
+  Atomic64 x = NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+  if (k_has_amd_lock_mb_bug)
+  {
+    __asm__ __volatile__("lfence"
+                         :
+                         :
+                         : "memory");
+  }
+  return x;
+}
+
+inline Atomic64 Release_CompareAndSwap(volatile Atomic64 *ptr,
+                                       Atomic64 old_value,
+                                       Atomic64 new_value)
+{
+  return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
 } // namespace util

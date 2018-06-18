@@ -106,9 +106,9 @@
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
 #ifdef BASE_CXX11_ENABLED
-#define BASE_DELETE_FUNCTION(decl) decl = delete 
-#else 
-#define BASE_DELETE_FUNCTION(decl) decl 
+#define BASE_DELETE_FUNCTION(decl) decl = delete
+#else
+#define BASE_DELETE_FUNCTION(decl) decl
 #endif
 
 // Put this in the private: declarations for a class to be uncopyable.
@@ -130,6 +130,31 @@
   BASE_DELETE_FUNCTION(TypeName(const TypeName &)); \
   BASE_DELETE_FUNCTION(void operator=(const TypeName &))
 #endif
+
+#ifndef DECLARE_SINGLETON
+#define DECLARE_SINGLETON(classname) \
+public:                              \
+  static classname *instance()       \
+  {                                  \
+    static classname instance;       \
+    return &instance;                \
+  }                                  \
+                                     \
+private:                             \
+  classname();                       \
+  DISALLOW_COPY_AND_ASSIGN(classname)
+#endif // DECLARE_SINGLETON
+
+#ifndef DECLARE_PROPERTY
+#define DECLARE_PROPERTY(type, name)                   \
+public:                                                \
+  void set_##name(const type &val) { m_##name = val; } \
+  const type &name() const { return m_##name; }        \
+  type *mutable_##name() { return &m_##name; }         \
+                                                       \
+private:                                               \
+  type m_##name;
+#endif // #ifndef DECLARE_PROPERTY
 
 /// Util macros.
 
@@ -168,5 +193,8 @@
 #define CONTAINING_RECORD(address, type, field) \
   ((type *)((char *)(address)-FIELD_OFFSET(type, field)))
 #endif
+
+#define PRId64_FORMAT "%" PRId64
+#define PRIu64_FORMAT "%" PRIu64
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_

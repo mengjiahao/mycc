@@ -253,7 +253,7 @@ private:
 uint64_t PosixEnv::NowMicros()
 {
   struct timeval tv;
-  ::gettimeofday(&tv, nullptr);
+  ::gettimeofday(&tv, nullptr); // wall time?
   return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 }
 
@@ -266,6 +266,7 @@ uint64_t PosixEnv::NowNanos()
 
 uint64_t PosixEnv::NowChronoNanos()
 {
+  // steady_clock used for calculate duration
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
              std::chrono::steady_clock::now().time_since_epoch())
       .count();

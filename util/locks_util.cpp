@@ -23,15 +23,14 @@ static int PthreadCall(const char *label, int result)
   return result;
 }
 
-static void MakeTimeout(struct timespec *pts, uint64_t millis)
+static void MakeTimeout(struct timespec *pts, uint64_t time_us)
 {
-  struct timeval tv;
-  gettimeofday(&tv, nullptr);
-  pts->tv_sec = millis / 1000 + tv.tv_sec;
-  pts->tv_nsec = (millis % 1000) * 1000000 + tv.tv_usec * 1000;
+  struct timeval now;
+  gettimeofday(&now, NULL);
 
-  pts->tv_sec += pts->tv_nsec / 1000000000;
-  pts->tv_nsec = pts->tv_nsec % 1000000000;
+  int64_t usec = now.tv_usec + time_us;
+  pts->tv_sec = now.tv_sec + usec / 1000000;
+  pts->tv_nsec = (usec % 1000000) * 1000;
 }
 
 } // namespace
@@ -104,10 +103,10 @@ bool Mutex::tryLock()
   return false;
 }
 
-bool Mutex::timedLock(uint64_t millis)
+bool Mutex::timedLock(uint64_t time_us)
 {
   struct timespec ts;
-  MakeTimeout(&ts, millis);
+  MakeTimeout(&ts, time_us);
   int32_t ret = pthread_mutex_timedlock(&mu_, &ts);
   switch (ret)
   {
@@ -276,9 +275,9 @@ void CondVar::signal()
   PthreadCall("signal cv", pthread_cond_signal(&cv_));
 }
 
-void CondVar::broadcast()
+void CondVar::signalall()
 {
-  PthreadCall("broadcast cv", pthread_cond_broadcast(&cv_));
+  PthreadCall("signalall cv", pthread_cond_broadcast(&cv_));
 }
 
 RWMutex::RWMutex()
@@ -478,21 +477,11 @@ void CondLock::wait()
   PthreadCall("condlock wait", pthread_cond_wait(&cond_, &mutex_));
 }
 
-void CondLock::timedWait(uint64_t timeout)
+void CondLock::timedWait(uint64_t time_us)
 {
-  /*
-   * pthread_cond_timedwait api use absolute API
-   * so we need gettimeofday + timeout
-   */
-  struct timeval now;
-  gettimeofday(&now, NULL);
-  struct timespec tsp;
-
-  int64_t usec = now.tv_usec + timeout * 1000LL;
-  tsp.tv_sec = now.tv_sec + usec / 1000000;
-  tsp.tv_nsec = (usec % 1000000) * 1000;
-
-  pthread_cond_timedwait(&cond_, &mutex_, &tsp);
+  struct timespec ts;
+  MakeTimeout(&ts, time_us);
+  pthread_cond_timedwait(&cond_, &mutex_, &ts);
 }
 
 void CondLock::signal()
