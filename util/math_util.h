@@ -17,6 +17,7 @@ namespace util
 
 #define MATH_MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MATH_MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MATH_BEWTEEN(v, min_v, max_v) (((min_v) <= (v)) && ((v) <= (max_v))) // [min_v, max_v]
 
 /**Util macro for conversion from degrees to radians.*/
 #define MATH_DEG_TO_RAD(x) ((x)*0.0174532925f)
@@ -98,20 +99,19 @@ inline uint64_t LowerUint(const uint64_t i, const uint64_t fac)
   return i - (i % fac);
 }
 
-// Roundup i to a multiple of base
-inline uint64_t RoundUp(uint64_t i, uint64_t base)
-{
-  return ((i + base - 1) / base) * base;
-}
-
-inline uint64_t RoundUp2(uint64_t i, uint64_t base2)
+inline uint64_t RoundupPow2(uint64_t i, uint64_t base2)
 {
   return (i + base2 - 1) & (~(base2 - 1));
 }
 
-inline uint64_t RoundDown(uint64_t i, uint64_t base)
+inline uint64_t Roundup(uint64_t x, uint64_t y)
 {
-  return (i / base) * base;
+  return ((x + y - 1) / y) * y;
+}
+
+inline uint64_t Rounddown(uint64_t x, uint64_t y)
+{
+  return (x / y) * y;
 }
 
 //===--------------------------------------------------------------------===//

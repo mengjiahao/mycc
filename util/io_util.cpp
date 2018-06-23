@@ -709,6 +709,12 @@ Status PosixMmapFile::unmapCurrentRegion()
 Status PosixMmapFile::mapNewRegion()
 {
   assert(base_ == nullptr);
+  int32_t alloc_status = ::ftruncate(fd_, file_offset_ + map_size_);
+  if (alloc_status)
+  {
+    return IOError("Error ftruncate space to file : ", filename_,
+                   errno);
+  }
 
   void *ptr = ::mmap(nullptr, map_size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_,
                      file_offset_);
@@ -747,7 +753,7 @@ PosixMmapFile::PosixMmapFile(const string &fname, int32_t fd, uint64_t page_size
     : filename_(fname),
       fd_(fd),
       page_size_(page_size),
-      map_size_(RoundUp(kMmapBoundSize, page_size)),
+      map_size_(Roundup(kMmapBoundSize, page_size)),
       base_(nullptr),
       limit_(nullptr),
       dst_(nullptr),

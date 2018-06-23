@@ -8,7 +8,6 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include "macros_util.h"
 #include "types_util.h"
 
 namespace mycc
@@ -55,7 +54,7 @@ public:
 
   void lock();
   bool tryLock();
-  bool timedLock(uint64_t time_us);
+  bool timedLock(int64_t time_ms);
   void unlock();
   bool isLocked();
   // this will assert if the mutex is not locked
@@ -106,13 +105,13 @@ public:
   ~CondVar();
   void wait();
   // Timed condition wait.  Returns true if timeout occurred.
-  bool timedWait(uint64_t abs_time_us);
+  bool timedWait(int64_t abs_time_ms);
   bool timedWaitAbsolute(const struct timespec &absolute_time);
   // Time wait in timeout us, return true if timeout
-  bool timedWaitRelative(uint64_t rel_time_us);
+  bool timedWaitRelative(int64_t time_ms);
   bool timedWaitRelative(const struct timespec &relative_time);
   void signal();
-  void signalall();
+  void signalAll();
 
 private:
   pthread_cond_t cv_;
@@ -236,42 +235,6 @@ protected:
   SpinLock *spin_lock_;
 };
 
-// SpinMutex has very low overhead for low-contention cases.
-class SpinMutex
-{
-public:
-  inline void lock()
-  {
-    while (lock_.test_and_set(std::memory_order_acquire))
-    {
-    }
-  }
-  inline void unlock() { lock_.clear(std::memory_order_release); }
-  inline int32_t tryLock() { return lock_.test_and_set(std::memory_order_acquire); }
-
-  std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
-  char padding_[64 - sizeof(lock_)]; // Padding to cache line size
-
-  DISALLOW_COPY_AND_ASSIGN(SpinMutex);
-};
-
-class SpinMutexGuard
-{
-public:
-  explicit SpinMutexGuard(SpinMutex *spin_mutex) : spin_mutex_(spin_mutex)
-  {
-    spin_mutex_->lock();
-  }
-
-  ~SpinMutexGuard()
-  {
-    spin_mutex_->unlock();
-  }
-
-protected:
-  SpinMutex *spin_mutex_;
-};
-
 class RefMutex
 {
 public:
@@ -294,39 +257,6 @@ private:
   pthread_mutex_t mu_;
   int32_t refs_;
   DISALLOW_COPY_AND_ASSIGN(RefMutex);
-};
-
-class RecordMutex
-{
-public:
-  RecordMutex(){};
-  ~RecordMutex();
-
-  void lock(const string &key);
-  void unlock(const string &key);
-
-private:
-  Mutex mutex_;
-  std::unordered_map<string, RefMutex *> records_;
-
-  DISALLOW_COPY_AND_ASSIGN(RecordMutex);
-};
-
-class RecordLock
-{
-public:
-  RecordLock(RecordMutex *mu, const string &key)
-      : mu_(mu), key_(key)
-  {
-    mu_->lock(key_);
-  }
-  ~RecordLock() { mu_->unlock(key_); }
-
-private:
-  RecordMutex *const mu_;
-  string key_;
-
-  DISALLOW_COPY_AND_ASSIGN(RecordLock);
 };
 
 /*
@@ -366,7 +296,7 @@ public:
 
     if (counter_ == 0)
     {
-      cond_.signalall();
+      cond_.signalAll();
     }
 
     return counter_ == 0u;
@@ -402,7 +332,7 @@ public:
       : cv_(&mutex_), signaled_(false)
   {
   }
-  
+
   /// Wait for signal
   void wait()
   {
@@ -438,6 +368,25 @@ private:
   Mutex mutex_;
   CondVar cv_;
   bool signaled_;
+};
+
+class CountDownLatch
+{
+public:
+  explicit CountDownLatch(int32_t count);
+
+  void wait();
+
+  void countDown();
+
+  int32_t getCount() const;
+
+private:
+  mutable Mutex mutex_;
+  CondVar condition_;
+  int32_t count_;
+
+  DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
 };
 
 } // namespace util

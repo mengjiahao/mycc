@@ -1,13 +1,163 @@
 
-#ifndef MYCC_UTIL_ATOMICOPS_UTIL_H_
-#define MYCC_UTIL_ATOMICOPS_UTIL_H_
+#ifndef MYCC_UTIL_ATOMIC_UTIL_H_
+#define MYCC_UTIL_ATOMIC_UTIL_H_
 
 #include <atomic>
+#include "macros_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+#if !defined(__i386__) && !defined(__x86_64__)
+#error "Arch not supprot asm atomic!"
+#endif
+
+inline void CompilerBarrier() { __asm__ __volatile__(""
+                                                     :
+                                                     :
+                                                     : "memory"); }
+#if defined __i386__ || defined __x86_64__
+// x86/x64 has a relatively strong memory model,
+// but on x86/x64 StoreLoad reordering (later loads passing earlier stores) can happen.
+// Both a compiler barrier and CPU barrier.
+inline void MemoryBarrier()
+{
+  __asm__ __volatile__("mfence"
+                       :
+                       :
+                       : "memory");
+}
+inline void MemoryReadBarrier() { __asm__ __volatile__("lfence" ::
+                                                           : "memory"); }
+inline void MemoryWriteBarrier() { __asm__ __volatile__("sfence" ::
+                                                            : "memory"); }
+#else
+#error Unsupportted platform.
+#endif
+
+// Legacy __sync Built-in Functions for Atomic Memory Access.
+// https://gcc.gnu.org/onlinedocs/gcc-4.4.4/gcc/Atomic-Builtins.html
+// The definition given in the Intel documentation allows only for 
+// the use of the types int, long, long long or their unsigned counterparts.
+
+template <typename T>
+T AtomicSyncLoad(volatile T *ptr)
+{
+  T oldv = *ptr;
+  __sync_synchronize();
+  return oldv;
+}
+
+template <typename T>
+void AtomicSyncStore(volatile T *ptr, T val)
+{
+  __sync_synchronize();
+  *ptr = val;
+}
+
+template <typename T>
+T AtomicSyncFetchAdd(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_add(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncFetchSub(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_sub(ptr, value);
+}
+
+template <typename T>
+T AtomicvFetchOr(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_or(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncFetchAnd(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_and(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncFetchXor(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_xor(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncFetchNand(volatile T *ptr, T value)
+{
+  return __sync_fetch_and_nand(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncFetchInc(volatile T *ptr)
+{
+  return __sync_fetch_and_add(ptr, 1);
+}
+
+template <typename T>
+T AtomicvFetchDec(volatile T *ptr)
+{
+  return __sync_fetch_and_sub(ptr, 1);
+}
+
+template <typename T>
+T AtomicSyncAddFetch(volatile T *ptr, T value)
+{
+  return __sync_add_and_fetch(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncSubFetch(volatile T *ptr, T val)
+{
+  return __sync_sub_and_fetch(ptr, val);
+}
+
+template <typename T>
+T AtomicSyncOrFetch(volatile T *ptr, T value)
+{
+  return __sync_or_and_fetch(ptr, value);
+}
+
+template <typename T>
+T AtomicSyncAndFetch(volatile T *ptr, T val)
+{
+  return __sync_and_and_fetch(ptr, val);
+}
+
+template <typename T>
+T AtomicSyncXorFetch(volatile T *ptr, T val)
+{
+  return __sync_xor_and_fetch(ptr, val);
+}
+
+template <typename T>
+T AtomicSyncNandFetch(volatile T *ptr, T val)
+{
+  return __sync_nand_and_fetch(ptr, val);
+}
+
+template <typename T>
+T AtomicSyncIncFetch(volatile T *ptr)
+{
+  return __sync_add_and_fetch(ptr, 1);
+}
+
+template <typename T>
+T AtomicSyncDecFetch(volatile T *ptr)
+{
+  return __sync_sub_and_fetch(ptr, 1);
+}
+
+template <typename T>
+bool AtomicSyncCompareExchange(volatile T *ptr, T *expected, T *desired)
+{
+  return __sync_bool_compare_and_swap(ptr, expected, desired);
+}
 
 // Use gcc c++11 built-in functions for memory model aware atomic operations
 
@@ -224,16 +374,8 @@ void AtomicThreadFence(AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
   return __atomic_thread_fence(memorder);
 }
 
-/// asm atomicops
+//////////////////////// asm atomicops ////////////////////////////////
 
-#if !defined(__i386__) && !defined(__x86_64__)
-#error "Arch not supprot asm atomic!"
-#endif
-
-#define ATOMICOPS_COMPILER_BARRIER() __asm__ __volatile__("" \
-                                                          :  \
-                                                          :  \
-                                                          : "memory")
 typedef int32_t Atomic32;
 typedef intptr_t Atomic64;
 // Use AtomicWord for a machine-sized pointer.  It will use the Atomic32 or
@@ -404,14 +546,6 @@ inline void NoBarrier_Store(volatile Atomic32 *ptr, Atomic32 value)
   *ptr = value;
 }
 
-inline void MemoryBarrier()
-{
-  __asm__ __volatile__("mfence"
-                       :
-                       :
-                       : "memory");
-}
-
 inline void Acquire_Store(volatile Atomic32 *ptr, Atomic32 value)
 {
   *ptr = value;
@@ -420,7 +554,7 @@ inline void Acquire_Store(volatile Atomic32 *ptr, Atomic32 value)
 
 inline void Release_Store(volatile Atomic32 *ptr, Atomic32 value)
 {
-  ATOMICOPS_COMPILER_BARRIER();
+  CompilerBarrier();
   *ptr = value; // An x86 store acts as a release barrier.
   // See comments in Atomic64 version of Release_Store(), below.
 }
@@ -434,7 +568,7 @@ inline Atomic32 Acquire_Load(volatile const Atomic32 *ptr)
 {
   Atomic32 value = *ptr; // An x86 load acts as a acquire barrier.
   // See comments in Atomic64 version of Release_Store(), below.
-  ATOMICOPS_COMPILER_BARRIER();
+  CompilerBarrier();
   return value;
 }
 
@@ -512,7 +646,7 @@ inline void Acquire_Store(volatile Atomic64 *ptr, Atomic64 value)
 
 inline void Release_Store(volatile Atomic64 *ptr, Atomic64 value)
 {
-  ATOMICOPS_COMPILER_BARRIER();
+  CompilerBarrier();
 
   *ptr = value; // An x86 store acts as a release barrier
                 // for current AMD/Intel chips as of Jan 2008.
@@ -542,7 +676,7 @@ inline Atomic64 Acquire_Load(volatile const Atomic64 *ptr)
   Atomic64 value = *ptr; // An x86 load acts as a acquire barrier,
                          // for current AMD/Intel chips as of Jan 2008.
                          // See also Release_Store(), above.
-  ATOMICOPS_COMPILER_BARRIER();
+  CompilerBarrier();
   return value;
 }
 
@@ -574,7 +708,100 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64 *ptr,
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
+template <typename T>
+class AtomicInteger
+{
+public:
+  AtomicInteger()
+      : value_(0)
+  {
+  }
+
+  void store(T v)
+  {
+    return AtomicStore(&value_, v);
+  }
+
+  T load()
+  {
+    return AtomicLoad(&value_);
+  }
+
+  T fetch_add(T v)
+  {
+    return AtomicFetchAdd(&value_, v);
+  }
+
+  T fetch_sub(T v)
+  {
+    return AtomicFetchSub(&value_, v);
+  }
+
+  T fetch_and(T v)
+  {
+    return AtomicFetchAnd(&value_, v);
+  }
+
+  T fetch_or(T v)
+  {
+    return AtomicFetchOr(&value_, v);
+  }
+
+  T fetch_xor(T v)
+  {
+    return AtomicFetchXor(&value_, v);
+  }
+
+  T inc_fetch()
+  {
+    return AtomicIncFetch(&value_);
+  }
+
+  T dec_fetch()
+  {
+    return AtomicDecFetch(&value_);
+  }
+
+private:
+  volatile T value_;
+
+  DISALLOW_COPY_AND_ASSIGN(AtomicInteger);
+};
+
+typedef AtomicInteger<int32_t> AtomicInt32;
+typedef AtomicInteger<int64_t> AtomicInt64;
+typedef AtomicInteger<uint32_t> AtomicUint32;
+typedef AtomicInteger<uint64_t> AtomicUint64;
+
+// A type that holds a pointer that can be read or written atomically
+// (i.e., without word-tearing.)
+class AtomicPointer
+{
+private:
+  void *rep_;
+
+public:
+  AtomicPointer() {}
+  explicit AtomicPointer(void *p) : rep_(p) {}
+
+  inline void *NoBarrier_Load() const { return rep_; }
+  inline void NoBarrier_Store(void *v) { rep_ = v; }
+
+  inline void *Acquire_Load() const
+  {
+    void *result = rep_;
+    MemoryBarrier();
+    return result;
+  }
+
+  inline void Release_Store(void *v)
+  {
+    MemoryBarrier();
+    rep_ = v;
+  }
+};
+
 } // namespace util
 } // namespace mycc
 
-#endif // MYCC_UTIL_ATOMICOPS_UTIL_H_
+#endif // MYCC_UTIL_ATOMIC_UTIL_H_

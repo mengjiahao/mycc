@@ -2,9 +2,13 @@
 #ifndef MYCC_UTIL_THREADPOOL_UTIL_H_
 #define MYCC_UTIL_THREADPOOL_UTIL_H_
 
+#include <pthread.h>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <vector>
 #include "env_util.h"
+#include "locks_util.h"
 
 namespace mycc
 {
@@ -16,8 +20,6 @@ class ThreadPoolImpl : public ThreadPool
 public:
   ThreadPoolImpl();
   ~ThreadPoolImpl();
-
-  static void PthreadCall(const char *label, int32_t result);
 
   // Implement ThreadPool interfaces
 
@@ -101,6 +103,87 @@ private:
   std::unique_ptr<Impl> impl_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPoolImpl);
+};
+
+// Background execution service.
+class PosixFixedThreadPool
+{
+public:
+  explicit PosixFixedThreadPool(int32_t max_threads, bool eager_init = false,
+                                void *attr = NULL)
+      : bg_cv_(&mu_),
+        num_pool_threads_(0),
+        max_threads_(max_threads),
+        shutting_down_(false),
+        paused_(false)
+  {
+    if (eager_init)
+    {
+      // Create pool threads immediately
+      MutexLock ml(&mu_);
+      initPool(attr);
+    }
+  }
+  virtual ~PosixFixedThreadPool();
+
+  // Instantiate a new thread pool with a fixed number of threads. The caller
+  // should delete the pool to free associated resources.
+  // If "eager_init" is true, children threads will be created immediately.
+  // A caller may optionally set "attr" to alter default thread behaviour.
+  static PosixFixedThreadPool *NewFixedThreadPool(int32_t num_threads, bool eager_init = false,
+                                                  void *attr = NULL);
+
+  // Arrange to run "(*function)(arg)" once in one of a pool of
+  // background threads.
+  //
+  // "function" may run in an unspecified thread.  Multiple functions
+  // added to the same pool may run concurrently in different threads.
+  // I.e., the caller may not assume that background work items are
+  // serialized.
+  virtual void schedule(void (*function)(void *), void *arg, const string &name = "BgWork");
+
+  // Return a description of the pool implementation.
+  virtual string toDebugString();
+
+  // Stop executing any tasks. Tasks already scheduled will keep running. Tasks
+  // not yet scheduled won't be scheduled. Tasks submitted in future will be
+  // queued but won't be scheduled.
+  virtual void pause();
+
+  // Resume executing tasks.
+  virtual void resume();
+
+  void initPool(void *attr);
+
+private:
+  // BGThread() is the body of the background thread
+  void BGThread();
+
+  static void *BGWrapper(void *arg)
+  {
+    reinterpret_cast<PosixFixedThreadPool *>(arg)->BGThread();
+    return NULL;
+  }
+
+  Mutex mu_;
+  CondVar bg_cv_;
+  int32_t num_pool_threads_;
+  int32_t max_threads_;
+
+  bool shutting_down_;
+  bool paused_;
+
+  // Entry per Schedule() call
+  struct BGItem
+  {
+    void *arg;
+    void (*function)(void *);
+    string name;
+  };
+  typedef std::deque<BGItem> BGQueue;
+  BGQueue queue_;
+  std::vector<pthread_t> bgthreads_;
+  DISALLOW_COPY_AND_ASSIGN(PosixFixedThreadPool);
 };
 
 } // namespace util

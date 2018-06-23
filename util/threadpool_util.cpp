@@ -2,13 +2,13 @@
 #include "threadpool_util.h"
 #include <stdlib.h>
 #include <unistd.h>
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
 #include <thread>
 #include <vector>
-#include "macros_util.h"
 #include "math_util.h"
 #include "string_util.h"
 #include "types_util.h"
@@ -23,8 +23,11 @@ namespace mycc
 namespace util
 {
 
+namespace
+{ // namespace anonymous
+
 // check for result = pthread_xxx()
-void ThreadPoolImpl::PthreadCall(const char *label, int32_t result)
+void PthreadCall(const char *label, int32_t result)
 {
   if (result != 0)
   {
@@ -32,6 +35,8 @@ void ThreadPoolImpl::PthreadCall(const char *label, int32_t result)
     abort();
   }
 }
+
+} // namespace
 
 struct ThreadPoolImpl::Impl
 {
@@ -511,6 +516,121 @@ Env::Priority ThreadPoolImpl::getThreadPriority() const
 void ThreadPoolImpl::setThreadPriority(Env::Priority priority)
 {
   impl_->setThreadPriority(priority);
+}
+
+////////////////// PosixFixedThreadPool //////////////////////
+
+PosixFixedThreadPool *PosixFixedThreadPool::NewFixedThreadPool(int32_t num_threads, bool eager_init, void *attr)
+{
+  return new PosixFixedThreadPool(num_threads, eager_init, attr);
+}
+
+PosixFixedThreadPool::~PosixFixedThreadPool()
+{
+  MutexLock ml(&mu_);
+  shutting_down_ = true;
+  bg_cv_.signalAll();
+  while (num_pool_threads_ != 0)
+  {
+    bg_cv_.wait(); // wait for num_pool_threads_
+  }
+  assert(bgthreads_.size() == 0);
+  bgthreads_.clear();
+}
+
+string PosixFixedThreadPool::toDebugString()
+{
+  char tmp[100];
+  snprintf(tmp, sizeof(tmp), "POSIX fixed thread pool: num_threads=%d",
+           max_threads_);
+  return tmp;
+}
+
+void PosixFixedThreadPool::initPool(void *attr)
+{
+  mu_.assertHeld();
+  while (num_pool_threads_ < max_threads_)
+  {
+    ++num_pool_threads_;
+    pthread_t t;
+    PthreadCall(
+        "pthread_create",
+        ::pthread_create(&t, NULL, BGWrapper, this));
+    bgthreads_.push_back(t);
+  }
+}
+
+void PosixFixedThreadPool::schedule(void (*function)(void *), void *arg, const string &name)
+{
+  MutexLock ml(&mu_);
+  if (shutting_down_)
+    return;
+  initPool(NULL); // Start background threads if necessary
+
+  // If the queue is currently empty, the background threads
+  // may be waiting.
+  if (queue_.empty())
+    bg_cv_.signalAll();
+
+  // Add to priority queue
+  BGItem work;
+  work.function = function;
+  work.arg = arg;
+  work.name = name;
+  queue_.push_back(work);
+}
+
+void PosixFixedThreadPool::BGThread()
+{
+  void (*function)(void *) = NULL;
+  void *arg;
+
+  pthread_t th = ::pthread_self();
+
+  while (true)
+  {
+    {
+      MutexLock ml(&mu_);
+      // Wait until there is an item that is ready to run
+      while (!shutting_down_ && (paused_ || queue_.empty()))
+      {
+        bg_cv_.wait();
+      }
+      if (shutting_down_)
+      {
+        assert(num_pool_threads_ > 0);
+        std::vector<pthread_t>::iterator it = std::find(bgthreads_.begin(), bgthreads_.end(), th);
+        if (it != bgthreads_.end())
+        {
+          bgthreads_.erase(it);
+        }
+        --num_pool_threads_;
+        bg_cv_.signalAll();
+        return;
+      }
+
+      assert(!queue_.empty());
+      function = queue_.front().function;
+      arg = queue_.front().arg;
+      queue_.pop_front();
+    }
+
+    assert(function != NULL);
+    function(arg);
+  }
+}
+
+void PosixFixedThreadPool::resume()
+{
+  MutexLock ml(&mu_);
+  paused_ = false;
+  bg_cv_.signalAll();
+}
+
+void PosixFixedThreadPool::pause()
+{
+  MutexLock ml(&mu_);
+  paused_ = true;
 }
 
 } // namespace util

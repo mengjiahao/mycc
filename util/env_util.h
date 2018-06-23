@@ -113,6 +113,7 @@ struct ThreadOptions
   uint64_t stack_size = 0; // 0: use system default value
   /// Guard area size to use near thread stacks to use (in bytes)
   uint64_t guard_size = 0; // 0: use system default value
+  string name = "Thread";
 };
 
 class Env
@@ -420,7 +421,7 @@ public:
   virtual string PriorityToString(Priority priority) = 0;
 
   // Returns the ID of the current thread.
-  virtual uint64_t GetThreadID() = 0;
+  virtual uint64_t GetThisThreadId() = 0;
 
   virtual uint64_t GetStdThreadId() = 0;
 

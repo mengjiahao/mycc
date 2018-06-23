@@ -43,12 +43,11 @@
 #define nullptr NULL
 #endif
 
-#if defined(__GNUC__) && __GNUC__ >= 4
-#define BUILTIN_LIKELY(x) (__builtin_expect((x), 1))
-#define BUILTIN_UNLIKELY(x) (__builtin_expect((x), 0))
-#else
-#define BUILTIN_LIKELY(x) (x)
-#define BUILTIN_UNLIKELY(x) (x)
+#ifndef LIKELY
+#define LIKELY(x) (__builtin_expect(!!(x), 1))
+#endif
+#ifndef UNLIKELY
+#define UNLIKELY(x) (__builtin_expect(!!(x), 0))
 #endif
 
 #if defined(COMPILER_GCC)
@@ -102,6 +101,22 @@
 #ifndef UNUSED_PARAM
 #define UNUSED_PARAM(param) (void)(param)
 #endif
+
+/// thread-annotations
+
+#if defined(__clang__) && (!defined(SWIG))
+#define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
+#else
+#define THREAD_ANNOTATION_ATTRIBUTE__(x) // no-op
+#endif
+
+// Document if a shared variable/field needs to be protected by a mutex.
+// GUARDED_BY allows the user to specify a particular mutex that should be
+// held when accessing the annotated variable.  GUARDED_VAR indicates that
+// a shared variable is guarded by some unspecified mutex, for use in rare
+// cases where a valid mutex expression cannot be specified.
+#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
+#define GUARDED_VAR THREAD_ANNOTATION_ATTRIBUTE__(guarded)
 
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
@@ -196,5 +211,29 @@ private:                                               \
 
 #define PRId64_FORMAT "%" PRId64
 #define PRIu64_FORMAT "%" PRIu64
+
+#define BASE_SAFE_DELETE(p) \
+  do                        \
+  {                         \
+    delete (p);             \
+    (p) = NULL;             \
+  } while (0)
+
+#define BASE_SAFE_DELETE_ARRAY(p) \
+  do                              \
+  {                               \
+    if (p)                        \
+    {                             \
+      delete[](p);                \
+      (p) = NULL;                 \
+    }                             \
+  } while (0)
+
+#define BASE_SAFE_FREE(p) \
+  do                      \
+  {                       \
+    ::free(p);            \
+    (p) = NULL;           \
+  } while (0)
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_

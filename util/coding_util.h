@@ -296,6 +296,7 @@ extern void PutVarint32Varint32Varint64(string *dst, uint32_t value1,
                                         uint32_t value2, uint64_t value3);
 
 extern void PutLengthPrefixedString(string *dst, const string &value);
+extern void PutLengthPrefixedStringPiece(string *dst, const StringPiece &value);
 
 // Standard Get... routines parse a value from the beginning of a StringPiece
 // and advance the slice past the parsed value.

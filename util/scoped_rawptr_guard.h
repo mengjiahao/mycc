@@ -14,30 +14,31 @@ template <typename T>
 class ScopedRawPtrGuard
 {
 public:
-  explicit ScopedRawPtrGuard(T *&ptr, bool isFree = false)
-      : ptr_(ptr)
+  explicit ScopedRawPtrGuard(T *&ptr, bool isNeedFree = false)
+      : ptr_(ptr), is_need_free_(isNeedFree)
   {
   }
 
   ~ScopedRawPtrGuard()
   {
-    if (BUILTIN_UNLIKELY(nullptr == ptr_))
+    if (UNLIKELY(NULL == ptr_))
     {
       return;
     }
-    if (BUILTIN_UNLIKELY(isFree))
+    if (UNLIKELY(is_need_free_))
     {
-      free(ptr_);
+      ::free(ptr_);
     }
     else
     {
       delete ptr_;
     }
-    ptr_ = nullptr;
+    ptr_ = NULL;
   }
 
 private:
   T *&ptr_;
+  bool is_need_free_;
 };
 
 } // namespace util

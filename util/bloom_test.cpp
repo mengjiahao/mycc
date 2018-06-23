@@ -57,7 +57,7 @@ NO_TEST(BloomTest, onethread_with_perf)
   uint32_t num_probes = 2;
   uint64_t m_limit = 1;
 
-  test::Timer timer, timeronce;
+  util::Timer timer, timeronce;
   uint64_t elapsedOnce = 0;
   UNUSED_PARAM(elapsedOnce);
   uint64_t total_count = 0;
@@ -131,7 +131,7 @@ NO_TEST(BloomTest, multithread_with_perf)
   uint32_t num_probes = 2;
   uint64_t m_limit = 6;
 
-  test::Timer timer;
+  util::Timer timer;
   uint64_t elapsedOnce = 0;
   UNUSED_PARAM(elapsedOnce);
 
@@ -156,7 +156,7 @@ NO_TEST(BloomTest, multithread_with_perf)
       uint64_t v = 1;
       UNUSED_PARAM(v);
       uint64_t count = 0;
-      test::Timer timer_one;
+      util::Timer timer_one;
       timer_one.start();
       for (uint64_t i = 1 + t; i <= num_keys; i += num_threads)
       {
@@ -192,7 +192,7 @@ NO_TEST(BloomTest, multithread_with_perf)
       uint64_t v = 1;
       UNUSED_PARAM(v);
       uint64_t count = 0;
-      test::Timer timer_one;
+      util::Timer timer_one;
       timer_one.start();
       for (uint64_t i = 1 + t; i <= num_keys; i += num_threads)
       {
@@ -227,7 +227,7 @@ NO_TEST(BloomTest, multithread_with_perf)
     std::function<void(uint64_t)> misser = [&](uint64_t t) {
       // check (num_keys, 2 * num_keys]
       uint64_t count = 0;
-      test::Timer timer_one;
+      util::Timer timer_one;
       timer_one.start();
       for (uint64_t i = num_keys + 1 + t; i <= 2 * num_keys;
            i += num_threads)

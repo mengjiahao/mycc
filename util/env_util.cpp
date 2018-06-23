@@ -221,7 +221,7 @@ public:
                                   string *data) override;
   virtual string GenerateUniqueId() override;
   virtual string PriorityToString(Priority priority) override;
-  virtual uint64_t GetThreadID() override;
+  virtual uint64_t GetThisThreadId() override;
   virtual uint64_t GetStdThreadId() override;
   virtual void StartNewPthread(void (*function)(void *arg), void *arg) override;
   virtual Thread *StartNewThread(const ThreadOptions &thread_options,
@@ -1395,7 +1395,7 @@ string PosixEnv::PriorityToString(Env::Priority priority)
   return "Invalid";
 }
 
-uint64_t PosixEnv::GetThreadID()
+uint64_t PosixEnv::GetThisThreadId()
 {
   return Gettid(pthread_self());
 }
@@ -1472,7 +1472,7 @@ void PosixEnv::LowerThreadPoolCPUPriority(Priority pool)
 PosixEnv::PosixEnv()
     : thread_pools_(Priority::TOTAL)
 {
-  ThreadPoolImpl::PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
+  PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
   for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
   {
     thread_pools_[pool_id].setThreadPriority(
@@ -1500,11 +1500,11 @@ void PosixEnv::StartThread(void (*function)(void *arg), void *arg)
   StartThreadState *state = new StartThreadState;
   state->user_function = function;
   state->arg = arg;
-  ThreadPoolImpl::PthreadCall(
+  PthreadCall(
       "start thread", pthread_create(&t, nullptr, &StartThreadWrapper, state));
-  ThreadPoolImpl::PthreadCall("lock", pthread_mutex_lock(&mu_));
+  PthreadCall("lock", pthread_mutex_lock(&mu_));
   threads_to_join_.push_back(t);
-  ThreadPoolImpl::PthreadCall("unlock", pthread_mutex_unlock(&mu_));
+  PthreadCall("unlock", pthread_mutex_unlock(&mu_));
 }
 
 void PosixEnv::WaitForJoin()

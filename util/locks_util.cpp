@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include "time_util.h"
 
 namespace mycc
 {
@@ -21,16 +22,6 @@ static int PthreadCall(const char *label, int result)
     abort();
   }
   return result;
-}
-
-static void MakeTimeout(struct timespec *pts, uint64_t time_us)
-{
-  struct timeval now;
-  gettimeofday(&now, NULL);
-
-  int64_t usec = now.tv_usec + time_us;
-  pts->tv_sec = now.tv_sec + usec / 1000000;
-  pts->tv_nsec = (usec % 1000000) * 1000;
 }
 
 } // namespace
@@ -103,10 +94,10 @@ bool Mutex::tryLock()
   return false;
 }
 
-bool Mutex::timedLock(uint64_t time_us)
+bool Mutex::timedLock(int64_t time_ms)
 {
   struct timespec ts;
-  MakeTimeout(&ts, time_us);
+  MakeTimeoutMs(&ts, time_ms);
   int32_t ret = pthread_mutex_timedlock(&mu_, &ts);
   switch (ret)
   {
@@ -191,11 +182,11 @@ void CondVar::wait()
 #endif
 }
 
-bool CondVar::timedWait(uint64_t abs_time_us)
+bool CondVar::timedWait(int64_t abs_time_ms)
 {
   struct timespec ts;
-  ts.tv_sec = static_cast<time_t>(abs_time_us / 1000000);
-  ts.tv_nsec = static_cast<suseconds_t>((abs_time_us % 1000000) * 1000);
+  ts.tv_sec = static_cast<time_t>(abs_time_ms / 1000);
+  ts.tv_nsec = static_cast<suseconds_t>((abs_time_ms % 1000) * 1000000);
 
 #ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
@@ -234,15 +225,12 @@ bool CondVar::timedWaitAbsolute(const struct timespec &absolute_time)
   return true;
 }
 
-bool CondVar::timedWaitRelative(uint64_t rel_time_us)
+bool CondVar::timedWaitRelative(int64_t time_ms)
 {
   // pthread_cond_timedwait api use absolute API
   // so we need gettimeofday + relative_time
   struct timespec ts;
-  struct timeval now;
-  gettimeofday(&now, nullptr);
-  ts.tv_sec = now.tv_sec + static_cast<time_t>(rel_time_us / 1000000);
-  ts.tv_nsec = static_cast<suseconds_t>(((now.tv_usec + rel_time_us) % 1000000) * 1000);
+  MakeTimeoutMs(&ts, time_ms);
 
 #ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
@@ -275,9 +263,9 @@ void CondVar::signal()
   PthreadCall("signal cv", pthread_cond_signal(&cv_));
 }
 
-void CondVar::signalall()
+void CondVar::signalAll()
 {
-  PthreadCall("signalall cv", pthread_cond_broadcast(&cv_));
+  PthreadCall("signalAll cv", pthread_cond_broadcast(&cv_));
 }
 
 RWMutex::RWMutex()
@@ -400,58 +388,6 @@ void RefMutex::unlock()
   PthreadCall("unlock refmutex", pthread_mutex_unlock(&mu_));
 }
 
-RecordMutex::~RecordMutex()
-{
-  mutex_.lock();
-  std::unordered_map<string, RefMutex *>::const_iterator it = records_.begin();
-  for (; it != records_.end(); it++)
-  {
-    delete it->second;
-  }
-  mutex_.unlock();
-}
-
-void RecordMutex::lock(const string &key)
-{
-  mutex_.lock();
-  std::unordered_map<string, RefMutex *>::const_iterator it = records_.find(key);
-
-  if (it != records_.end())
-  {
-    RefMutex *ref_mutex = it->second;
-    ref_mutex->ref();
-    mutex_.unlock();
-    ref_mutex->lock();
-  }
-  else
-  {
-    RefMutex *ref_mutex = new RefMutex();
-
-    records_.insert(std::make_pair(key, ref_mutex));
-    ref_mutex->ref();
-    mutex_.unlock();
-    ref_mutex->lock();
-  }
-}
-
-void RecordMutex::unlock(const string &key)
-{
-  mutex_.lock();
-  std::unordered_map<string, RefMutex *>::const_iterator it = records_.find(key);
-
-  if (it != records_.end())
-  {
-    RefMutex *ref_mutex = it->second;
-    if (ref_mutex->isLastRef())
-    {
-      records_.erase(it);
-    }
-    ref_mutex->unlock();
-    ref_mutex->unref();
-  }
-  mutex_.unlock();
-}
-
 CondLock::CondLock()
 {
   PthreadCall("init condlock", pthread_mutex_init(&mutex_, nullptr));
@@ -480,7 +416,7 @@ void CondLock::wait()
 void CondLock::timedWait(uint64_t time_us)
 {
   struct timespec ts;
-  MakeTimeout(&ts, time_us);
+  MakeTimeoutUs(&ts, time_us);
   pthread_cond_timedwait(&cond_, &mutex_, &ts);
 }
 
@@ -492,6 +428,38 @@ void CondLock::signal()
 void CondLock::broadcast()
 {
   PthreadCall("condlock broadcast", pthread_cond_broadcast(&cond_));
+}
+
+CountDownLatch::CountDownLatch(int32_t count)
+    : mutex_(),
+      condition_(&mutex_),
+      count_(count)
+{
+}
+
+void CountDownLatch::wait()
+{
+  MutexLock lock(&mutex_);
+  while (count_ > 0)
+  {
+    condition_.wait();
+  }
+}
+
+void CountDownLatch::countDown()
+{
+  MutexLock lock(&mutex_);
+  --count_;
+  if (count_ == 0)
+  {
+    condition_.signalAll();
+  }
+}
+
+int32_t CountDownLatch::getCount() const
+{
+  MutexLock lock(&mutex_);
+  return count_;
 }
 
 } // namespace util

@@ -1,7 +1,7 @@
 
 #include "bloom.h"
 #include <assert.h>
-#include "atomicops_util.h"
+#include "atomic_util.h"
 #include "coding_util.h"
 #include "env_util.h"
 #include "hash_util.h"
@@ -66,7 +66,7 @@ string BloomFilter::toString()
 void BloomFilter::initialize(uint64_t total_bits, uint32_t num_probes)
 {
   // total_bits_ must >= total_bits
-  total_bits_ = RoundUp(total_bits, 8); // make sure is byte roundup
+  total_bits_ = Roundup(total_bits, 64); // make sure is byte roundup
   num_probes_ = num_probes;
 
   uint64_t bytes = getTotalBytes();

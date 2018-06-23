@@ -189,6 +189,12 @@ void PutLengthPrefixedString(string *dst, const string &value)
   dst->append(value.data(), value.size());
 }
 
+void PutLengthPrefixedStringPiece(string *dst, const StringPiece &value)
+{
+  PutVarint32(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
 void GetFixed32(string *dst, uint32_t *value)
 {
   *value = DecodeFixed32(dst->data());

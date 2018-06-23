@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <atomic>
 #include <chrono>
 #include <type_traits>
@@ -15,6 +17,122 @@ namespace mycc
 {
 namespace util
 {
+
+// The range of timestamp values we support.
+static const int64_t kMinTime = -62135596800LL; // 0001-01-01T00:00:00
+static const int64_t kMaxTime = 253402300799LL; // 9999-12-31T23:59:59
+
+// The min/max Timestamp/Duration values we support.
+//
+// For "0001-01-01T00:00:00Z".
+static const int64_t kTimestampMinSeconds = -62135596800LL;
+// For "9999-12-31T23:59:59.999999999Z".
+static const int64_t kTimestampMaxSeconds = 253402300799LL;
+static const int64_t kDurationMinSeconds = -315576000000LL;
+static const int64_t kDurationMaxSeconds = 315576000000LL;
+
+static const int64_t kSecondsPerMinute = 60;
+static const int64_t kSecondsPerHour = 3600;
+static const int64_t kSecondsPerDay = kSecondsPerHour * 24;
+static const int64_t kSecondsPer400Years =
+    kSecondsPerDay * (400 * 365 + 400 / 4 - 3);
+// Seconds from 0001-01-01T00:00:00 to 1970-01-01T:00:00:00
+static const int64_t kSecondsFromEraToEpoch = 62135596800LL;
+
+static const int64_t kMillisPerSecond = 1000;
+static const int64_t kMicrosPerMillisecond = 1000;
+static const int64_t kMicrosPerSecond = 1000000;
+static const int64_t kMicrosPerMinute = kMicrosPerSecond * 60;
+static const int64_t kMicrosPerHour = kMicrosPerMinute * 60;
+static const int64_t kMicrosPerDay = kMicrosPerHour * 24;
+static const int64_t kMicrosPerWeek = kMicrosPerDay * 7;
+static const int64_t kNanosPerMicrosecond = 1000;
+static const int64_t kNanosPerMillisecond = 1000000;
+static const int64_t kNanosPerSecond = 1000000000;
+
+extern const char *kTimestampStdFormat;
+extern const char *kTimeFormat;
+
+struct DateTime
+{
+  int32_t year;
+  int32_t month;
+  int32_t day;
+  int32_t hour;
+  int32_t minute;
+  int32_t second;
+};
+
+inline int64_t SecsToNanos(int64_t secs)
+{
+  return secs * 1000000000;
+}
+
+inline int64_t MillisToNanos(int64_t secs)
+{
+  return secs * 1000000;
+}
+
+inline int64_t MicrosToNanos(int64_t secs)
+{
+  return secs * 1000;
+}
+
+inline int64_t NanosToSecs(int64_t secs)
+{
+  return secs / 1000000000;
+}
+
+inline int64_t NanosToMicros(int64_t secs)
+{
+  return secs / 1000;
+}
+
+inline int64_t NanosToMillis(int64_t secs)
+{
+  return secs / 1000000;
+}
+
+// Converts a timestamp (seconds elapsed since 1970-01-01T00:00:00, could be
+// negative to represent time before 1970-01-01) to DateTime. Returns false
+// if the timestamp is not in the range between 0001-01-01T00:00:00 and
+// 9999-12-31T23:59:59.
+bool SecondsToDateTime(int64_t seconds, DateTime *time);
+// Converts DateTime to a timestamp (seconds since 1970-01-01T00:00:00).
+// Returns false if the DateTime is not valid or is not in the valid range.
+bool DateTimeToSeconds(const DateTime &time, int64_t *seconds);
+
+void SleepForMicros(uint32_t micros);
+void SleepForSecs(uint32_t secs);
+
+int64_t NowSystimeMicros();
+int64_t NowMonotonicNanos();
+int64_t NowMonotonicMicros();
+int64_t NowMonotonicSecs();
+
+string CurrentSystimeString();
+string FormatSystime(int64_t micros);
+string CurrentTimestampString();
+string FormatTimestamp(int64_t seconds);
+int64_t ParseTimestamp(const string &time_str);
+
+void MakeTimeoutMs(struct timespec *pts, int64_t millis);
+void MakeTimeoutUs(struct timespec *pts, int64_t micros);
+
+bool IsInHourRange(int64_t min_hour, int64_t max_hour);
+
+class Timer
+{
+public:
+  Timer() : start_(0) {}
+  void start();
+  uint64_t elapsedNanos(bool reset = false);
+
+private:
+  uint64_t start_;
+};
+
+////////////////////// c++11 chrno /////////////////////////////
 
 /**
  * @class ChronoDuration
@@ -132,8 +250,7 @@ public:
   enum ClockMode
   {
     SYSTEM = 0,
-    MOCK = 1,
-    ROS = 2,
+    MOCK,
   };
 
   /**
@@ -193,7 +310,6 @@ private:
    */
   explicit ChronoClock(ClockMode mode) : mode_(mode), mock_now_(ChronoTimestamp())
   {
-    //ros::Time::init();
   }
 
   /**

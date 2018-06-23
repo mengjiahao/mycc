@@ -10,6 +10,7 @@
 #include <sstream>
 #include "env_util.h"
 #include "error_util.h"
+#include "time_util.h"
 #include "types_util.h"
 
 namespace mycc
@@ -140,18 +141,6 @@ public:
 // Register the specified test.  Typically not used directly, but
 // invoked via the macro expansion of TEST.
 bool RegisterTest(const char *base, const char *name, void (*func)());
-
-class Timer
-{
-public:
-  Timer() : start_(0), env_(util::Env::Default()) {}
-  void start();
-  uint64_t elapsedNanos(bool reset = false);
-
-private:
-  uint64_t start_;
-  util::Env *env_;
-};
 
 } // namespace test
 } // namespace mycc

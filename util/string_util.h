@@ -117,10 +117,8 @@ void StringToLower(string *str);
 
 // Return lower-cased version of s.
 string Lowercase(StringPiece s);
-
 // Return upper-cased version of s.
 string Uppercase(StringPiece s);
-
 // Capitalize first character of each word in "*s".  "delimiters" is a
 // set of characters that can be used as word boundaries.
 void TitlecaseString(string *s, StringPiece delimiters);
@@ -131,19 +129,16 @@ void TitlecaseString(string *s, StringPiece delimiters);
 template <typename T>
 inline string ToString(T value)
 {
-  return std::to_string(value);
+  return std::to_string(value); // c++11
 }
 
 // Lower-level routine that takes a va_list and appends to a specified
 // string.  All other routines are just convenience wrappers around it.
 uint64_t StringFormatAppendVA(string *dst, const char *format, va_list ap);
-
 // Append result to a supplied string
 uint64_t StringFormatAppend(string *dst, const char *format, ...);
-
 // Store result into a supplied string and return it
 uint64_t StringFormatTo(string *dst, const char *format, ...);
-
 // Return a C++ string
 string StringFormat(const char *format, ...);
 
@@ -201,7 +196,7 @@ int32_t StringParseInt32(const string &value);
 double StringParseDouble(const string &value);
 size_t StringParseSizeT(const string &value);
 
-bool SerializeVectorInt32(const std::vector<int32_t> &vec, string *value);
+bool VectorInt32ToString(const std::vector<int32_t> &vec, string *value);
 std::vector<int32_t> StringParseVectorInt32(const string &value);
 
 // Convert a 64-bit fingerprint value to an ASCII representation that
@@ -234,6 +229,22 @@ bool SafeStrToInt64(StringPiece str, int64_t *value);
 // Return false with overflow or invalid input.
 bool SafeStrToUint64(StringPiece str, uint64_t *value);
 
+// Append a human-readable printout of "num" to *str
+void StringAppendNumberTo(string *str, uint64_t num);
+// Append a human-readable printout of "value" to *str.
+// Escapes any non-printable characters found in "value".
+void StringAppendEscapedStringTo(string *str, const StringPiece &value);
+// Return a human-readable printout of "num"
+string NumberToString(uint64_t num);
+// Return a human-readable version of "value".
+// Escapes any non-printable characters found in "value".
+string EscapeString(const StringPiece &value);
+// Parse a human-readable number from "*in" into *value.  On success,
+// advances "*in" past the consumed number and sets "*val" to the
+// numeric value.  Otherwise, returns false and leaves *in in an
+// unspecified state.
+bool StringConsumeDecimalNumber(StringPiece *in, uint64_t *val);
+
 /// ---------------------------------------------------------------
 /// @brief converting numbers  to buffer, buffer size should be big enough
 /// ---------------------------------------------------------------
@@ -246,21 +257,21 @@ const int kMaxIntStringSize = kMaxIntegerStringSize;
 /// @return end of result
 /// @note without '\0' appended
 /// private functions for common library, don't use them in your code
-char* WriteDoubleToBuffer(double n, char* buffer);
-char* WriteFloatToBuffer(float n, char* buffer);
-char* WriteInt32ToBuffer(int32_t i, char* buffer);
-char* WriteUInt32ToBuffer(uint32_t u, char* buffer);
-char* WriteInt64ToBuffer(int64_t i, char* buffer);
-char* WriteUInt64ToBuffer(uint64_t u64, char* buffer);
+char *WriteDoubleToBuffer(double n, char *buffer);
+char *WriteFloatToBuffer(float n, char *buffer);
+char *WriteInt32ToBuffer(int32_t i, char *buffer);
+char *WriteUInt32ToBuffer(uint32_t u, char *buffer);
+char *WriteInt64ToBuffer(int64_t i, char *buffer);
+char *WriteUInt64ToBuffer(uint64_t u64, char *buffer);
 
 /// @brief write number to buffer as string
 /// @return start of buffer
 /// @note with '\0' appended
-char* DoubleToString(double n, char* buffer);
-char* FloatToString(float n, char* buffer);
-char* UInt16ToHexString(uint16_t value, char* buffer);
-char* UInt32ToHexString(uint32_t value, char* buffer);
-char* UInt64ToHexString(uint64_t value, char* buffer);
+char *DoubleToString(double n, char *buffer);
+char *FloatToString(float n, char *buffer);
+char *UInt16ToHexString(uint16_t value, char *buffer);
+char *UInt32ToHexString(uint32_t value, char *buffer);
+char *UInt64ToHexString(uint64_t value, char *buffer);
 
 string Int64ToString(int64_t num);
 string Uint64ToString(uint64_t num);
@@ -298,8 +309,8 @@ int32_t AppendHumanMicros(uint64_t micros, char *output, int64_t len);
 
 /// string ops
 
-bool StartsWith(const string &str, const string &prefix);
-bool EndsWith(const string &str, const string &suffix);
+bool StringStartsWith(const string &str, const string &prefix);
+bool StringEndsWith(const string &str, const string &suffix);
 
 // ----------------------------------------------------------------------
 // HasSuffixString()
@@ -322,8 +333,8 @@ inline bool HasPrefixString(const string &str,
          str.compare(0, prefix.size(), prefix) == 0;
 }
 
-bool StripSuffix(string *str, const string &suffix);
-bool StripPrefix(string *str, const string &prefix);
+bool StringStripSuffix(string *str, const string &suffix);
+bool StringStripPrefix(string *str, const string &prefix);
 
 string &StringLtrim(string &str);
 string &StringRtrim(string &str);
@@ -354,8 +365,6 @@ string StringReplace(const string &str,
                      const string &dest);
 
 string StringConcat(const std::vector<string> &elems, char delim);
-
-string &StringToLower(string &ori);
 
 // Removes leading ascii_isspace() characters.
 // Returns number of characters removed.

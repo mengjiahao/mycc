@@ -353,7 +353,7 @@ size_t StringParseSizeT(const string &value)
   return static_cast<size_t>(StringParseUint64(value));
 }
 
-bool SerializeVectorInt32(const std::vector<int32_t> &vec, string *value)
+bool VectorInt32ToString(const std::vector<int32_t> &vec, string *value)
 {
   *value = "";
   for (uint64_t i = 0; i < vec.size(); ++i)
@@ -584,6 +584,84 @@ bool SafeStrToUint64(StringPiece str, uint64_t *value)
 
   *value = result;
   return true;
+}
+
+void StringAppendNumberTo(string *str, uint64_t num)
+{
+  char buf[30] = {0};
+  snprintf(buf, sizeof(buf), PRIu64_FORMAT, (uint64_t)num);
+  str->append(buf);
+}
+
+void StringAppendEscapedStringTo(string *str, const StringPiece &value)
+{
+  for (size_t i = 0; i < value.size(); i++)
+  {
+    char c = value[i];
+    if (c >= ' ' && c <= '~')
+    {
+      str->push_back(c);
+    }
+    else
+    {
+      char buf[10];
+      snprintf(buf, sizeof(buf), "\\x%02x",
+               static_cast<unsigned int>(c) & 0xff);
+      str->append(buf);
+    }
+  }
+}
+
+string NumberToString(uint64_t num)
+{
+  string r;
+  StringAppendNumberTo(&r, num);
+  return r;
+}
+
+string EscapeString(const StringPiece &value)
+{
+  string r;
+  StringAppendEscapedStringTo(&r, value);
+  return r;
+}
+
+bool StringConsumeDecimalNumber(StringPiece *in, uint64_t *val)
+{
+  // Constants that will be optimized away.
+  static const uint64_t kMaxUint64 = std::numeric_limits<uint64_t>::max();
+  static const char kLastDigitOfMaxUint64 =
+      '0' + static_cast<char>(kMaxUint64 % 10);
+
+  uint64_t value = 0;
+
+  // reinterpret_cast-ing from char* to unsigned char* to avoid signedness.
+  const unsigned char *start =
+      reinterpret_cast<const unsigned char *>(in->data());
+
+  const unsigned char *end = start + in->size();
+  const unsigned char *current = start;
+  for (; current != end; ++current)
+  {
+    const unsigned char ch = *current;
+    if (ch < '0' || ch > '9')
+      break;
+
+    // Overflow check.
+    // kMaxUint64 / 10 is also constant and will be optimized away.
+    if (value > kMaxUint64 / 10 ||
+        (value == kMaxUint64 / 10 && ch > kLastDigitOfMaxUint64))
+    {
+      return false;
+    }
+
+    value = (value * 10) + (ch - '0');
+  }
+
+  *val = value;
+  const uint64_t digits_consumed = current - start;
+  in->remove_prefix(digits_consumed);
+  return digits_consumed != 0;
 }
 
 char *WriteHexUInt16ToBuffer(uint16_t value, char *buffer)
@@ -893,7 +971,7 @@ int32_t AppendHumanMicros(uint64_t micros, char *output, int64_t len)
 
 // string ops
 
-bool StartsWith(const string &str, const string &prefix)
+bool StringStartsWith(const string &str, const string &prefix)
 {
   if (prefix.length() > str.length())
   {
@@ -906,7 +984,7 @@ bool StartsWith(const string &str, const string &prefix)
   return false;
 }
 
-bool EndsWith(const string &str, const string &suffix)
+bool StringEndsWith(const string &str, const string &suffix)
 {
   if (suffix.length() > str.length())
   {
@@ -915,7 +993,7 @@ bool EndsWith(const string &str, const string &suffix)
   return (str.substr(str.length() - suffix.length()) == suffix);
 }
 
-bool StripSuffix(string *str, const string &suffix)
+bool StringStripSuffix(string *str, const string &suffix)
 {
   if (str->length() >= suffix.length())
   {
@@ -930,7 +1008,7 @@ bool StripSuffix(string *str, const string &suffix)
   return false;
 }
 
-bool StripPrefix(string *str, const string &prefix)
+bool StringStripPrefix(string *str, const string &prefix)
 {
   if (str->length() >= prefix.length())
   {
@@ -1178,12 +1256,6 @@ string StringConcat(const std::vector<string> &elems, char delim)
     result.resize(result.size() - 1);
   }
   return result;
-}
-
-string &StringToLower(string &ori)
-{
-  std::transform(ori.begin(), ori.end(), ori.begin(), ::tolower);
-  return ori;
 }
 
 uint64_t StringRemoveLeadingWhitespace(StringPiece *text)

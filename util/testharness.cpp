@@ -70,21 +70,5 @@ int32_t RunAllTests()
   return 0;
 }
 
-void Timer::start()
-{
-  start_ = env_->NowNanos();
-}
-
-uint64_t Timer::elapsedNanos(bool reset)
-{
-  uint64_t now = env_->NowNanos();
-  uint64_t elapsed = now - start_;
-  if (reset)
-  {
-    start_ = now;
-  }
-  return elapsed;
-}
-
 } // namespace test
 } // namespace mycc
