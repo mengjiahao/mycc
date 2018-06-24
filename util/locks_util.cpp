@@ -463,5 +463,27 @@ int32_t CountDownLatch::getCount() const
   return count_;
 }
 
+class SemaphorePrivate {
+public:
+  sem_t sem;
+};
+
+Semaphore::Semaphore(int32_t initValue) : m(new SemaphorePrivate()) {
+  sem_init(&m->sem, 0, initValue);
+}
+
+Semaphore::~Semaphore() {
+  sem_destroy(&m->sem);
+  delete m;
+}
+
+bool Semaphore::timeWait(struct timespec* ts) {
+  return (0 == sem_timedwait(&m->sem, ts));
+}
+
+void Semaphore::wait() { sem_wait(&m->sem); }
+
+void Semaphore::post() { sem_post(&m->sem); }
+
 } // namespace util
 } // namespace mycc

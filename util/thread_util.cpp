@@ -10,11 +10,19 @@ namespace mycc
 namespace util
 {
 
+namespace CurrentThread
+{
+__thread int t_cachedTid = 0;
+__thread const char *t_threadName = "unknown";
+} // namespace CurrentThread
+
 struct ThreadData
 {
   void (*user_function)(void *);
   void *user_arg;
   string name;
+  pthread_t tid;
+  CountDownLatch *latch;
 };
 
 namespace
@@ -33,13 +41,43 @@ bool PthreadCall(const char *label, int32_t result)
 void *StartPthreadWrapper(void *arg)
 {
   ThreadData *data = reinterpret_cast<ThreadData *>(arg);
-  ::prctl(PR_SET_NAME, (data->name).c_str());
-  data->user_function(data->user_arg);
+  (data->latch)->countDown();
+  //::prctl(PR_SET_NAME, (data->name).c_str());
+  pthread_setname_np(data->tid, (data->name).c_str());
+  try
+  {
+    data->user_function(data->user_arg);
+  }
+  catch (...)
+  {
+    CurrentThread::t_threadName = "Crashed";
+    fprintf(stderr, "unknown exception caught in Thread %s\n", (data->name).c_str());
+    throw; // rethrow
+  }
   delete data;
   return NULL;
 }
 
 } // namespace
+
+void InitOnce(OnceType *once, void (*initializer)())
+{
+  PthreadCall("pthread_once", pthread_once(once, initializer));
+}
+
+pid_t GetTID()
+{
+  pid_t tid = syscall(__NR_gettid);
+  return tid;
+}
+
+uint64_t PthreadId()
+{
+  pthread_t tid = pthread_self();
+  uint64_t thread_id = 0;
+  memcpy(&thread_id, &tid, std::min(sizeof(thread_id), sizeof(tid)));
+  return thread_id;
+}
 
 void *PosixThread::StartProcWrapper(void *arg)
 {
@@ -51,6 +89,7 @@ void *PosixThread::StartProcWrapper(void *arg)
 
 PosixThread::PosixThread(void (*func)(void *arg), void *arg, const string &name)
     : name_(name),
+      latch_(1),
       started_(NULL),
       function_(func),
       arg_(arg)
@@ -60,6 +99,7 @@ PosixThread::PosixThread(void (*func)(void *arg), void *arg, const string &name)
 
 PosixThread::PosixThread(std::function<void()> func, const string &name)
     : name_(name),
+      latch_(1),
       started_(NULL),
       isProc_(true),
       user_proc_(func)
@@ -70,6 +110,21 @@ PosixThread::PosixThread(std::function<void()> func, const string &name)
 bool PosixThread::isStarted()
 {
   return (NULL != started_.Acquire_Load());
+}
+
+bool PosixThread::isRuning(pthread_t id)
+{
+  assert(0 != id);
+  int32_t ret = pthread_kill(id, 0);
+
+  if (0 == ret)
+    return true;
+  else if (ESRCH == ret)
+    return false;
+  else if (EINVAL == ret)
+    assert(false);
+
+  return false;
 }
 
 bool PosixThread::start()
@@ -94,10 +149,13 @@ bool PosixThread::start()
     data->user_function = function_;
     data->user_arg = arg_;
     data->name = name_;
+    data->tid = tid_;
+    data->latch = &latch_;
     bool ret = PthreadCall("pthread_create",
                            pthread_create(&tid_, NULL, &StartPthreadWrapper, data));
     if (!ret)
     {
+      delete data; // or no delete?
       return false;
     }
   }
@@ -106,8 +164,18 @@ bool PosixThread::start()
   return true;
 }
 
+bool PosixThread::startForLaunch()
+{
+  if (!start())
+    return false;
+  latch_.wait();
+  return true;
+}
+
 bool PosixThread::join()
 {
+  if (amSelf())
+    return false;
   if (isStarted())
   {
     return PthreadCall("pthread_join", pthread_join(tid_, NULL));

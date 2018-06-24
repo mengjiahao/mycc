@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <functional>
 #include "atomic_util.h"
+#include "locks_util.h"
 #include "types_util.h"
 
 namespace mycc
@@ -16,12 +17,22 @@ namespace mycc
 namespace util
 {
 
+typedef pthread_once_t OnceType;
+void InitOnce(OnceType *once, void (*initializer)());
+pid_t GetTID();
+uint64_t PthreadId();
+
 class PosixThread
 {
 public:
-  static int64_t CurrentThreadId()
+  static pthread_t CurrentThreadId()
   {
-    return static_cast<int64_t>(pthread_self());
+    return pthread_self();
+  }
+
+  static bool isThreadIdEqual(pthread_t &a, pthread_t &b)
+  {
+    return pthread_equal(a, b) == 0;
   }
 
   static void ExitCurrentThread()
@@ -36,7 +47,10 @@ public:
 
   static void UsleepCurrentThread(uint32_t micros)
   {
-    ::usleep(micros);
+    struct timespec ts = {0, 0};
+    ts.tv_sec = static_cast<time_t>(micros / 1000000);
+    ts.tv_nsec = static_cast<long>(micros % 1000000 * 1000);
+    ::nanosleep(&ts, NULL);
   }
 
   static void SleepCurrentThread(uint32_t secs)
@@ -50,7 +64,7 @@ public:
   PosixThread(std::function<void()> func, const string &name = "Thread");
   ~PosixThread(){};
 
-  int64_t gettid() const { return static_cast<int64_t>(tid_); }
+  pthread_t gettid() const { return tid_; }
   const char *getName() const { return name_.c_str(); }
   bool amSelf() const
   {
@@ -58,7 +72,9 @@ public:
   }
 
   bool isStarted();
+  bool isRuning(pthread_t id);
   bool start();
+  bool startForLaunch();
   bool Start();
   bool join();
   bool kill(int32_t signal_val);
@@ -66,7 +82,9 @@ public:
 
 private:
   pthread_t tid_;
+  pthread_attr_t attr_;
   string name_;
+  CountDownLatch latch_;
   AtomicPointer started_;
 
   void (*function_)(void *) = nullptr;

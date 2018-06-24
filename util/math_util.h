@@ -121,6 +121,26 @@ inline uint64_t Rounddown(uint64_t x, uint64_t y)
   return (x / y) * y;
 }
 
+/// @brief round up pointer to next nearest aligned address
+/// @param p the pointer
+/// @param align alignment, must be power if 2
+template <typename T>
+T *RoundupPtr(T *p, size_t align)
+{
+  size_t address = reinterpret_cast<size_t>(p);
+  return reinterpret_cast<T *>((address + align - 1) & ~(align - 1U));
+}
+
+/// @brief round down pointer to previous nearest aligned address
+/// @param p the pointer
+/// @param align alignment, must be power if 2
+template <typename T>
+T *RounddownPtr(T *p, size_t align)
+{
+  size_t address = reinterpret_cast<size_t>(p);
+  return reinterpret_cast<T *>(address & ~(align - 1U));
+}
+
 //===--------------------------------------------------------------------===//
 // Find the next power of two higher than the provided value
 //===--------------------------------------------------------------------===//

@@ -3,6 +3,7 @@
 #define MYCC_UTIL_RANDOM_UTIL_H_
 
 #include <random>
+#include "stringpiece.h"
 #include "types_util.h"
 
 namespace mycc
@@ -122,6 +123,14 @@ string GenerateGUID();
 bool IsValidGUID(const string& guid);
 
 string RandomDataToGUIDString(const uint64_t bytes[2]);
+
+// Store in *dst a random string of length "len" and return a Slice that
+// references the generated data.
+extern StringPiece RandomString(Random* rnd, int32_t len, string* dst);
+
+// Return a random key with the specified length that may contain interesting
+// characters (e.g. \x00, \xff, etc.).
+extern string RandomKey(Random* rnd, int len);
 
 } // namespace util
 } // namespace mycc

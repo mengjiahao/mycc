@@ -14,6 +14,27 @@ namespace util
 #error "Arch not supprot asm atomic!"
 #endif
 
+inline void AsmVolatilePause() {
+#if defined(__i386__) || defined(__x86_64__)
+  asm volatile("pause");
+#elif defined(__aarch64__)
+  asm volatile("wfe");
+#elif defined(__powerpc64__)
+  asm volatile("or 27,27,27");
+#endif
+  // it's okay for other platforms to be no-ops
+}
+
+// Pause instruction to prevent excess processor bus usage, only works in GCC
+inline void AsmVolatileCpuRelax() {
+  asm volatile("pause\n": : :"memory");
+}
+
+// Compile read-write barrier
+inline void AsmVolatileBarrier() {
+  asm volatile("": : :"memory");
+}
+
 inline void CompilerBarrier()
 {
   __asm__ __volatile__(""
@@ -191,9 +212,17 @@ inline T AtomicSyncDecFetch(volatile T *ptr)
 }
 
 template <typename T>
+inline T AtomicSyncValCompareAndSwap(volatile T *ptr,
+                                     T old_value,
+                                     T new_value)
+{
+  return __sync_val_compare_and_swap(ptr, old_value, new_value);
+}
+
+template <typename T>
 inline T AtomicSyncCompareAndSwap(volatile T *ptr,
-                           T old_value,
-                           T new_value)
+                                  T old_value,
+                                  T new_value)
 {
   // Since CompareAndSwap uses __sync_bool_compare_and_swap, which
   // is a full memory barrier, none is needed here or below in Release.
@@ -309,7 +338,7 @@ inline void AtomicExchange(volatile T *ptr, T *val, T *ret, AtomicMemoryOrder me
 // It also cannot be a stronger order than that specified by success_memorder.
 template <typename T>
 inline bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool weak,
-                            AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
+                                   AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange_n(ptr, expected, desired, weak,
                                      success_memorder, failure_memorder);
@@ -320,7 +349,7 @@ inline bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool
 // except the desired value is also a pointer.
 template <typename T>
 inline bool AtomicCompareExchange(volatile T *ptr, T *expected, T *desired, bool weak,
-                           AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
+                                  AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange(ptr, expected, desired, weak,
                                    success_memorder, failure_memorder);
@@ -853,6 +882,40 @@ typedef AtomicInteger<uint64_t> AtomicUint64;
 
 // A type that holds a pointer that can be read or written atomically
 // (i.e., without word-tearing.)
+#if defined(BASE_CXX11_ENABLED)
+
+class AtomicPointer
+{
+private:
+  std::atomic<void *> rep_;
+
+public:
+  AtomicPointer() {}
+  explicit AtomicPointer(void *v) : rep_(v) {}
+
+  inline void *Acquire_Load() const
+  {
+    return rep_.load(std::memory_order_acquire);
+  }
+
+  inline void Release_Store(void *v)
+  {
+    rep_.store(v, std::memory_order_release);
+  }
+
+  inline void *NoBarrier_Load() const
+  {
+    return rep_.load(std::memory_order_relaxed);
+  }
+
+  inline void NoBarrier_Store(void *v)
+  {
+    rep_.store(v, std::memory_order_relaxed);
+  }
+};
+
+#else
+
 class AtomicPointer
 {
 private:
@@ -878,6 +941,8 @@ public:
     rep_ = v;
   }
 };
+
+#endif // AtomicPointer
 
 } // namespace util
 } // namespace mycc

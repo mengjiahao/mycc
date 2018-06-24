@@ -104,5 +104,28 @@ string RandomDataToGUIDString(const uint64_t bytes[2])
                       bytes[1] & 0x0000ffffffffffffULL);
 }
 
+StringPiece RandomString(Random *rnd, int32_t len, string *dst)
+{
+  dst->resize(len);
+  for (int32_t i = 0; i < len; i++)
+  {
+    (*dst)[i] = static_cast<char>(' ' + rnd->uniform(95)); // ' ' .. '~'
+  }
+  return StringPiece(*dst);
+}
+
+string RandomKey(Random* rnd, int len) {
+  // Make sure to generate a wide variety of characters so we
+  // test the boundary conditions for short-key optimizations.
+  static const char kTestChars[] = {
+    '\0', '\1', 'a', 'b', 'c', 'd', 'e', '\xfd', '\xfe', '\xff'
+  };
+  string result;
+  for (int32_t i = 0; i < len; i++) {
+    result += kTestChars[rnd->uniform(sizeof(kTestChars))];
+  }
+  return result;
+}
+
 } // namespace util
 } // namespace mycc

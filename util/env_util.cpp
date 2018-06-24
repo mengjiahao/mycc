@@ -145,6 +145,8 @@ public:
 
   virtual uint64_t NowMicros() override;
   virtual uint64_t NowNanos() override;
+  virtual uint64_t NowMonotonicMicros() override;
+  virtual uint64_t NowMonotonicNanos() override;
   virtual uint64_t NowChronoNanos() override;
   virtual void SleepForMicros(int32_t micros) override;
   virtual Status GetCurrentTimeEpoch(int64_t *unix_time) override;
@@ -258,6 +260,18 @@ uint64_t PosixEnv::NowMicros()
 }
 
 uint64_t PosixEnv::NowNanos()
+{
+  struct timespec ts;
+  ::clock_gettime(CLOCK_REALTIME, &ts); // for linux
+  return static_cast<uint64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+}
+
+uint64_t PosixEnv::NowMonotonicMicros()
+{
+  return NowMonotonicNanos() / 1000;
+}
+
+uint64_t PosixEnv::NowMonotonicNanos()
 {
   struct timespec ts;
   ::clock_gettime(CLOCK_MONOTONIC, &ts); // for linux

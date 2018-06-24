@@ -3,17 +3,32 @@
 #define MYCC_UTIL_LOCKS_UTIL_H_
 
 #include <pthread.h>
+#include <semaphore.h>
+#include <sched.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include "atomic_util.h"
 #include "types_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+class mutex_lock : public std::unique_lock<std::mutex>
+{
+public:
+  mutex_lock(std::mutex &m) : std::unique_lock<std::mutex>(m) {}
+  mutex_lock(std::mutex &m, std::try_to_lock_t t)
+      : std::unique_lock<std::mutex>(m, t) {}
+  mutex_lock(mutex_lock &&ml) noexcept
+      : std::unique_lock<std::mutex>(std::move(ml)) {}
+  ~mutex_lock() {}
+};
 
 /**
  * A simple wrapper of thread barrier.
@@ -259,6 +274,8 @@ private:
  * which means it will keep trying to lock until lock on successfully.
  * The SpinLock disable copy.
  */
+
+#ifdef USE_PTHREAD_SPINLOCK
 class SpinLock
 {
 public:
@@ -272,8 +289,29 @@ public:
   pthread_spinlock_t lock_;
   char padding_[64 - sizeof(pthread_spinlock_t)];
 
+private:
   DISALLOW_COPY_AND_ASSIGN(SpinLock);
 };
+#else
+class SpinLock final
+{
+public:
+  inline void lock()
+  {
+    while (lock_.test_and_set(std::memory_order_acquire))
+    {
+    }
+  }
+  inline void unlock() { lock_.clear(std::memory_order_release); }
+  inline int tryLock() { return lock_.test_and_set(std::memory_order_acquire); }
+
+  std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
+  char padding_[64 - sizeof(lock_)]; // Padding to cache line size
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SpinLock);
+};
+#endif // USE_PTHREAD_SPINLOCK
 
 /**
  * The SpinLockGuard is a SpinLock
@@ -294,6 +332,77 @@ public:
 
 protected:
   SpinLock *spin_lock_ = nullptr;
+};
+
+/*
+ * Improves the performance of spin-wait loops. 
+ * When executing a “spin-wait loop,” a Pentium 4 or Intel Xeon processor 
+ * suffers a severe performance penalty when exiting the loop 
+ * because it detects a possible memory order violation. 
+ * The PAUSE instruction provides a hint to the processor 
+ * that the code sequence is a spin-wait loop. 
+ * The processor uses this hint to avoid the memory order violation in most situations,
+ * which greatly improves processor performance. 
+ * For this reason, it is recommended that a PAUSE instruction 
+ * be placed in all spin-wait loops.
+ * An additional fucntion of the PAUSE instruction 
+ * is to reduce the power consumed by a Pentium 4 processor 
+ * while executing a spin loop.
+*/
+class SpinLockCas
+{
+public:
+  typedef uint32_t handle_type;
+
+private:
+  enum state
+  {
+    initial_pause = 2,
+    max_pause = 16
+  };
+
+  uint32_t state_;
+
+public:
+  SpinLockCas() : state_(0) {}
+
+  bool trylock()
+  {
+    return (AtomicSyncValCompareAndSwap<uint32_t>((volatile uint32_t *)&state_, 0, 1) == 0);
+  }
+
+  bool lock()
+  {
+    /*register*/ uint32_t pause_count = initial_pause; //'register' storage class specifier is deprecated and incompatible with C++1z
+    while (!trylock())
+    {
+      if (pause_count < max_pause)
+      {
+        for (/*register*/ uint32_t i = 0; i < pause_count; ++i) //'register' storage class specifier is deprecated and incompatible with C++1z
+        {
+          AsmVolatileCpuRelax();
+        }
+        pause_count += pause_count;
+      }
+      else
+      {
+        pause_count = initial_pause;
+        ::sched_yield();
+      }
+    }
+    return true;
+  }
+
+  bool unlock()
+  {
+    AtomicSyncStore<uint32_t>((volatile uint32_t *)&state_, 0);
+    return true;
+  }
+
+  uint32_t *internal() { return &state_; }
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SpinLockCas);
 };
 
 class RefMutex
@@ -387,6 +496,20 @@ private:
   DISALLOW_COPY_AND_ASSIGN(BlockingCounter);
 };
 
+// The AutoResetEvent class represents a local waitable event that resets
+// automatically when signaled, after releasing a single waiting thread.
+//
+// AutoResetEvent allows threads to communicate with each other by signaling.
+// Typically, you use this class when threads need exclusive access to a resource.
+//
+// Important
+// There is no guarantee that every call to the Set method will release a thread.
+// If two calls are too close together, so that the second call occurs before a
+// thread has been released, only one thread is released. It is as if the second
+// call did not happen. Also, if Set is called when there are no threads waiting
+// and the AutoResetEvent is already signaled, the call has no effect.
+//
+// If you want to release a thread after each call, Semaphore is a good choice.
 class AutoResetEvent
 {
 public:
@@ -438,9 +561,7 @@ public:
   explicit CountDownLatch(int32_t count);
 
   void wait();
-
   void countDown();
-
   int32_t getCount() const;
 
 private:
@@ -450,6 +571,121 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
 };
+
+/**
+ * A simple wapper of semaphore which can only be shared in the same process.
+ */
+class SemaphorePrivate;
+class Semaphore
+{
+public:
+  //! Enable move.
+  Semaphore(Semaphore &&other) : m(std::move(other.m)) {}
+
+public:
+  /**
+   * @brief Construct Function.
+   * @param[in] initValue the initial value of the
+   * semaphore, default 0.
+   */
+  explicit Semaphore(int32_t initValue = 0);
+
+  ~Semaphore();
+
+  /**
+   * @brief The same as wait(), except if the decrement can not
+   * be performed until ts return false install of blocking.
+   * @param[in] ts an absolute timeout in seconds and nanoseconds
+   * since the Epoch 1970-01-01 00:00:00 +0000(UTC).
+   * @return ture if the decrement proceeds before ts,
+   * else return false.
+   */
+  bool timeWait(struct timespec *ts);
+
+  /**
+   * @brief decrement the semaphore. If the semaphore's value is 0, then call
+   * blocks.
+   */
+  void wait();
+
+  /**
+   * @brief increment the semaphore. If the semaphore's value
+   * greater than 0, wake up a thread blocked in wait().
+   */
+  void post();
+
+private:
+  SemaphorePrivate *m;
+
+  DISALLOW_COPY_AND_ASSIGN(Semaphore);
+};
+
+class Notification
+{
+public:
+  Notification() : notified_(0) {}
+  ~Notification()
+  {
+    // In case the notification is being used to synchronize its own deletion,
+    // force any prior notifier to leave its critical section before the object
+    // is destroyed.
+    mutex_lock l(mu_);
+  }
+
+  void notify()
+  {
+    mutex_lock l(mu_);
+    assert(!hasBeenNotified());
+    notified_.store(true, std::memory_order_release);
+    cv_.notify_all();
+  }
+
+  bool hasBeenNotified() const
+  {
+    return notified_.load(std::memory_order_acquire);
+  }
+
+  void waitForNotification()
+  {
+    if (!hasBeenNotified())
+    {
+      mutex_lock l(mu_);
+      while (!hasBeenNotified())
+      {
+        cv_.wait(l);
+      }
+    }
+  }
+
+private:
+  friend bool WaitForNotificationWithTimeout(Notification *n,
+                                             int64_t timeout_in_us);
+  bool waitForNotificationWithTimeout(int64_t timeout_in_us)
+  {
+    bool notified = hasBeenNotified();
+    if (!notified)
+    {
+      mutex_lock l(mu_);
+      do
+      {
+        notified = hasBeenNotified();
+      } while (!notified &&
+               cv_.wait_for(l, std::chrono::microseconds(timeout_in_us)) !=
+                   std::cv_status::timeout);
+    }
+    return notified;
+  }
+
+  std::mutex mu_;              // protects mutations of notified_
+  std::condition_variable cv_; // signalled when notified_ becomes non-zero
+  std::atomic<bool> notified_; // mutations under mu_
+};
+
+inline bool WaitForNotificationWithTimeout(Notification *n,
+                                           int64_t timeout_in_us)
+{
+  return n->waitForNotificationWithTimeout(timeout_in_us);
+}
 
 } // namespace util
 } // namespace mycc

@@ -164,6 +164,12 @@ public:
   // Returns the number of nano-seconds since some fixed point in time.
   virtual uint64_t NowNanos() = 0;
 
+  // Returns the number of micro-seconds since some fixed point in time.
+  virtual uint64_t NowMonotonicMicros() = 0;
+
+  // Returns the number of nano-seconds since some fixed point in time.
+  virtual uint64_t NowMonotonicNanos() = 0;
+
   virtual uint64_t NowChronoNanos() = 0;
 
   virtual void SleepForMicros(int32_t micros) = 0;

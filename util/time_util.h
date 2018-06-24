@@ -58,6 +58,237 @@ static const int LEAP_SECOND_TIMESTAMP = 1483228799;
 extern const char *kTimestampStdFormat;
 extern const char *kTimeFormat;
 
+// ----------------------
+// timespec manipulations
+// ----------------------
+
+inline timespec make_timespec(int64_t sec, int64_t nsec)
+{
+  timespec tm;
+  tm.tv_sec = sec;
+  tm.tv_nsec = nsec;
+  return tm;
+}
+
+inline timespec max_timespec()
+{
+  return make_timespec(-1, 0);
+}
+
+inline bool is_max_timespec(timespec &tm)
+{
+  return (-1 == tm.tv_sec);
+}
+
+// Let tm->tv_nsec be in [0, 1,000,000,000) if it's not.
+inline void timespec_normalize(timespec *tm)
+{
+  if (tm->tv_nsec >= 1000000000L)
+  {
+    const int64_t added_sec = tm->tv_nsec / 1000000000L;
+    tm->tv_sec += added_sec;
+    tm->tv_nsec -= added_sec * 1000000000L;
+  }
+  else if (tm->tv_nsec < 0)
+  {
+    const int64_t sub_sec = (tm->tv_nsec - 999999999L) / 1000000000L;
+    tm->tv_sec += sub_sec;
+    tm->tv_nsec -= sub_sec * 1000000000L;
+  }
+}
+
+// Add timespec |span| into timespec |*tm|.
+inline void timespec_add(timespec *tm, const timespec &span)
+{
+  tm->tv_sec += span.tv_sec;
+  tm->tv_nsec += span.tv_nsec;
+  timespec_normalize(tm);
+}
+
+// Minus timespec |span| from timespec |*tm|.
+// tm->tv_nsec will be inside [0, 1,000,000,000)
+inline void timespec_minus(timespec *tm, const timespec &span)
+{
+  tm->tv_sec -= span.tv_sec;
+  tm->tv_nsec -= span.tv_nsec;
+  timespec_normalize(tm);
+}
+
+// ------------------------------------------------------------------
+// Get the timespec after specified duration from |start_time|
+// ------------------------------------------------------------------
+inline timespec nanoseconds_from(timespec start_time, int64_t nanoseconds)
+{
+  start_time.tv_nsec += nanoseconds;
+  timespec_normalize(&start_time);
+  return start_time;
+}
+
+inline timespec microseconds_from(timespec start_time, int64_t microseconds)
+{
+  return nanoseconds_from(start_time, microseconds * 1000L);
+}
+
+inline timespec milliseconds_from(timespec start_time, int64_t milliseconds)
+{
+  return nanoseconds_from(start_time, milliseconds * 1000000L);
+}
+
+inline timespec seconds_from(timespec start_time, int64_t seconds)
+{
+  return nanoseconds_from(start_time, seconds * 1000000000L);
+}
+
+// --------------------------------------------------------------------
+// Get the timespec after specified duration from now (CLOCK_REALTIME)
+// --------------------------------------------------------------------
+inline timespec nanoseconds_from_now(int64_t nanoseconds)
+{
+  timespec time;
+  clock_gettime(CLOCK_REALTIME, &time);
+  return nanoseconds_from(time, nanoseconds);
+}
+
+inline timespec microseconds_from_now(int64_t microseconds)
+{
+  return nanoseconds_from_now(microseconds * 1000L);
+}
+
+inline timespec milliseconds_from_now(int64_t milliseconds)
+{
+  return nanoseconds_from_now(milliseconds * 1000000L);
+}
+
+inline timespec seconds_from_now(int64_t seconds)
+{
+  return nanoseconds_from_now(seconds * 1000000000L);
+}
+
+inline timespec timespec_from_now(const timespec &span)
+{
+  timespec time;
+  clock_gettime(CLOCK_REALTIME, &time);
+  timespec_add(&time, span);
+  return time;
+}
+
+// ---------------------------------------------------------------------
+// Convert timespec to and from a single integer.
+// For conversions between timespec and timeval, use TIMEVAL_TO_TIMESPEC
+// and TIMESPEC_TO_TIMEVAL defined in <sys/time.h>
+// ---------------------------------------------------------------------1
+inline int64_t timespec_to_nanoseconds(const timespec &ts)
+{
+  return ts.tv_sec * 1000000000L + ts.tv_nsec;
+}
+
+inline int64_t timespec_to_microseconds(const timespec &ts)
+{
+  return timespec_to_nanoseconds(ts) / 1000L;
+}
+
+inline int64_t timespec_to_milliseconds(const timespec &ts)
+{
+  return timespec_to_nanoseconds(ts) / 1000000L;
+}
+
+inline int64_t timespec_to_seconds(const timespec &ts)
+{
+  return timespec_to_nanoseconds(ts) / 1000000000L;
+}
+
+inline timespec nanoseconds_to_timespec(int64_t ns)
+{
+  timespec ts;
+  ts.tv_sec = ns / 1000000000L;
+  ts.tv_nsec = ns - ts.tv_sec * 1000000000L;
+  return ts;
+}
+
+inline timespec microseconds_to_timespec(int64_t us)
+{
+  return nanoseconds_to_timespec(us * 1000L);
+}
+
+inline timespec milliseconds_to_timespec(int64_t ms)
+{
+  return nanoseconds_to_timespec(ms * 1000000L);
+}
+
+inline timespec seconds_to_timespec(int64_t s)
+{
+  return nanoseconds_to_timespec(s * 1000000000L);
+}
+
+// ---------------------------------------------------------------------
+// Convert timeval to and from a single integer.
+// For conversions between timespec and timeval, use TIMEVAL_TO_TIMESPEC
+// and TIMESPEC_TO_TIMEVAL defined in <sys/time.h>
+// ---------------------------------------------------------------------
+
+inline timeval make_timeval(int64_t sec, int64_t usec)
+{
+  timeval tv;
+  tv.tv_sec = sec;
+  tv.tv_usec = usec;
+  return tv;
+}
+
+inline int64_t timeval_to_microseconds(const timeval &tv)
+{
+  return tv.tv_sec * 1000000L + tv.tv_usec;
+}
+
+inline int64_t timeval_to_milliseconds(const timeval &tv)
+{
+  return timeval_to_microseconds(tv) / 1000L;
+}
+
+inline int64_t timeval_to_seconds(const timeval &tv)
+{
+  return timeval_to_microseconds(tv) / 1000000L;
+}
+
+inline timeval microseconds_to_timeval(int64_t us)
+{
+  timeval tv;
+  tv.tv_sec = us / 1000000L;
+  tv.tv_usec = us - tv.tv_sec * 1000000L;
+  return tv;
+}
+
+inline timeval milliseconds_to_timeval(int64_t ms)
+{
+  return microseconds_to_timeval(ms * 1000L);
+}
+
+inline timeval seconds_to_timeval(int64_t s)
+{
+  return microseconds_to_timeval(s * 1000000L);
+}
+
+// --------------------------------------------------------------------
+// Get elapse since the Epoch.
+// No gettimeofday_ns() because resolution of timeval is microseconds.
+// Cost ~40ns on 2.6.32_1-12-0-0, Intel(R) Xeon(R) CPU E5620 @ 2.40GHz
+// --------------------------------------------------------------------
+inline int64_t gettimeofday_us()
+{
+  timeval now;
+  gettimeofday(&now, nullptr);
+  return now.tv_sec * 1000000L + now.tv_usec;
+}
+
+inline int64_t gettimeofday_ms()
+{
+  return gettimeofday_us() / 1000L;
+}
+
+inline int64_t gettimeofday_s()
+{
+  return gettimeofday_us() / 1000000L;
+}
+
 struct DateTime
 {
   int32_t year;
