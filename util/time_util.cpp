@@ -310,25 +310,18 @@ int64_t ParseTimestamp(const string &time_str)
   return (int64_t)t;
 }
 
-void MakeTimeoutMs(struct timespec *pts, int64_t millis)
-{
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  pts->tv_sec = millis / 1000 + tv.tv_sec;
-  pts->tv_nsec = (millis % 1000) * 1000000 + tv.tv_usec * 1000;
-
-  pts->tv_sec += pts->tv_nsec / 1000000000;
-  pts->tv_nsec = pts->tv_nsec % 1000000000;
-}
-
 void MakeTimeoutUs(struct timespec *pts, int64_t micros)
 {
   struct timeval now;
   gettimeofday(&now, NULL);
-
   int64_t usec = now.tv_usec + micros;
   pts->tv_sec = now.tv_sec + usec / 1000000;
   pts->tv_nsec = (usec % 1000000) * 1000;
+}
+
+void MakeTimeoutMs(struct timespec *pts, int64_t millis)
+{
+  MakeTimeoutUs(pts, millis * 1000LL);
 }
 
 bool IsInHourRange(int64_t min_hour, int64_t max_hour)
@@ -364,7 +357,7 @@ void ChronoTimer::start()
   start_time_ = std::chrono::system_clock::now();
 }
 
-uint64_t ChronoTimer::end(const string &msg)
+uint64_t ChronoTimer::end()
 {
   end_time_ = std::chrono::system_clock::now();
   uint64_t elapsed_time =

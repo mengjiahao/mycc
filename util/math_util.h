@@ -7,7 +7,6 @@
 #include <math.h>
 #include <limits>
 #include <utility>
-#include "macros_util.h"
 #include "types_util.h"
 
 namespace mycc
@@ -158,10 +157,11 @@ inline uint64_t NextPowerOf2Uint64(uint64_t n)
 }
 
 template <typename T>
-bool AlmostEquals(T a, T b)
+inline bool AlmostEquals(T a, T b)
 {
   return a == b;
 }
+
 template <>
 inline bool AlmostEquals(float a, float b)
 {
@@ -193,7 +193,7 @@ inline int32_t Mod(int32_t a, int32_t b)
   return r >= 0 ? r : r + b;
 }
 
-inline uint8_t Count1BitsOfInt8(uint8_t i)
+inline uint8_t Count1Bits(uint8_t i)
 {
   // #number of 1 bits in 0x0 to 0xF.
   static const uint8_t kBitCountTable[] = {0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
@@ -203,7 +203,9 @@ inline uint8_t Count1BitsOfInt8(uint8_t i)
   return count;
 }
 
-uint64_t Count1BitsOfInt64(uint64_t i);
+// Return the smallest number n such that (x >> n) == 0 
+// (or 64 if the highest bit in x is set.
+uint64_t Count1Bits(uint64_t i);
 
 } // namespace util
 } // namespace mycc

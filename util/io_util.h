@@ -29,12 +29,12 @@ class PosixSequentialFile : public SequentialFile
 private:
   string filename_;
   FILE *file_;
-  int32_t fd_;
-  bool use_direct_io_;
+  int fd_;
+  bool use_direct_io_ ATTRIBUTE_UNUSED;
   uint64_t logical_sector_size_;
 
 public:
-  PosixSequentialFile(const string &fname, FILE *file, int32_t fd,
+  PosixSequentialFile(const string &fname, FILE *file, int fd,
                       const EnvOptions &options);
   virtual ~PosixSequentialFile();
 
@@ -49,19 +49,19 @@ public:
     return logical_sector_size_;
   }
   virtual Status getCurrentPos(int64_t *curpos) override;
-  virtual int32_t getFD() override;
+  virtual int getFD() override;
 };
 
 class PosixRandomAccessFile : public RandomAccessFile
 {
 protected:
   string filename_;
-  int32_t fd_;
+  int fd_;
   bool use_direct_io_;
   uint64_t logical_sector_size_;
 
 public:
-  PosixRandomAccessFile(const string &fname, int32_t fd,
+  PosixRandomAccessFile(const string &fname, int fd,
                         const EnvOptions &options);
   virtual ~PosixRandomAccessFile();
 
@@ -76,26 +76,26 @@ public:
   {
     return logical_sector_size_;
   }
-  virtual int32_t getFD() override;
+  virtual int getFD() override;
 };
 
 // mmap() based random-access
 class PosixMmapReadableFile : public RandomAccessFile
 {
 private:
-  int32_t fd_;
+  int fd_;
   string filename_;
   void *mmapped_region_;
   uint64_t length_;
 
 public:
-  PosixMmapReadableFile(const int32_t fd, const string &fname, void *base,
+  PosixMmapReadableFile(const int fd, const string &fname, void *base,
                         uint64_t length, const EnvOptions &options);
   virtual ~PosixMmapReadableFile();
   virtual Status read(uint64_t offset, uint64_t n, StringPiece *result,
                       char *scratch) const override;
   virtual Status invalidateCache(uint64_t offset, uint64_t length) override;
-  virtual int32_t getFD() override;
+  virtual int getFD() override;
 };
 
 class PosixWritableFile : public WritableFile
@@ -103,12 +103,12 @@ class PosixWritableFile : public WritableFile
 protected:
   const string filename_;
   const bool use_direct_io_;
-  int32_t fd_;
+  int fd_;
   uint64_t filesize_;
   uint64_t logical_sector_size_;
 
 public:
-  explicit PosixWritableFile(const string &fname, int32_t fd,
+  explicit PosixWritableFile(const string &fname, int fd,
                              const EnvOptions &options);
   virtual ~PosixWritableFile();
 
@@ -135,7 +135,7 @@ public:
   }
   virtual Status rangeSync(uint64_t offset, uint64_t nbytes) override;
   virtual uint64_t getUniqueId(char *id, uint64_t max_size) const override;
-  virtual int32_t getFD() override;
+  virtual int getFD() override;
 };
 
 class PosixMmapFile : public WritableFile
@@ -144,7 +144,7 @@ private:
   static const uint64_t kMmapBoundSize = 65536;
 
   string filename_;
-  int32_t fd_;
+  int fd_;
   uint64_t page_size_;
   uint64_t map_size_;    // How much extra memory to map at a time
   char *base_;           // The mapped region
@@ -165,7 +165,7 @@ private:
   Status msync();
 
 public:
-  PosixMmapFile(const string &fname, int32_t fd, uint64_t page_size,
+  PosixMmapFile(const string &fname, int fd, uint64_t page_size,
                 const EnvOptions &options);
   ~PosixMmapFile();
 
@@ -185,7 +185,7 @@ public:
 class PosixRandomRWFile : public RandomRWFile
 {
 public:
-  explicit PosixRandomRWFile(const string &fname, int32_t fd,
+  explicit PosixRandomRWFile(const string &fname, int fd,
                              const EnvOptions &options);
   virtual ~PosixRandomRWFile();
 
@@ -199,11 +199,11 @@ public:
   virtual Status fsync() override;
   virtual Status close() override;
 
-  virtual int32_t getFD() override;
+  virtual int getFD() override;
 
 private:
   const string filename_;
-  int32_t fd_;
+  int fd_;
 };
 
 struct PosixMemoryMappedFileBuffer : public MemoryMappedFileBuffer
@@ -216,12 +216,12 @@ struct PosixMemoryMappedFileBuffer : public MemoryMappedFileBuffer
 class PosixDirectory : public Directory
 {
 public:
-  explicit PosixDirectory(int32_t fd) : fd_(fd) {}
+  explicit PosixDirectory(int fd) : fd_(fd) {}
   ~PosixDirectory();
   virtual Status fsync() override;
 
 private:
-  int32_t fd_;
+  int fd_;
 };
 
 } // namespace util

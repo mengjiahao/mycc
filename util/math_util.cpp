@@ -6,15 +6,14 @@ namespace mycc
 namespace util
 {
 
-uint64_t Count1BitsOfInt64(uint64_t i)
+uint64_t Count1Bit(uint64_t x)
 {
-  uint64_t count = 0;
-  while (i)
-  {
-    i = i & (i - 1);
-    ++count;
-  }
-  return count;
+    uint64_t ret = 0;
+    while (x) {
+        x >>= 1;
+        ++ret;
+    }
+    return ret;
 }
 
 } // namespace util

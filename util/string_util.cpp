@@ -301,8 +301,6 @@ char *FastUInt64ToBufferLeft(uint64_t i, char *buffer)
   return buffer;
 }
 
-static const double kDoublePrecisionCheckMax = DBL_MAX / 1.000000000000001;
-
 bool StringParseBoolean(const string &value)
 {
   if (value == "true" || value == "1")

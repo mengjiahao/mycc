@@ -146,7 +146,7 @@ uint64_t BloomFilter::count1Bits()
   uint64_t bytes = getTotalBytes();
   for (uint64_t i = 0; i < bytes; ++i)
   {
-    count += Count1BitsOfInt8(data_[i]);
+    count += Count1Bits(data_[i]);
   }
   return count;
 }

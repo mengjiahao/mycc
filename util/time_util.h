@@ -50,6 +50,11 @@ static const int64_t kNanosPerMicrosecond = 1000;
 static const int64_t kNanosPerMillisecond = 1000000;
 static const int64_t kNanosPerSecond = 1000000000;
 
+// unix timestamp(1970.01.01) is different from gps timestamp(1980.01.06)
+static const int UNIX_GPS_DIFF = 315964782;
+// unix timestamp(2016.12.31 23:59:59(60) UTC/GMT)
+static const int LEAP_SECOND_TIMESTAMP = 1483228799;
+
 extern const char *kTimestampStdFormat;
 extern const char *kTimeFormat;
 
@@ -116,10 +121,31 @@ string CurrentTimestampString();
 string FormatTimestamp(int64_t seconds);
 int64_t ParseTimestamp(const string &time_str);
 
-void MakeTimeoutMs(struct timespec *pts, int64_t millis);
 void MakeTimeoutUs(struct timespec *pts, int64_t micros);
-
+void MakeTimeoutMs(struct timespec *pts, int64_t millis);
 bool IsInHourRange(int64_t min_hour, int64_t max_hour);
+
+// @brief: UNIX timestamp to GPS timestamp, in seconds.
+inline double Unix2gps(double unix_time)
+{
+  double gps_time = unix_time - UNIX_GPS_DIFF;
+  if (unix_time < LEAP_SECOND_TIMESTAMP)
+  {
+    gps_time -= 1.0;
+  }
+  return gps_time;
+}
+
+// @brief: GPS timestamp to UNIX timestamp, in seconds.
+inline double Gps2unix(double gps_time)
+{
+  double unix_time = gps_time + UNIX_GPS_DIFF;
+  if (unix_time + 1 < LEAP_SECOND_TIMESTAMP)
+  {
+    unix_time += 1.0;
+  }
+  return unix_time;
+}
 
 class Timer
 {
@@ -308,7 +334,8 @@ private:
    * @brief constructs the \class Clock instance
    * @param mode the desired clock mode
    */
-  explicit ChronoClock(ClockMode mode) : mode_(mode), mock_now_(ChronoTimestamp())
+  explicit ChronoClock(ClockMode mode)
+      : mode_(mode), mock_now_(ChronoTimestamp())
   {
   }
 
@@ -347,10 +374,9 @@ public:
   void start();
 
   // return the elapsed time,
-  // also output msg and time in glog.
   // automatically start a new timer.
   // no-thread safe.
-  uint64_t end(const string &msg);
+  uint64_t end();
 
 private:
   // in ms.
@@ -363,19 +389,18 @@ private:
 class ChronoTimerWrapper
 {
 public:
-  explicit ChronoTimerWrapper(const string &msg) : msg_(msg)
+  explicit ChronoTimerWrapper()
   {
     timer_.start();
   }
 
   ~ChronoTimerWrapper()
   {
-    timer_.end(msg_);
+    timer_.end();
   }
 
 private:
   ChronoTimer timer_;
-  string msg_;
 
   DISALLOW_COPY_AND_ASSIGN(ChronoTimerWrapper);
 };

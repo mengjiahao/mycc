@@ -117,7 +117,7 @@ uint64_t GetUniqueIdFromFile(int32_t fd, char *id, uint64_t max_size)
  * PosixSequentialFile
  */
 PosixSequentialFile::PosixSequentialFile(const string &fname, FILE *file,
-                                         int32_t fd, const EnvOptions &options)
+                                         int fd, const EnvOptions &options)
     : filename_(fname),
       file_(file),
       fd_(fd),
@@ -263,7 +263,7 @@ Status PosixSequentialFile::getCurrentPos(int64_t *curpos)
   return Status::OK();
 }
 
-int32_t PosixSequentialFile::getFD()
+int PosixSequentialFile::getFD()
 {
   return fd_;
 }
@@ -273,7 +273,7 @@ int32_t PosixSequentialFile::getFD()
  *
  * pread() based random-access
  */
-PosixRandomAccessFile::PosixRandomAccessFile(const string &fname, int32_t fd,
+PosixRandomAccessFile::PosixRandomAccessFile(const string &fname, int fd,
                                              const EnvOptions &options)
     : filename_(fname),
       fd_(fd),
@@ -415,7 +415,7 @@ int32_t PosixRandomAccessFile::getFD()
  * mmap() based random-access
  */
 // base[0,length-1] contains the mmapped contents of the file.
-PosixMmapReadableFile::PosixMmapReadableFile(const int32_t fd,
+PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
                                              const string &fname,
                                              void *base, uint64_t length,
                                              const EnvOptions &options)
@@ -472,7 +472,7 @@ Status PosixMmapReadableFile::invalidateCache(uint64_t offset, uint64_t length)
                  filename_, errno);
 }
 
-int32_t PosixMmapReadableFile::getFD()
+int PosixMmapReadableFile::getFD()
 {
   return fd_;
 }
@@ -482,7 +482,7 @@ int32_t PosixMmapReadableFile::getFD()
  *
  * Use posix write to write data to a file.
  */
-PosixWritableFile::PosixWritableFile(const string &fname, int32_t fd,
+PosixWritableFile::PosixWritableFile(const string &fname, int fd,
                                      const EnvOptions &options)
     : filename_(fname),
       use_direct_io_(options.use_direct_writes),
@@ -669,7 +669,7 @@ uint64_t PosixWritableFile::getUniqueId(char *id, uint64_t max_size) const
   return GetUniqueIdFromFile(fd_, id, max_size);
 }
 
-int32_t PosixWritableFile::getFD()
+int PosixWritableFile::getFD()
 {
   return fd_;
 }
@@ -748,7 +748,7 @@ Status PosixMmapFile::msync()
   return Status::OK();
 }
 
-PosixMmapFile::PosixMmapFile(const string &fname, int32_t fd, uint64_t page_size,
+PosixMmapFile::PosixMmapFile(const string &fname, int fd, uint64_t page_size,
                              const EnvOptions &options)
     : filename_(fname),
       fd_(fd),
@@ -887,7 +887,7 @@ Status PosixMmapFile::invalidateCache(uint64_t offset, uint64_t length)
   return IOError("While fadvise NotNeeded mmapped file", filename_, errno);
 }
 
-int32_t PosixMmapFile::getFD()
+int PosixMmapFile::getFD()
 {
   return fd_;
 }
@@ -896,7 +896,7 @@ int32_t PosixMmapFile::getFD()
  * PosixRandomRWFile
  */
 
-PosixRandomRWFile::PosixRandomRWFile(const string &fname, int32_t fd,
+PosixRandomRWFile::PosixRandomRWFile(const string &fname, int fd,
                                      const EnvOptions &options)
     : filename_(fname), fd_(fd) {}
 
@@ -1003,7 +1003,7 @@ Status PosixRandomRWFile::close()
   return Status::OK();
 }
 
-int32_t PosixRandomRWFile::getFD()
+int PosixRandomRWFile::getFD()
 {
   return fd_;
 }

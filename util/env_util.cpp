@@ -68,7 +68,7 @@ void PthreadCall(const char *label, int32_t result)
   }
 }
 
-void SetFD_CLOEXEC(int32_t fd, const EnvOptions *options)
+void SetFD_CLOEXEC(int fd, const EnvOptions *options)
 {
   if ((options == nullptr || options->set_fd_cloexec) && fd > 0)
   {
@@ -110,7 +110,7 @@ Status DoCreatePath(const char *path, mode_t mode)
   return result;
 }
 
-int32_t LockOrUnlock(int32_t fd, bool lock)
+int32_t LockOrUnlock(int fd, bool lock)
 {
   errno = 0;
   struct flock f;
@@ -224,9 +224,6 @@ public:
   virtual uint64_t GetThisThreadId() override;
   virtual uint64_t GetStdThreadId() override;
   virtual void StartNewPthread(void (*function)(void *arg), void *arg) override;
-  virtual Thread *StartNewThread(const ThreadOptions &thread_options,
-                                 const string &name,
-                                 std::function<void()> fn) override;
   virtual ThreadPool *NewThreadPool(int32_t num_threads) override;
   // Allow increasing the number of worker threads.
   virtual void SetBackgroundThreads(int32_t num, Priority pri) override;
@@ -560,7 +557,7 @@ Status PosixEnv::NewSequentialFile(const string &fname,
                                    const EnvOptions &options)
 {
   result->reset();
-  int32_t fd = -1;
+  int fd = -1;
   int32_t flags = O_RDONLY;
   FILE *file = nullptr;
 
@@ -608,7 +605,7 @@ Status PosixEnv::NewRandomAccessFile(const string &fname,
 {
   result->reset();
   Status s;
-  int32_t fd;
+  int fd;
   int32_t flags = O_RDONLY;
   if (options.use_direct_reads && !options.use_mmap_reads)
   {
@@ -665,7 +662,7 @@ Status PosixEnv::OpenWritableFile(const string &fname,
 {
   result->reset();
   Status s;
-  int32_t fd = -1;
+  int fd = -1;
   int32_t flags = (reopen) ? (O_CREAT | O_APPEND) : (O_CREAT | O_TRUNC);
   // Direct IO mode with O_DIRECT flag or F_NOCAHCE (MAC OSX)
   if (options.use_direct_writes && !options.use_mmap_writes)
@@ -739,7 +736,7 @@ Status PosixEnv::NewRandomRWFile(const string &fname,
                                  std::unique_ptr<RandomRWFile> *result,
                                  const EnvOptions &options)
 {
-  int32_t fd = -1;
+  int fd = -1;
   while (fd < 0)
   {
     fd = ::open(fname.c_str(), O_RDWR, 0644);
@@ -763,7 +760,7 @@ Status PosixEnv::NewMemoryMappedFileBuffer(
     const string &fname,
     std::unique_ptr<MemoryMappedFileBuffer> *result)
 {
-  int32_t fd = -1;
+  int fd = -1;
   Status status;
   while (fd < 0)
   {
@@ -812,7 +809,7 @@ Status PosixEnv::NewDirectory(const string &name,
                               std::unique_ptr<Directory> *result)
 {
   result->reset();
-  int32_t fd;
+  int fd;
   {
     fd = open(name.c_str(), 0);
   }
@@ -1229,7 +1226,7 @@ Status PosixEnv::LockFile(const std::string &fname, FileLock **lock)
 {
   *lock = NULL;
   Status result;
-  int32_t fd = ::open(fname.c_str(), O_RDWR | O_CREAT, 0644);
+  int fd = ::open(fname.c_str(), O_RDWR | O_CREAT, 0644);
   if (fd < 0)
   {
     result = IOError("open file ", fname, errno);
@@ -1414,12 +1411,6 @@ void PosixEnv::StartNewPthread(void (*function)(void *arg), void *arg)
   state->arg = arg;
   PthreadCall("pthread_create",
               ::pthread_create(&t, nullptr, &StartThreadWrapper, state));
-}
-
-Thread *PosixEnv::StartNewThread(const ThreadOptions &thread_options, const string &name,
-                                 std::function<void()> fn)
-{
-  return new StdThread(thread_options, name, fn);
 }
 
 ThreadPool *PosixEnv::NewThreadPool(int32_t num_threads)

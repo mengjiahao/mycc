@@ -167,7 +167,7 @@ public:
 
   struct Hasher
   {
-    uint64_t operator()(StringPiece arg) const;
+    std::size_t operator()(StringPiece arg) const;
   };
 
 public:

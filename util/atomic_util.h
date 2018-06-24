@@ -14,10 +14,13 @@ namespace util
 #error "Arch not supprot asm atomic!"
 #endif
 
-inline void CompilerBarrier() { __asm__ __volatile__(""
-                                                     :
-                                                     :
-                                                     : "memory"); }
+inline void CompilerBarrier()
+{
+  __asm__ __volatile__(""
+                       :
+                       :
+                       : "memory");
+}
 #if defined __i386__ || defined __x86_64__
 // x86/x64 has a relatively strong memory model,
 // but on x86/x64 StoreLoad reordering (later loads passing earlier stores) can happen.
@@ -39,124 +42,199 @@ inline void MemoryWriteBarrier() { __asm__ __volatile__("sfence" ::
 
 // Legacy __sync Built-in Functions for Atomic Memory Access.
 // https://gcc.gnu.org/onlinedocs/gcc-4.4.4/gcc/Atomic-Builtins.html
-// The definition given in the Intel documentation allows only for 
+// The definition given in the Intel documentation allows only for
 // the use of the types int, long, long long or their unsigned counterparts.
 
-template <typename T>
-T AtomicSyncLoad(volatile T *ptr)
+inline void AtomicSyncMemoryBarrier()
 {
-  T oldv = *ptr;
   __sync_synchronize();
-  return oldv;
 }
 
 template <typename T>
-void AtomicSyncStore(volatile T *ptr, T val)
+inline T AtomicSyncLoad(volatile T *ptr)
 {
-  __sync_synchronize();
+  T v = *ptr;
+  AtomicSyncMemoryBarrier();
+  return v;
+}
+
+template <typename T>
+inline T AtomicSyncAcquireLoad(volatile T *ptr)
+{
+  T v = *ptr;
+  AtomicSyncMemoryBarrier();
+  return v;
+}
+
+template <typename T>
+inline T AtomicSyncReleaseLoad(volatile T *ptr)
+{
+  AtomicSyncMemoryBarrier();
+  return *ptr;
+}
+
+template <typename T>
+inline void AtomicSyncStore(volatile T *ptr, T val)
+{
+  AtomicSyncMemoryBarrier();
   *ptr = val;
 }
 
 template <typename T>
-T AtomicSyncFetchAdd(volatile T *ptr, T value)
+inline void AtomicSyncAcquireStore(volatile T *ptr, T val)
+{
+  *ptr = val;
+  AtomicSyncMemoryBarrier();
+}
+
+template <typename T>
+inline void AtomicSyncReleaseStore(volatile T *ptr, T val)
+{
+  AtomicSyncMemoryBarrier();
+  *ptr = val;
+}
+
+template <typename T>
+inline T AtomicSyncFetchAdd(volatile T *ptr, T value)
 {
   return __sync_fetch_and_add(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncFetchSub(volatile T *ptr, T value)
+inline T AtomicSyncFetchSub(volatile T *ptr, T value)
 {
   return __sync_fetch_and_sub(ptr, value);
 }
 
 template <typename T>
-T AtomicvFetchOr(volatile T *ptr, T value)
+inline T AtomicvFetchOr(volatile T *ptr, T value)
 {
   return __sync_fetch_and_or(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncFetchAnd(volatile T *ptr, T value)
+inline T AtomicSyncFetchAnd(volatile T *ptr, T value)
 {
   return __sync_fetch_and_and(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncFetchXor(volatile T *ptr, T value)
+inline T AtomicSyncFetchXor(volatile T *ptr, T value)
 {
   return __sync_fetch_and_xor(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncFetchNand(volatile T *ptr, T value)
+inline T AtomicSyncFetchNand(volatile T *ptr, T value)
 {
   return __sync_fetch_and_nand(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncFetchInc(volatile T *ptr)
+inline T AtomicSyncFetchInc(volatile T *ptr)
 {
   return __sync_fetch_and_add(ptr, 1);
 }
 
 template <typename T>
-T AtomicvFetchDec(volatile T *ptr)
+inline T AtomicvFetchDec(volatile T *ptr)
 {
   return __sync_fetch_and_sub(ptr, 1);
 }
 
 template <typename T>
-T AtomicSyncAddFetch(volatile T *ptr, T value)
+inline T AtomicSyncAddFetch(volatile T *ptr, T value)
 {
   return __sync_add_and_fetch(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncSubFetch(volatile T *ptr, T val)
+inline T AtomicSyncSubFetch(volatile T *ptr, T val)
 {
   return __sync_sub_and_fetch(ptr, val);
 }
 
 template <typename T>
-T AtomicSyncOrFetch(volatile T *ptr, T value)
+inline T AtomicSyncOrFetch(volatile T *ptr, T value)
 {
   return __sync_or_and_fetch(ptr, value);
 }
 
 template <typename T>
-T AtomicSyncAndFetch(volatile T *ptr, T val)
+inline T AtomicSyncAndFetch(volatile T *ptr, T val)
 {
   return __sync_and_and_fetch(ptr, val);
 }
 
 template <typename T>
-T AtomicSyncXorFetch(volatile T *ptr, T val)
+inline T AtomicSyncXorFetch(volatile T *ptr, T val)
 {
   return __sync_xor_and_fetch(ptr, val);
 }
 
 template <typename T>
-T AtomicSyncNandFetch(volatile T *ptr, T val)
+inline T AtomicSyncNandFetch(volatile T *ptr, T val)
 {
   return __sync_nand_and_fetch(ptr, val);
 }
 
 template <typename T>
-T AtomicSyncIncFetch(volatile T *ptr)
+inline T AtomicSyncIncFetch(volatile T *ptr)
 {
   return __sync_add_and_fetch(ptr, 1);
 }
 
 template <typename T>
-T AtomicSyncDecFetch(volatile T *ptr)
+inline T AtomicSyncDecFetch(volatile T *ptr)
 {
   return __sync_sub_and_fetch(ptr, 1);
 }
 
 template <typename T>
-bool AtomicSyncCompareExchange(volatile T *ptr, T *expected, T *desired)
+inline T AtomicSyncCompareAndSwap(volatile T *ptr,
+                           T old_value,
+                           T new_value)
 {
-  return __sync_bool_compare_and_swap(ptr, expected, desired);
+  // Since CompareAndSwap uses __sync_bool_compare_and_swap, which
+  // is a full memory barrier, none is needed here or below in Release.
+  T prev_value;
+  do
+  {
+    if (__sync_bool_compare_and_swap(ptr, old_value, new_value))
+      return old_value;
+    prev_value = *ptr;
+  } while (prev_value == old_value);
+  return prev_value;
+}
+
+template <typename T>
+inline T AtomicSyncExchange(volatile T *ptr,
+                            T new_value)
+{
+  T old_value;
+  do
+  {
+    old_value = *ptr;
+  } while (!__sync_bool_compare_and_swap(ptr, old_value, new_value));
+  return old_value;
+}
+
+template <typename T>
+inline T AtomicSyncCasInc(volatile T *ptr,
+                          T increment)
+{
+  for (;;)
+  {
+    // Atomic exchange the old value with an incremented one.
+    T old_value = *ptr;
+    T new_value = old_value + increment;
+    if (__sync_bool_compare_and_swap(ptr, old_value, new_value))
+    {
+      // The exchange took place as expected.
+      return new_value;
+    }
+    // Otherwise, *ptr changed mid-loop and we need to retry.
+  }
 }
 
 // Use gcc c++11 built-in functions for memory model aware atomic operations
@@ -174,14 +252,14 @@ enum AtomicMemoryOrder
 // This built-in function implements an atomic load operation. It returns the contents of *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE, and __ATOMIC_CONSUME.
 template <typename T>
-T AtomicLoadN(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicLoadN(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_load_n(ptr, memorder);
 }
 
 // This is the generic version of an atomic load. It returns the contents of *ptr in *ret.
 template <typename T>
-void AtomicLoad(volatile T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline void AtomicLoad(volatile T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_load(ptr, ret, memorder);
 }
@@ -189,14 +267,14 @@ void AtomicLoad(volatile T *ptr, T *ret, AtomicMemoryOrder memorder = MEMORY_ORD
 // This built-in function implements an atomic store operation. It writes val into *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, and __ATOMIC_RELEASE.
 template <typename T>
-void AtomicStoreN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline void AtomicStoreN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_store_n(ptr, val, memorder);
 }
 
 // This is the generic version of an atomic store. It stores the value of *val into *ptr.
 template <typename T>
-void AtomicStore(volatile T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline void AtomicStore(volatile T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_store(ptr, val, memorder);
 }
@@ -205,7 +283,7 @@ void AtomicStore(volatile T *ptr, T *val, AtomicMemoryOrder memorder = MEMORY_OR
 // It writes val into *ptr, and returns the previous contents of *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE, __ATOMIC_RELEASE, and __ATOMIC_ACQ_REL.
 template <typename T>
-T AtomicExchangeN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicExchangeN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_exchange_n(ptr, val, memorder);
 }
@@ -213,7 +291,7 @@ T AtomicExchangeN(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_OR
 // This is the generic version of an atomic exchange. It stores the contents of *val into *ptr.
 // The original value of *ptr is copied into *ret.
 template <typename T>
-void AtomicExchange(volatile T *ptr, T *val, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline void AtomicExchange(volatile T *ptr, T *val, T *ret, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   __atomic_exchange(ptr, val, ret, memorder);
 }
@@ -230,7 +308,7 @@ void AtomicExchange(volatile T *ptr, T *val, T *ret, AtomicMemoryOrder memorder 
 // This memory order cannot be __ATOMIC_RELEASE nor __ATOMIC_ACQ_REL.
 // It also cannot be a stronger order than that specified by success_memorder.
 template <typename T>
-bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool weak,
+inline bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool weak,
                             AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange_n(ptr, expected, desired, weak,
@@ -241,7 +319,7 @@ bool AtomicCompareExchangeN(volatile T *ptr, T *expected, T desired, bool weak,
 // The function is virtually identical to __atomic_compare_exchange_n,
 // except the desired value is also a pointer.
 template <typename T>
-bool AtomicCompareExchange(volatile T *ptr, T *expected, T *desired, bool weak,
+inline bool AtomicCompareExchange(volatile T *ptr, T *expected, T *desired, bool weak,
                            AtomicMemoryOrder success_memorder, AtomicMemoryOrder failure_memorder)
 {
   return __atomic_compare_exchange(ptr, expected, desired, weak,
@@ -256,37 +334,37 @@ bool AtomicCompareExchange(volatile T *ptr, T *expected, T *desired, bool weak,
 // It must not be a boolean type.
 // All memory orders are valid.
 template <typename T>
-T AtomicAddFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicAddFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_add_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicSubFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicSubFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_sub_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicAndFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicAndFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_and_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicXorFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicXorFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_xor_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicOrFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicOrFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_or_fetch(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicNandFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicNandFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_nand_fetch(ptr, val, memorder);
 }
@@ -298,49 +376,49 @@ T AtomicNandFetch(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_OR
 // The same constraints on arguments apply as for the corresponding __atomic_op_fetch built-in functions.
 // All memory orders are valid.
 template <typename T>
-T AtomicFetchAdd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchAdd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_add(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchSub(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchSub(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_sub(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchAnd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchAnd(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_and(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchXor(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchXor(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_xor(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchOr(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchOr(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_or(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicFetchNand(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicFetchNand(volatile T *ptr, T val, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_fetch_nand(ptr, val, memorder);
 }
 
 template <typename T>
-T AtomicIncrement(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+T AtomicIncFetch(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_add_fetch(ptr, 1, memorder);
 }
 
 template <typename T>
-T AtomicDecrement(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline T AtomicDecFetch(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_sub_fetch(ptr, 1, memorder);
 }
@@ -352,7 +430,7 @@ T AtomicDecrement(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATO
 // For other types only part of the value may be set.
 // All memory orders are valid.
 template <typename T>
-bool AtomicTestAndSet(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline bool AtomicTestAndSet(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_test_and_set(ptr, memorder);
 }
@@ -362,14 +440,14 @@ bool AtomicTestAndSet(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER
 // For other types it may only clear partially. If the type is not bool prefer using __atomic_store.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, and __ATOMIC_RELEASE.
 template <typename T>
-bool AtomicClear(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline bool AtomicClear(volatile T *ptr, AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_clear(ptr, memorder);
 }
 
 // This built-in function acts as a synchronization fence between threads based on the specified memory order.
 // All memory orders are valid.
-void AtomicThreadFence(AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
+inline void AtomicThreadFence(AtomicMemoryOrder memorder = MEMORY_ORDER_ATOMIC_SEQ_CST)
 {
   return __atomic_thread_fence(memorder);
 }

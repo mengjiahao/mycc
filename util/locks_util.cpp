@@ -235,7 +235,7 @@ bool CondVar::timedWaitRelative(int64_t time_ms)
 #ifdef MUTEX_DEBUG
   mu_->beforeUnlock();
 #endif
-  bool ret = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
+  int32_t ret = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
 #ifdef MUTEX_DEBUG
   mu_->afterLock();
 #endif
@@ -413,11 +413,12 @@ void CondLock::wait()
   PthreadCall("condlock wait", pthread_cond_wait(&cond_, &mutex_));
 }
 
-void CondLock::timedWait(uint64_t time_us)
+bool CondLock::timedWait(uint64_t time_ms)
 {
   struct timespec ts;
-  MakeTimeoutUs(&ts, time_us);
-  pthread_cond_timedwait(&cond_, &mutex_, &ts);
+  MakeTimeoutMs(&ts, time_ms);
+  int32_t ret = pthread_cond_timedwait(&cond_, &mutex_, &ts);
+  return (0 == ret);
 }
 
 void CondLock::signal()

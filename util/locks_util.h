@@ -94,15 +94,75 @@ public:
   }
 
 private:
-  Mutex *const mu_;
+  Mutex *const mu_ = nullptr;
   DISALLOW_COPY_AND_ASSIGN(MutexLock);
 };
+
+// ConditionVariable wraps pthreads condition variable synchronization or, on
+// Windows, simulates it.  This functionality is very helpful for having
+// several threads wait for an event, as is common with a thread pool managed
+// by a master.  The meaning of such an event in the (worker) thread pool
+// scenario is that additional tasks are now available for processing.  It is
+// used in Chrome in the DNS prefetching system to notify worker threads that
+// a queue now has items (tasks) which need to be tended to.  A related use
+// would have a pool manager waiting on a ConditionVariable, waiting for a
+// thread in the pool to announce (signal) that there is now more room in a
+// (bounded size) communications queue for the manager to deposit tasks, or,
+// as a second example, that the queue of tasks is completely empty and all
+// workers are waiting.
+//
+// USAGE NOTE 1: spurious signal events are possible with this and
+// most implementations of condition variables.  As a result, be
+// *sure* to retest your condition before proceeding.  The following
+// is a good example of doing this correctly:
+//
+// while (!work_to_be_done()) Wait(...);
+//
+// In contrast do NOT do the following:
+//
+// if (!work_to_be_done()) Wait(...);  // Don't do this.
+//
+// Especially avoid the above if you are relying on some other thread only
+// issuing a signal up *if* there is work-to-do.  There can/will
+// be spurious signals.  Recheck state on waiting thread before
+// assuming the signal was intentional. Caveat caller ;-).
+//
+// USAGE NOTE 2: Broadcast() frees up all waiting threads at once,
+// which leads to contention for the locks they all held when they
+// called Wait().  This results in POOR performance.  A much better
+// approach to getting a lot of threads out of Wait() is to have each
+// thread (upon exiting Wait()) call Signal() to free up another
+// Wait'ing thread.  Look at condition_variable_unittest.cc for
+// both examples.
+//
+// Broadcast() can be used nicely during teardown, as it gets the job
+// done, and leaves no sleeping threads... and performance is less
+// critical at that point.
+//
+// The semantics of Broadcast() are carefully crafted so that *all*
+// threads that were waiting when the request was made will indeed
+// get signaled.  Some implementations mess up, and don't signal them
+// all, while others allow the wait to be effectively turned off (for
+// a while while waiting threads come around).  This implementation
+// appears correct, as it will not "lose" any signals, and will guarantee
+// that all threads get signaled by Broadcast().
+//
+// This implementation offers support for "performance" in its selection of
+// which thread to revive.  Performance, in direct contrast with "fairness,"
+// assures that the thread that most recently began to Wait() is selected by
+// Signal to revive.  Fairness would (if publicly supported) assure that the
+// thread that has Wait()ed the longest is selected. The default policy
+// may improve performance, as the selected thread may have a greater chance of
+// having some of its stack data in various CPU caches.
+//
 
 class CondVar
 {
 public:
   explicit CondVar(Mutex *mu);
   ~CondVar();
+  // Wait() releases the caller's critical section atomically as it starts to
+  // sleep, and the reacquires it when it is signaled.
   void wait();
   // Timed condition wait.  Returns true if timeout occurred.
   bool timedWait(int64_t abs_time_ms);
@@ -112,10 +172,11 @@ public:
   bool timedWaitRelative(const struct timespec &relative_time);
   void signal();
   void signalAll();
+  void broadcast() { signalAll(); }
 
 private:
   pthread_cond_t cv_;
-  Mutex *mu_;
+  Mutex *mu_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(CondVar);
 };
@@ -155,7 +216,7 @@ public:
   ~ReadLock() { this->mu_->readUnlock(); }
 
 private:
-  RWMutex *const mu_;
+  RWMutex *const mu_ = nullptr;
   DISALLOW_COPY_AND_ASSIGN(ReadLock);
 };
 
@@ -169,7 +230,7 @@ public:
   ~ReadUnlock() { mu_->readUnlock(); }
 
 private:
-  RWMutex *const mu_;
+  RWMutex *const mu_ = nullptr;
   DISALLOW_COPY_AND_ASSIGN(ReadUnlock);
 };
 
@@ -188,7 +249,7 @@ public:
   ~WriteLock() { this->mu_->writeUnlock(); }
 
 private:
-  RWMutex *const mu_;
+  RWMutex *const mu_ = nullptr;
   DISALLOW_COPY_AND_ASSIGN(WriteLock);
 };
 
@@ -232,7 +293,7 @@ public:
   }
 
 protected:
-  SpinLock *spin_lock_;
+  SpinLock *spin_lock_ = nullptr;
 };
 
 class RefMutex
@@ -273,7 +334,7 @@ public:
   void lock();
   void unlock();
   void wait();
-  void timedWait(uint64_t time_us);
+  bool timedWait(uint64_t time_ms);
   void signal();
   void broadcast();
 
@@ -287,7 +348,8 @@ private:
 class BlockingCounter
 {
 public:
-  explicit BlockingCounter(uint64_t cnt) : cond_(&mutex_), counter_(cnt) {}
+  explicit BlockingCounter(uint64_t cnt)
+      : cond_(&mutex_), counter_(cnt) {}
 
   bool decrement()
   {
@@ -344,12 +406,12 @@ public:
     signaled_ = false;
   }
 
-  bool timedWaitRelative(int64_t timeout_us)
+  bool timedWaitRelative(int64_t timeout_ms)
   {
     MutexLock lock(&mutex_);
     if (!signaled_)
     {
-      cv_.timedWaitRelative(timeout_us);
+      cv_.timedWaitRelative(timeout_ms);
     }
     bool ret = signaled_;
     signaled_ = false;

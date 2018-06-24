@@ -2,6 +2,8 @@
 #ifndef MYCC_UTIL_CODING_UTIL_H_
 #define MYCC_UTIL_CODING_UTIL_H_
 
+#include <arpa/inet.h>
+#include <byteswap.h> // for linux
 #include <endian.h>
 #include <stdint.h>
 #include <string.h>
@@ -34,9 +36,12 @@ inline bool IsLittleEndian()
 }
 
 #if defined(OS_LINUX)
-#include <arpa/inet.h>
-#include <byteswap.h>
-
+inline uint16_t ByteSwap16(uint16_t x)
+{
+  return bswap_16(x);
+}
+inline uint32_t ByteSwap32(uint32_t x) { return bswap_32(x); }
+inline uint64_t ByteSwap64(uint64_t x) { return bswap_64(x); }
 inline uint16_t ByteSwap(uint16_t x)
 {
   return bswap_16(x);
@@ -46,24 +51,73 @@ inline uint64_t ByteSwap(uint64_t x) { return bswap_64(x); }
 
 #else
 // Returns a value with all bytes in |x| swapped, i.e. reverses the endianness.
-inline uint16_t ByteSwap(uint16_t x)
+inline uint16_t ByteSwap16(uint16_t x)
 {
   return (x << 8) | (x >> 8);
 }
 
-inline uint32_t ByteSwap(uint32_t x)
+inline uint32_t ByteSwap32(uint32_t x)
 {
   x = ((x & 0xff00ff00UL) >> 8) | ((x & 0x00ff00ffUL) << 8);
   return (x >> 16) | (x << 16);
 }
 
-inline uint64_t ByteSwap(uint64_t x)
+inline uint64_t ByteSwap64(uint64_t x)
 {
   x = ((x & 0xff00ff00ff00ff00ULL) >> 8) | ((x & 0x00ff00ff00ff00ffULL) << 8);
   x = ((x & 0xffff0000ffff0000ULL) >> 16) | ((x & 0x0000ffff0000ffffULL) << 16);
   return (x >> 32) | (x << 32);
 }
+
+inline uint16_t ByteSwap(uint16_t x)
+{
+  return ByteSwap16(x);
+}
+
+inline uint32_t ByteSwap(uint32_t x)
+{
+  return ByteSwap32(x);
+}
+
+inline uint64_t ByteSwap(uint64_t x)
+{
+  return ByteSwap64(x);
+}
 #endif // ByteSwap
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#define htonll(x) ByteSwap64(x)
+#define ntohll(x) ByteSwap64(x)
+#else
+#define htonll(x) (x)
+#define ntohll(x) (x)
+#endif
+
+template <typename T>
+inline T ByteSwap(T value)
+{
+  return ByteSwap(value);
+}
+
+template <typename T>
+static void ByteSwapPtr(T *value)
+{
+  *value = ByteSwap(*value);
+}
+
+// float number can only be inplace swap
+
+inline void ByteSwapPtr(float *value)
+{
+  uint32_t *p = reinterpret_cast<uint32_t *>(value);
+  ByteSwapPtr(p);
+}
+
+inline void ByteSwapPtr(double *value)
+{
+  uint64_t *p = reinterpret_cast<uint64_t *>(value);
+  ByteSwapPtr(p);
+}
 
 // Converts the bytes in |x| from host order (endianness) to little endian, and
 // returns the result.
@@ -135,6 +189,118 @@ inline uint64_t HostToNet64(uint64_t x)
     return ByteSwap(x);
   else
     return x;
+}
+
+// local byte order to network byte order
+inline char LocalToNet(char x) { return x; }
+inline signed char LocalToNet(signed char x) { return x; }
+inline unsigned char LocalToNet(unsigned char x) { return x; }
+
+inline short LocalToNet(short x)
+{
+  return htons(x);
+}
+inline unsigned short LocalToNet(unsigned short x)
+{
+  return htons(x);
+}
+inline int LocalToNet(int x)
+{
+  return htonl(x);
+}
+inline unsigned int LocalToNet(unsigned int x)
+{
+  return htonl(x);
+}
+inline long LocalToNet(long x)
+{
+  return (sizeof(x) == 4) ? htonl(x) : (long)htonll(static_cast<unsigned long long>(x));
+}
+inline unsigned long LocalToNet(unsigned long x)
+{
+  return (sizeof(x) == 4) ? htonl(x) : (unsigned long)htonll(static_cast<unsigned long long>(x));
+}
+inline long long LocalToNet(long long x)
+{
+  return htonll(static_cast<unsigned long long>(x));
+}
+inline unsigned long long LocalToNet(unsigned long long x)
+{
+  return htonll(static_cast<unsigned long long>(x));
+}
+
+template <typename T>
+inline void LocalToNet(T *value)
+{
+  *value = LocalToNet(*value);
+}
+
+inline void LocalToNet(float *value)
+{
+  if (IsLittleEndian())
+    ByteSwapPtr(value);
+}
+
+inline void LocalToNet(double *value)
+{
+  if (IsLittleEndian())
+    ByteSwapPtr(value);
+}
+
+// network byte order to local byte order
+inline char NetToLocal(char x) { return x; }
+inline signed char NetToLocal(signed char x) { return x; }
+inline unsigned char NetToLocal(unsigned char x) { return x; }
+
+inline short NetToLocal(short x)
+{
+  return ntohs(x);
+}
+inline unsigned short NetToLocal(unsigned short x)
+{
+  return ntohs(x);
+}
+inline int NetToLocal(int x)
+{
+  return ntohl(x);
+}
+inline unsigned int NetToLocal(unsigned int x)
+{
+  return ntohl(x);
+}
+inline long NetToLocal(long x)
+{
+  return (sizeof(x) == 4) ? ntohl(x) : (long)ntohll(x);
+}
+inline unsigned long NetToLocal(unsigned long x)
+{
+  return (sizeof(x) == 4) ? ntohl(x) : (unsigned long)ntohll(x);
+}
+inline long long NetToLocal(long long x)
+{
+  return ntohll(x);
+}
+inline unsigned long long NetToLocal(unsigned long long x)
+{
+  return ntohll(x);
+}
+
+template <typename T>
+inline void NetToLocal(T *value)
+{
+  *value = NetToLocal(*value);
+}
+
+inline void NetToLocal(float *value)
+{
+  if (IsLittleEndian())
+    ByteSwapPtr(value);
+}
+
+inline void NetToLocal(double *value)
+{
+  if (IsLittleEndian())
+    ByteSwapPtr(value);
 }
 
 // Read an integer (signed or unsigned) from |buf| in Big Endian order.

@@ -75,6 +75,28 @@
 #define THREAD_LOCAL __thread
 #endif
 
+#ifndef BASE_TYPEOF
+#if defined(BASE_CXX11_ENABLED)
+#define BASE_TYPEOF decltype
+#else
+#define BASE_TYPEOF typeof
+#endif
+#endif // BASE_TYPEOF
+
+// Control visiblity outside .so
+#if defined(COMPILER_MSVC)
+#ifdef COMPILE_LIBRARY
+#define BASE_EXPORT __declspec(dllexport)
+#define BASE_EXPORT_PRIVATE __declspec(dllexport)
+#else
+#define BASE_EXPORT __declspec(dllimport)
+#define BASE_EXPORT_PRIVATE __declspec(dllimport)
+#endif // COMPILE_LIBRARY
+#else
+#define BASE_EXPORT __attribute__((visibility("default")))
+#define BASE_EXPORT_PRIVATE __attribute__((visibility("default")))
+#endif // COMPILER_MSVC
+
 // Annotate a variable or function indicating it's ok if the variable or function is not used.
 // (Typically used to silence a compiler warning when the assignment
 // is important for some other reason.)
@@ -235,5 +257,20 @@ private:                                               \
     ::free(p);            \
     (p) = NULL;           \
   } while (0)
+
+// This provides a wrapper around system calls which may be interrupted by a
+// signal and return EINTR. See man 7 signal.
+// To prevent long-lasting loops (which would likely be a bug, such as a signal
+// that should be masked) to go unnoticed, there is a limit after which the
+// caller will nonetheless see an EINTR in Debug builds.
+#define HANDLE_EINTR(x) ({                                \
+  BASE_TYPEOF(x)                                          \
+  eintr_wrapper_result;                                   \
+  do                                                      \
+  {                                                       \
+    eintr_wrapper_result = (x);                           \
+  } while (eintr_wrapper_result == -1 && errno == EINTR); \
+  eintr_wrapper_result;                                   \
+})
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_

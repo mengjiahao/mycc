@@ -99,7 +99,7 @@ struct FileStatistics
 
 struct FileLock
 {
-  int32_t fd;
+  int fd;
   string name;
 };
 
@@ -429,14 +429,6 @@ public:
   // When "function(arg)" returns, the thread will be destroyed.
   virtual void StartNewPthread(void (*function)(void *arg), void *arg) = 0;
 
-  /// Returns a new thread that is running fn() and is identified
-  /// (for debugging/performance-analysis) by "name".
-  /// Caller takes ownership of the result and must delete it eventually
-  /// (the deletion will block until fn() stops running).
-  virtual Thread *StartNewThread(const ThreadOptions &thread_options,
-                                 const string &name,
-                                 std::function<void()> fn) = 0;
-
   // NewThreadPool() is a function that could be used to create a ThreadPool
   // with `num_threads` background threads.
   virtual ThreadPool *NewThreadPool(int32_t num_threads) = 0;
@@ -548,7 +540,7 @@ public:
   virtual Status getCurrentPos(int64_t *curpos) = 0;
 
   // Returns fd, do not use it to modify file
-  virtual int32_t getFD() = 0;
+  virtual int getFD() = 0;
 };
 
 // A file abstraction for randomly reading the contents of a file.
@@ -635,7 +627,7 @@ public:
   }
 
   // Returns fd, do not use it to modify file
-  virtual int32_t getFD() = 0;
+  virtual int getFD() = 0;
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -822,7 +814,7 @@ public:
   }
 
   // Returns fd, do not use it to modify file
-  virtual int32_t getFD() = 0;
+  virtual int getFD() = 0;
 
 protected:
   uint64_t preallocation_block_size() { return preallocation_block_size_; }
@@ -872,7 +864,7 @@ public:
   virtual Status close() = 0;
 
   // Returns fd, do not use it to modify file
-  virtual int32_t getFD() = 0;
+  virtual int getFD() = 0;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(RandomRWFile);

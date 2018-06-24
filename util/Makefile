@@ -20,8 +20,8 @@ SO_LDFLAGS += -rdynamic $(DEPS_LDPATH) $(SO_DEPS_LDFLAGS) -lpthread -lrt -ldl \
               -shared -Wl,--version-script,so-version-script # hide symbol of deps libs
 
 # Compiler
-CXX = g++
-#CXX = clang
+#CXX = g++
+CXX = clang
 
 # Compiler opts
 GCC_OPTS = -fmax-errors=2

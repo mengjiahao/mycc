@@ -14,6 +14,8 @@ namespace mycc
 namespace util
 {
 
+#define ENABLE_DEBUG 1
+
 #define STR_ERRORNO() (errno == 0 ? "None" : strerror(errno))
 
 #define PANIC(fmt, ...)                                                           \
@@ -51,7 +53,68 @@ namespace util
   fflush(stderr)                                                                  \
       abort()
 
-// panic utils
+#define PRINT_TRACE(fmt, ...)                                                       \
+  if (ENABLE_DEBUG)                                                                 \
+  {                                                                                 \
+    fprintf(stderr, "TRACE [%s:%d](%s) errno: %d %s, " fmt,                         \
+            __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+    fflush(stderr)                                                                  \
+  }
+
+#define PRINT_ASSERT(fmt, ...)                                                    \
+  fprintf(stderr, "ASSERT [%s:%d](%s) errno: %d %s, " fmt,                        \
+          __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
+  fflush(stderr)
+
+// check utils
+
+#define PRINT_CHECK_TRUE(c)                \
+  if (!(c))                                \
+  {                                        \
+    PRINT_ASSERT("%s is not TRUE \n", #c); \
+  }
+
+#define PRINT_CHECK_FALSE(c)                \
+  if (c)                                    \
+  {                                         \
+    PRINT_ASSERT("%s is not FALSE \n", #c); \
+  }
+
+#define PRINT_CHECK_EQ(c, val)                    \
+  if ((c) != (val))                               \
+  {                                               \
+    PRINT_ASSERT("%s is not EQ %s \n", #c, #val); \
+  }
+
+#define PRINT_CHECK_NE(c, val)                    \
+  if ((c) == (val))                               \
+  {                                               \
+    PRINT_ASSERT("%s is not NE %s \n", #c, #val); \
+  }
+
+#define PRINT_CHECK_GE(c, val)                    \
+  if ((c) < (val))                                \
+  {                                               \
+    PRINT_ASSERT("%s is not GE %s \n", #c, #val); \
+  }
+
+#define PRINT_CHECK_GT(c, val)                    \
+  if ((c) <= (val))                               \
+  {                                               \
+    PRINT_ASSERT("%s is not GT %s \n", #c, #val); \
+  }
+
+#define PRINT_CHECK_LE(c, val)                    \
+  if ((c) > (val))                                \
+  {                                               \
+    PRINT_ASSERT("%s is not LE %s \n", #c, #val); \
+  }
+
+#define PRINT_CHECK_LT(c, val)                    \
+  if ((c) >= (val))                               \
+  {                                               \
+    PRINT_ASSERT("%s is not LT %s \n", #c, #val); \
+  }
 
 #define PANIC_TRUE(c)               \
   if (!(c))                         \
@@ -101,10 +164,10 @@ namespace util
     PANIC("%s is not LT %s \n", #c, #val); \
   }
 
-#define EXIT_FAIL(fmt, ...) \
-    PRINT_ERROR(fmt, ##__VA_ARGS__); \
-    PRINT_ERROR("\n Exit fail \n"); \
-    exit(EXIT_FAILURE)
+#define EXIT_FAIL(fmt, ...)        \
+  PRINT_ERROR(fmt, ##__VA_ARGS__); \
+  PRINT_ERROR("\n Exit fail \n");  \
+  exit(EXIT_FAILURE)
 
 #define PRINT_STACK_TRACE(fmt, ...)                                           \
   do                                                                          \
@@ -112,7 +175,7 @@ namespace util
     fprintf(stderr, "FATAL (%s:%d: errno: %s) " fmt "\n", __FILE__, __LINE__, \
             errno == 0 ? "None" : strerror(errno), ##__VA_ARGS__);            \
     void *buffer[255];                                                        \
-    const int32_t calls = backtrace(buffer, sizeof(buffer) / sizeof(void *));     \
+    const int32_t calls = backtrace(buffer, sizeof(buffer) / sizeof(void *)); \
     backtrace_symbols_fd(buffer, calls, 1);                                   \
     \                                                                         \
   } while (0)

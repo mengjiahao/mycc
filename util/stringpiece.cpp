@@ -165,9 +165,9 @@ uint64_t StringPiece::difference_offset(const StringPiece b) const
   return off;
 }
 
-uint64_t StringPiece::Hasher::operator()(StringPiece s) const
+std::size_t StringPiece::Hasher::operator()(StringPiece s) const
 {
-  return Hash64(s.data(), s.size(), 0xDECAFCAFFE);
+  return (std::size_t)Hash64(s.data(), s.size(), 0xDECAFCAFFE);
 }
 
 } // namespace util
