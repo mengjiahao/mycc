@@ -2,8 +2,8 @@
 #ifndef MYCC_UTIL_RANDOM_UTIL_H_
 #define MYCC_UTIL_RANDOM_UTIL_H_
 
-#include <stdint.h>
 #include <random>
+#include "types_util.h"
 
 namespace mycc
 {
@@ -101,6 +101,27 @@ public:
     return uniform(uint64_t(1) << uniform(max_log + 1));
   }
 };
+
+// --------------------------------------------------------------------------
+// Functions in this header read from /dev/urandom in posix
+// systems and are not proper for performance critical situations.
+// For fast random numbers, check fast_rand.h
+// --------------------------------------------------------------------------
+void RandBytes(void *output, uint64_t output_length);
+
+// Returns a random number in range [0, kuint64max]. Thread-safe.
+uint64_t RandUint64();
+
+// Generate a 128-bit random GUID of the form: "%08X-%04X-%04X-%04X-%012llX".
+// If GUID generation fails an empty string is returned.
+// The POSIX implementation uses psuedo random number generation to create
+// the GUID.  The Windows implementation uses system services.
+string GenerateGUID();
+
+// Returns true if the input string conforms to the GUID format.
+bool IsValidGUID(const string& guid);
+
+string RandomDataToGUIDString(const uint64_t bytes[2]);
 
 } // namespace util
 } // namespace mycc

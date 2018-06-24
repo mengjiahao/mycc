@@ -39,6 +39,19 @@
 #pragma message("Will need g++-4.6 or higher to compile all," \ "compile without c++0x, some features may be disabled")
 #endif
 
+/**
+ * Macro for marking functions as having public visibility.
+ * Ported from folly/CPortability.h
+ */
+#ifndef GNUC_PREREQ
+#if defined __GNUC__ && defined __GNUC_MINOR__
+#define GNUC_PREREQ(maj, min) \
+  ((__GNUC__ << 16) + __GNUC_MINOR__ >= ((maj) << 16) + (min))
+#else
+#define GNUC_PREREQ(maj, min) 0
+#endif
+#endif
+
 #if !defined(BASE_CXX11_ENABLED)
 #define nullptr NULL
 #endif
@@ -54,17 +67,6 @@
 #define BUILTIN_PREFETCH(addr, rw, locality) __builtin_prefetch(addr, rw, locality)
 #else
 #define BUILTIN_PREFETCH(addr, rw, locality)
-#endif
-
-// Return the byte alignment of the given type (available at compile time).  Use
-// sizeof(type) prior to checking __alignof to workaround Visual C++ bug:
-// http://goo.gl/isH0C
-// Use like:
-//   ALIGNOF(int32_t)  // this would be 4
-#if defined(COMPILER_MSVC)
-#define ALIGNOF(type) (sizeof(type) - sizeof(type) + __alignof(type))
-#elif defined(COMPILER_GCC)
-#define ALIGNOF(type) __alignof__(type)
 #endif
 
 #ifdef BASE_CXX11_ENABLED
@@ -110,6 +112,81 @@
 #define ALLOW_UNUSED
 #define ATTRIBUTE_UNUSED
 #endif
+
+#if defined(COMPILER_GCC)
+#define NORETURN __attribute__((noreturn))
+#define NORETURN_PTR __attribute__((__noreturn__))
+#else
+#define NORETURN
+#define NORETURN_PTR
+#endif
+
+// Annotate a function indicating it should not be inlined.
+// Use like:
+//   NOINLINE void DoStuff() { ... }
+#if defined(COMPILER_GCC)
+#define NOINLINE __attribute__((noinline))
+#elif defined(COMPILER_MSVC)
+#define NOINLINE __declspec(noinline)
+#else
+#define NOINLINE
+#endif
+
+#ifndef BASE_FORCE_INLINE
+#if defined(COMPILER_MSVC)
+#define BASE_FORCE_INLINE    __forceinline
+#else
+#define BASE_FORCE_INLINE inline __attribute__((always_inline))
+#endif
+#endif  // BASE_FORCE_INLINE
+
+// Specify memory alignment for structs, classes, etc.
+// Use like:
+//   class ALIGNAS(16) MyClass { ... }
+//   ALIGNAS(16) int array[4];
+#ifndef ALIGNAS
+#if defined(COMPILER_MSVC)
+#define ALIGNAS(byte_alignment) __declspec(align(byte_alignment))
+#elif defined(COMPILER_GCC)
+#define ALIGNAS(byte_alignment) __attribute__((aligned(byte_alignment)))
+#endif
+#endif // ALIGNAS
+
+// Return the byte alignment of the given type (available at compile time).  Use
+// sizeof(type) prior to checking __alignof to workaround Visual C++ bug:
+// http://goo.gl/isH0C
+// Use like:
+//   ALIGNOF(int32_t)  // this would be 4
+#ifndef ALIGNOF
+#if defined(COMPILER_MSVC)
+#define ALIGNOF(type) (sizeof(type) - sizeof(type) + __alignof(type))
+#elif defined(COMPILER_GCC)
+#define ALIGNOF(type) __alignof__(type)
+#endif
+#endif // ALIGNOF
+
+// Tell the compiler a function is using a printf-style format string.
+// |format_param| is the one-based index of the format string parameter;
+// |dots_param| is the one-based index of the "..." parameter.
+// For v*printf functions (which take a va_list), pass 0 for dots_param.
+// (This is undocumented but matches what the system C headers do.)
+#ifndef PRINTF_ATTRIBUTE
+#if defined(COMPILER_GCC)
+#define PRINTF_ATTRIBUTE(format_param, dots_param) \
+    __attribute__((format(printf, format_param, dots_param)))
+#else
+#define PRINTF_ATTRIBUTE(format_param, dots_param)
+#endif
+#endif // PRINTF_ATTRIBUTE
+
+#ifndef SCANF_ATTRIBUTE
+#if defined(COMPILER_GCC)
+#define SCANF_ATTRIBUTE(string_index, first_to_check) \
+   __attribute__((__format__(__scanf__, string_index, first_to_check)))
+#else
+#define SCANF_ATTRIBUTE(string_index, first_to_check)
+#endif
+#endif // SCANF_ATTRIBUTE
 
 // remove 'unused parameter' warning
 #ifndef EXPR_UNUSED
@@ -195,6 +272,8 @@ private:                                               \
 
 /// Util macros.
 
+#define BASE_VERSION_CHECK(major, minor, patch) ((major<<16)|(minor<<8)|(patch))
+
 // Concatenate numbers in c/c++ macros.
 #ifndef BASE_CONCAT
 #define BASE_CONCAT(a, b) BASE_CONCAT_HELPER(a, b)
@@ -257,6 +336,12 @@ private:                                               \
     ::free(p);            \
     (p) = NULL;           \
   } while (0)
+
+// new callbacks based on C++11
+#define BASE_CALLBACK_0(__selector__, __target__, ...) std::bind(&__selector__, __target__, ##__VA_ARGS__)
+#define BASE_CALLBACK_1(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, ##__VA_ARGS__)
+#define BASE_CALLBACK_2(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, ##__VA_ARGS__)
+#define BASE_CALLBACK_3(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, ##__VA_ARGS__)
 
 // This provides a wrapper around system calls which may be interrupted by a
 // signal and return EINTR. See man 7 signal.

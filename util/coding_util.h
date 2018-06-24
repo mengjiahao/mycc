@@ -17,6 +17,8 @@ namespace mycc
 namespace util
 {
 
+#define HOST_IS_BIG_ENDIAN (bool)(*(unsigned short *)"\0\xff" < 0x100) 
+
 inline bool IsBigEndian()
 {
 #if __linux__

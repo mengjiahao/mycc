@@ -3,15 +3,25 @@
 #include <fcntl.h>
 #include <netinet/in.h>  // IPPROTO_TCP
 #include <netinet/tcp.h> // TCP_NODELAY
-#include <sys/types.h>
+#include <limits.h>
+#include <stdarg.h>      // va_list
+#include <stdio.h>       // snprintf, vdprintf
+#include <stdlib.h>      // mkstemp
+#include <string.h>      // strlen
+#include <sys/stat.h>
 #include <sys/socket.h> // setsockopt
+#include <sys/types.h>
+#include <unistd.h> // close
+#include <new>      // placement new
+
+#include <linux/limits.h> // PATH_MAX
 
 namespace mycc
 {
 namespace util
 {
 
-int make_non_blocking(int fd)
+int make_fd_non_blocking(int fd)
 {
   const int flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0)
@@ -25,7 +35,7 @@ int make_non_blocking(int fd)
   return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-int make_blocking(int fd)
+int make_fd_blocking(int fd)
 {
   const int flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0)
@@ -39,15 +49,574 @@ int make_blocking(int fd)
   return 0;
 }
 
-int make_close_on_exec(int fd)
+int make_fd_close_on_exec(int fd)
 {
   return fcntl(fd, F_SETFD, FD_CLOEXEC);
 }
 
-int make_no_delay(int socket)
+int make_fd_no_delay(int socket)
 {
   int flag = 1;
   return setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(flag));
+}
+
+bool pipe_cloexec(int pipefd[2])
+{
+  int ret;
+  ret = pipe(pipefd);
+  if (ret != 0)
+    return false;
+
+  /*
+   * The old-fashioned, race-condition prone way that we have to fall
+   * back on if O_CLOEXEC does not exist.
+   */
+  ret = fcntl(pipefd[0], F_SETFD, FD_CLOEXEC);
+  if (ret == -1)
+  {
+    ret = -errno;
+    goto out;
+  }
+
+  ret = fcntl(pipefd[1], F_SETFD, FD_CLOEXEC);
+  if (ret == -1)
+  {
+    ret = -errno;
+    goto out;
+  }
+
+  return true;
+
+out:
+  close(pipefd[0]);
+  close(pipefd[1]);
+
+  return (0 == ret);
+}
+
+bool pipe2_cloexec(int pipefd[2])
+{
+  int ret;
+  ret = pipe2(pipefd, O_CLOEXEC);
+  return (0 == ret);
+}
+
+ssize_t safe_read(int fd, void *buf, size_t count)
+{
+  size_t cnt = 0;
+
+  while (cnt < count)
+  {
+    ssize_t r = read(fd, buf, count - cnt);
+    if (r <= 0)
+    {
+      if (r == 0)
+      {
+        // EOF
+        return cnt;
+      }
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+    cnt += r;
+    buf = (char *)buf + r;
+  }
+  return cnt;
+}
+
+ssize_t safe_read_exact(int fd, void *buf, size_t count)
+{
+  ssize_t ret = safe_read(fd, buf, count);
+  if (ret < 0)
+    return ret;
+  if ((size_t)ret != count)
+    return -EDOM;
+  return 0;
+}
+
+ssize_t safe_write(int fd, const void *buf, size_t count)
+{
+  while (count > 0)
+  {
+    ssize_t r = write(fd, buf, count);
+    if (r < 0)
+    {
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+    count -= r;
+    buf = (char *)buf + r;
+  }
+  return 0;
+}
+
+ssize_t safe_pread(int fd, void *buf, size_t count, off_t offset)
+{
+  size_t cnt = 0;
+  char *b = (char *)buf;
+
+  while (cnt < count)
+  {
+    ssize_t r = pread(fd, b + cnt, count - cnt, offset + cnt);
+    if (r <= 0)
+    {
+      if (r == 0)
+      {
+        // EOF
+        return cnt;
+      }
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+
+    cnt += r;
+  }
+  return cnt;
+}
+
+ssize_t safe_pread_exact(int fd, void *buf, size_t count, off_t offset)
+{
+  ssize_t ret = safe_pread(fd, buf, count, offset);
+  if (ret < 0)
+    return ret;
+  if ((size_t)ret != count)
+    return -EDOM;
+  return 0;
+}
+
+ssize_t safe_pwrite(int fd, const void *buf, size_t count, off_t offset)
+{
+  while (count > 0)
+  {
+    ssize_t r = pwrite(fd, buf, count, offset);
+    if (r < 0)
+    {
+      if (errno == EINTR)
+        continue;
+      return -errno;
+    }
+    count -= r;
+    buf = (char *)buf + r;
+    offset += r;
+  }
+  return 0;
+}
+
+ssize_t safe_splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out,
+                    size_t len, unsigned int flags)
+{
+  size_t cnt = 0;
+
+  while (cnt < len)
+  {
+    ssize_t r = splice(fd_in, off_in, fd_out, off_out, len - cnt, flags);
+    if (r <= 0)
+    {
+      if (r == 0)
+      {
+        // EOF
+        return cnt;
+      }
+      if (errno == EINTR)
+        continue;
+      if (errno == EAGAIN)
+        break;
+      return -errno;
+    }
+    cnt += r;
+  }
+  return cnt;
+}
+
+ssize_t safe_splice_exact(int fd_in, off_t *off_in, int fd_out,
+                          off_t *off_out, size_t len, unsigned int flags)
+{
+  ssize_t ret = safe_splice(fd_in, off_in, fd_out, off_out, len, flags);
+  if (ret < 0)
+    return ret;
+  if ((size_t)ret != len)
+    return -EDOM;
+  return 0;
+}
+
+int safe_write_file(const char *base, const char *file,
+                    const char *val, size_t vallen)
+{
+  int ret;
+  char fn[PATH_MAX];
+  char tmp[PATH_MAX];
+  int fd;
+
+  // does the file already have correct content?
+  char oldval[80];
+  ret = safe_read_file(base, file, oldval, sizeof(oldval));
+  if (ret == (int)vallen && memcmp(oldval, val, vallen) == 0)
+    return 0; // yes.
+
+  snprintf(fn, sizeof(fn), "%s/%s", base, file);
+  snprintf(tmp, sizeof(tmp), "%s/%s.tmp", base, file);
+  fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0)
+  {
+    ret = errno;
+    return -ret;
+  }
+  ret = safe_write(fd, val, vallen);
+  if (ret)
+  {
+    close(fd);
+    return ret;
+  }
+
+  ret = fsync(fd);
+  if (ret < 0)
+    ret = -errno;
+  close(fd);
+  if (ret < 0)
+  {
+    unlink(tmp);
+    return ret;
+  }
+  ret = rename(tmp, fn);
+  if (ret < 0)
+  {
+    ret = -errno;
+    unlink(tmp);
+    return ret;
+  }
+
+  fd = open(base, O_RDONLY);
+  if (fd < 0)
+  {
+    ret = -errno;
+    return ret;
+  }
+  ret = fsync(fd);
+  if (ret < 0)
+    ret = -errno;
+  close(fd);
+
+  return ret;
+}
+
+int safe_read_file(const char *base, const char *file,
+                   char *val, size_t vallen)
+{
+  char fn[PATH_MAX];
+  int fd, len;
+
+  snprintf(fn, sizeof(fn), "%s/%s", base, file);
+  fd = open(fn, O_RDONLY);
+  if (fd < 0)
+  {
+    return -errno;
+  }
+  len = safe_read(fd, val, vallen);
+  if (len < 0)
+  {
+    close(fd);
+    return len;
+  }
+  // close sometimes returns errors, but only after write()
+  close(fd);
+  return len;
+}
+
+int make_dir(const std::string &path)
+{
+  if (path.empty())
+  {
+    return -1;
+  }
+
+  if (access(path.c_str(), F_OK | W_OK) == 0)
+  {
+    return 0;
+  }
+
+  if (mkdir(path.c_str(), 0755) != 0)
+  {
+    return -1;
+  }
+  return 0;
+}
+
+int make_dir_p(const string &path)
+{
+  if (path.empty())
+  {
+    return -1;
+  }
+  if (path.size() > PATH_MAX)
+  {
+    return -1;
+  }
+
+  int len = path.length();
+  char tmp[PATH_MAX] = {0};
+  snprintf(tmp, sizeof(tmp), "%s", path.c_str());
+
+  for (int i = 1; i < len; i++)
+  {
+    if (tmp[i] != '/')
+    {
+      continue;
+    }
+
+    tmp[i] = '\0';
+    if (make_dir(tmp) != 0)
+    {
+      return -1;
+    }
+    tmp[i] = '/';
+  }
+
+  return make_dir(path);
+}
+
+static const FileWatcher::Timestamp NON_EXIST_TS =
+    static_cast<FileWatcher::Timestamp>(-1);
+
+FileWatcher::FileWatcher() : _last_ts(NON_EXIST_TS)
+{
+}
+
+int32_t FileWatcher::init(const char *file_path)
+{
+  if (init_from_not_exist(file_path) != 0)
+  {
+    return -1;
+  }
+  check_and_consume(NULL);
+  return 0;
+}
+
+int32_t FileWatcher::init_from_not_exist(const char *file_path)
+{
+  if (NULL == file_path)
+  {
+    return -1;
+  }
+  if (!_file_path.empty())
+  {
+    return -1;
+  }
+  _file_path = file_path;
+  return 0;
+}
+
+FileWatcher::Change FileWatcher::check(Timestamp *new_timestamp) const
+{
+  struct stat tmp_st;
+  const int ret = stat(_file_path.c_str(), &tmp_st);
+  if (ret < 0)
+  {
+    *new_timestamp = NON_EXIST_TS;
+    if (NON_EXIST_TS != _last_ts)
+    {
+      return DELETED;
+    }
+    else
+    {
+      return UNCHANGED;
+    }
+  }
+  else
+  {
+    // Use microsecond timestamps which can be used for:
+    //   2^63 / 1000000 / 3600 / 24 / 365 = 292471 years
+    const Timestamp cur_ts =
+        tmp_st.st_mtim.tv_sec * 1000000L + tmp_st.st_mtim.tv_nsec / 1000L;
+    *new_timestamp = cur_ts;
+    if (NON_EXIST_TS != _last_ts)
+    {
+      if (cur_ts != _last_ts)
+      {
+        return UPDATED;
+      }
+      else
+      {
+        return UNCHANGED;
+      }
+    }
+    else
+    {
+      return CREATED;
+    }
+  }
+}
+
+FileWatcher::Change FileWatcher::check_and_consume(Timestamp *last_timestamp)
+{
+  Timestamp new_timestamp;
+  Change e = check(&new_timestamp);
+  if (last_timestamp)
+  {
+    *last_timestamp = _last_ts;
+  }
+  if (e != UNCHANGED)
+  {
+    _last_ts = new_timestamp;
+  }
+  return e;
+}
+
+void FileWatcher::restore(Timestamp timestamp)
+{
+  _last_ts = timestamp;
+}
+
+// Initializing array. Needs to be macro.
+#define BASE_FILES_TEMP_FILE_PATTERN "temp_file_XXXXXX";
+
+TempFile::TempFile() : _ever_opened(0)
+{
+  char temp_name[] = BASE_FILES_TEMP_FILE_PATTERN;
+  _fd = mkstemp(temp_name);
+  if (_fd >= 0)
+  {
+    _ever_opened = 1;
+    snprintf(_fname, sizeof(_fname), "%s", temp_name);
+  }
+  else
+  {
+    *_fname = '\0';
+  }
+}
+
+TempFile::TempFile(const char *ext)
+{
+  if (NULL == ext || '\0' == *ext)
+  {
+    new (this) TempFile();
+    return;
+  }
+
+  *_fname = '\0';
+  _fd = -1;
+  _ever_opened = 0;
+
+  // Make a temp file to occupy the filename without ext.
+  char temp_name[] = BASE_FILES_TEMP_FILE_PATTERN;
+  const int tmp_fd = mkstemp(temp_name);
+  if (tmp_fd < 0)
+  {
+    return;
+  }
+
+  // Open the temp_file_XXXXXX.ext
+  snprintf(_fname, sizeof(_fname), "%s.%s", temp_name, ext);
+
+  _fd = open(_fname, O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, 0600);
+  if (_fd < 0)
+  {
+    *_fname = '\0';
+  }
+  else
+  {
+    _ever_opened = 1;
+  }
+
+  // Close and remove temp_file_XXXXXX anyway.
+  close(tmp_fd);
+  unlink(temp_name);
+}
+
+int TempFile::_reopen_if_necessary()
+{
+  if (_fd < 0)
+  {
+    _fd = open(_fname, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+  }
+  return _fd;
+}
+
+TempFile::~TempFile()
+{
+  if (_fd >= 0)
+  {
+    close(_fd);
+    _fd = -1;
+  }
+  if (_ever_opened)
+  {
+    // Only remove temp file when _fd >= 0, otherwise we may
+    // remove another temporary file (occupied the same name)
+    unlink(_fname);
+  }
+}
+
+int32_t TempFile::save(const char *content)
+{
+  return save_bin(content, strlen(content));
+}
+
+int32_t TempFile::save_format(const char *fmt, ...)
+{
+  if (_reopen_if_necessary() < 0)
+  {
+    return -1;
+  }
+  va_list ap;
+  va_start(ap, fmt);
+  const int32_t rc = vdprintf(_fd, fmt, ap);
+  va_end(ap);
+
+  close(_fd);
+  _fd = -1;
+  // TODO: is this right?
+  return (rc < 0 ? -1 : 0);
+}
+
+// Write until all buffer was written or an error except EINTR.
+// Returns:
+//    -1   error happened, errno is set
+// count   all written
+static int64_t temp_file_write_all(int fd, const void *buf, uint64_t count)
+{
+  uint64_t off = 0;
+  for (;;)
+  {
+    int64_t nw = write(fd, (char *)buf + off, count - off);
+    if (nw == (int64_t)(count - off))
+    { // including count==0
+      return count;
+    }
+    if (nw >= 0)
+    {
+      off += nw;
+    }
+    else if (errno != EINTR)
+    {
+      return -1;
+    }
+  }
+}
+
+int32_t TempFile::save_bin(const void *buf, uint64_t count)
+{
+  if (_reopen_if_necessary() < 0)
+  {
+    return -1;
+  }
+
+  const int64_t len = temp_file_write_all(_fd, buf, count);
+
+  close(_fd);
+  _fd = -1;
+  if (len < 0)
+  {
+    return -1;
+  }
+  else if ((uint64_t)len != count)
+  {
+    errno = ENOSPC;
+    return -1;
+  }
+  return 0;
 }
 
 } // namespace util

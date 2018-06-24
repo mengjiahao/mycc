@@ -405,6 +405,44 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ChronoTimerWrapper);
 };
 
+/**
+ * @brief A simple timer object for measuring time.
+ *
+ * This is a minimal class around a std::chrono::high_resolution_clock that
+ * serves as a utility class for testing code.
+ */
+class ChronoSimperTimer
+{
+public:
+  typedef std::chrono::high_resolution_clock clock;
+  typedef std::chrono::nanoseconds ns;
+  ChronoSimperTimer() { start(); }
+  /**
+   * @brief Starts a timer.
+   */
+  inline void start() { start_time_ = clock::now(); }
+  inline float nanos()
+  {
+    return std::chrono::duration_cast<ns>(clock::now() - start_time_).count();
+  }
+  /**
+   * @brief Returns the elapsed time in milliseconds.
+   */
+  inline float millis() { return nanos() / 1000000.f; }
+  /**
+   * @brief Returns the elapsed time in microseconds.
+   */
+  inline float micros() { return nanos() / 1000.f; }
+  /**
+   * @brief Returns the elapsed time in seconds.
+   */
+  inline float secs() { return nanos() / 1000000000.f; }
+
+protected:
+  std::chrono::time_point<clock> start_time_;
+  DISALLOW_COPY_AND_ASSIGN(ChronoSimperTimer);
+};
+
 } // namespace util
 } // namespace mycc
 

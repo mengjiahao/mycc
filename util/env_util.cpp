@@ -188,6 +188,9 @@ public:
   virtual Status FileExists(const string &fname) override;
   virtual bool IsDirectory(const string &dname) override;
   virtual Status Stat(const string &fname, FileStatistics *stat) override;
+  virtual Status Stat64(const string &path, FileStatistics *stats) override;
+  virtual Status Lstat64(const string &path, FileStatistics *stats) override;
+  virtual Status RealPath(const string &path, string &real_path) override;
   virtual Status GetFileSize(const string &fname, uint64_t *file_size) override;
   virtual Status GetFileModificationTime(const string &fname,
                                          uint64_t *file_mtime) override;
@@ -568,6 +571,7 @@ Status PosixEnv::NewSequentialFile(const string &fname,
 
   do
   {
+    // IOSTATS_TIMER_GUARD(open_nanos);
     fd = ::open(fname.c_str(), flags, 0644);
   } while (fd < 0 && errno == EINTR);
   if (fd < 0)
@@ -586,6 +590,7 @@ Status PosixEnv::NewSequentialFile(const string &fname,
   {
     do
     {
+      // IOSTATS_TIMER_GUARD(open_nanos);
       file = fdopen(fd, "r");
     } while (file == nullptr && errno == EINTR);
     if (file == nullptr)
@@ -614,6 +619,7 @@ Status PosixEnv::NewRandomAccessFile(const string &fname,
 
   do
   {
+    // IOSTATS_TIMER_GUARD(open_nanos);
     fd = ::open(fname.c_str(), flags, 0644);
   } while (fd < 0 && errno == EINTR);
   if (fd < 0)
@@ -689,6 +695,7 @@ Status PosixEnv::OpenWritableFile(const string &fname,
 
   do
   {
+    // IOSTATS_TIMER_GUARD(open_nanos);
     fd = ::open(fname.c_str(), flags, 0644);
   } while (fd < 0 && errno == EINTR);
 
@@ -702,6 +709,7 @@ Status PosixEnv::OpenWritableFile(const string &fname,
   uint64_t page_size = ::getpagesize();
   if (options.use_mmap_writes)
   {
+    // do not use mmapWrite on non ext-3/xfs/tmpfs systems.
     result->reset(new PosixMmapFile(fname, fd, page_size, options));
   }
   else if (options.use_direct_writes && !options.use_mmap_writes)
@@ -739,6 +747,7 @@ Status PosixEnv::NewRandomRWFile(const string &fname,
   int fd = -1;
   while (fd < 0)
   {
+    // IOSTATS_TIMER_GUARD(open_nanos);
     fd = ::open(fname.c_str(), O_RDWR, 0644);
     if (fd < 0)
     {
@@ -862,6 +871,46 @@ Status PosixEnv::Stat(const string &fname, FileStatistics *stats)
     stats->is_directory = S_ISDIR(sbuf.st_mode);
   }
   return s;
+}
+
+Status PosixEnv::Stat64(const string &path, FileStatistics *stats)
+{
+  struct stat64 sb;
+  int ret = stat64(path.c_str(), &sb);
+  if (ret)
+    return IOError("stat64", path, errno);
+  stats->mode = sb.st_mode;
+  stats->uid = sb.st_uid;
+  stats->gid = sb.st_gid;
+  stats->length = sb.st_size;
+  stats->mtime_nsec = sb.st_mtime * 1e9;
+  stats->is_directory = S_ISDIR(sb.st_mode);
+  return Status::OK();
+}
+
+Status PosixEnv::Lstat64(const string &path, FileStatistics *stats)
+{
+  struct stat64 sb;
+  int ret = lstat64(path.c_str(), &sb);
+  if (ret)
+    return IOError("lstat64", path, errno);
+  stats->mode = sb.st_mode;
+  stats->uid = sb.st_uid;
+  stats->gid = sb.st_gid;
+  stats->length = sb.st_size;
+  stats->mtime_nsec = sb.st_mtime * 1e9;
+  stats->is_directory = S_ISDIR(sb.st_mode);
+  return Status::OK();
+}
+
+Status PosixEnv::RealPath(const string &path, string &real_path)
+{
+  char buf[PATH_MAX];
+  if (!realpath(path.c_str(), buf))
+    return IOError("realpath", path, errno);
+
+  real_path = buf;
+  return Status::OK();
 }
 
 Status PosixEnv::GetFileSize(const string &fname, uint64_t *size)

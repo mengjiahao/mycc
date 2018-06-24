@@ -3,6 +3,8 @@
 #define MYCC_UTIL_THREADLOCAL_UTIL_H_
 
 #include <pthread.h>
+#include <memory>
+#include <vector>
 #include "macros_util.h"
 
 namespace mycc
@@ -11,14 +13,14 @@ namespace util
 {
 
 template <typename T>
-class ThreadLocalStorage
+class PthreadKey
 {
 public:
-  ThreadLocalStorage()
+  PthreadKey()
   {
-    pthread_key_create(&key_, &ThreadLocalStorage::Delete);
+    pthread_key_create(&key_, &PthreadKey::Delete);
   }
-  ~ThreadLocalStorage()
+  ~PthreadKey()
   {
     pthread_key_delete(key_);
   }
@@ -40,8 +42,10 @@ private:
   }
   pthread_key_t key_;
 
-  DISALLOW_COPY_AND_ASSIGN(ThreadLocalStorage);
+  DISALLOW_COPY_AND_ASSIGN(PthreadKey);
 };
+
+
 
 } // namespace util
 } // namespace mycc

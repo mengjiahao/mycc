@@ -80,6 +80,9 @@ string Status::toString() const
     const char *type;
     switch (code())
     {
+    case kError:
+      type = "Error";
+      break;
     case kIOError:
       type = "IOError";
       break;

@@ -18,6 +18,14 @@ namespace util
 #define MATH_MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define MATH_BEWTEEN(v, min_v, max_v) (((min_v) <= (v)) && ((v) <= (max_v))) // [min_v, max_v]
 
+#ifndef FLT_EPSILON
+#define FLT_EPSILON 1.192092896e-07F
+#endif // FLT_EPSILON
+
+#ifndef DBL_EPSILON
+#define DBL_EPSILON 2.2204460492503131e-016
+#endif
+
 /**Util macro for conversion from degrees to radians.*/
 #define MATH_DEG_TO_RAD(x) ((x)*0.0174532925f)
 /**Util macro for conversion from radians to degrees.*/
@@ -203,7 +211,7 @@ inline uint8_t Count1Bits(uint8_t i)
   return count;
 }
 
-// Return the smallest number n such that (x >> n) == 0 
+// Return the smallest number n such that (x >> n) == 0
 // (or 64 if the highest bit in x is set.
 uint64_t Count1Bits(uint64_t i);
 

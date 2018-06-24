@@ -25,6 +25,10 @@ class Status
 {
 public:
   static Status OK() { return Status(); }
+  static Status Error(const StringPiece &msg, const StringPiece &msg2 = StringPiece())
+  {
+    return Status(kError, msg, msg2);
+  }
   static Status IOError(const StringPiece &msg, const StringPiece &msg2 = StringPiece())
   {
     return Status(kIOError, msg, msg2);
@@ -37,6 +41,7 @@ public:
   enum Code
   {
     kOk = 0,
+    kError,
     kIOError,
     kNotSupported,
     kUserError, // kUserError < is user defined error

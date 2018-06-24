@@ -312,6 +312,10 @@ public:
 
   // Obtains statistics for the given path.
   virtual Status Stat(const string &fname, FileStatistics *stat) = 0;
+  virtual Status Stat64(const string &path, FileStatistics *stats) = 0;
+  virtual Status Lstat64(const string &path, FileStatistics *stats) = 0;
+
+  virtual Status RealPath(const string& path, string& real_path) = 0;
 
   // Store the size of fname in *file_size.
   virtual Status GetFileSize(const string &fname, uint64_t *file_size) = 0;
