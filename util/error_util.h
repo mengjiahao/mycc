@@ -180,6 +180,15 @@ namespace util
     \                                                                         \
   } while (0)
 
+// For propagating errors when calling a function.
+#define RETURN_IF_ERROR(expr)                    \
+  do                                             \
+  {                                              \
+    const ::mycc::util::Status _status = (expr); \
+    if (PREDICT_FALSE(!_status.ok()))            \
+      return _status;                            \
+  } while (0)
+
 } // namespace util
 } // namespace mycc
 

@@ -56,11 +56,26 @@
 #define nullptr NULL
 #endif
 
-#ifndef LIKELY
-#define LIKELY(x) (__builtin_expect(!!(x), 1))
+// Mark a branch likely or unlikely to be true.
+// We can't remove the BAIDU_ prefix because the name is likely to conflict,
+// namely kylin already has the macro.
+#if defined(COMPILER_GCC)
+#if defined(__cplusplus)
+#define PREDICT_TRUE(x) (__builtin_expect((bool)(x), true))
+#define PREDICT_FALSE(x) (__builtin_expect((bool)(x), false))
+#define LIKELY(expr) (__builtin_expect((bool)(expr), true))
+#define UNLIKELY(expr) (__builtin_expect((bool)(expr), false))
+#else
+#define PREDICT_TRUE(x) (__builtin_expect(!!(x), 1))
+#define PREDICT_FALSE(x) (__builtin_expect(x, 0))
+#define LIKELY(expr) (__builtin_expect(!!(expr), 1))
+#define UNLIKELY(expr) (__builtin_expect(!!(expr), 0))
 #endif
-#ifndef UNLIKELY
-#define UNLIKELY(x) (__builtin_expect(!!(x), 0))
+#else
+#define PREDICT_TRUE(x)
+#define PREDICT_FALSE(x)
+#define LIKELY(expr) (expr)
+#define UNLIKELY(expr) (expr)
 #endif
 
 #if defined(COMPILER_GCC)
@@ -134,11 +149,11 @@
 
 #ifndef BASE_FORCE_INLINE
 #if defined(COMPILER_MSVC)
-#define BASE_FORCE_INLINE    __forceinline
+#define BASE_FORCE_INLINE __forceinline
 #else
 #define BASE_FORCE_INLINE inline __attribute__((always_inline))
 #endif
-#endif  // BASE_FORCE_INLINE
+#endif // BASE_FORCE_INLINE
 
 // Specify memory alignment for structs, classes, etc.
 // Use like:
@@ -173,7 +188,7 @@
 #ifndef PRINTF_ATTRIBUTE
 #if defined(COMPILER_GCC)
 #define PRINTF_ATTRIBUTE(format_param, dots_param) \
-    __attribute__((format(printf, format_param, dots_param)))
+  __attribute__((format(printf, format_param, dots_param)))
 #else
 #define PRINTF_ATTRIBUTE(format_param, dots_param)
 #endif
@@ -182,7 +197,7 @@
 #ifndef SCANF_ATTRIBUTE
 #if defined(COMPILER_GCC)
 #define SCANF_ATTRIBUTE(string_index, first_to_check) \
-   __attribute__((__format__(__scanf__, string_index, first_to_check)))
+  __attribute__((__format__(__scanf__, string_index, first_to_check)))
 #else
 #define SCANF_ATTRIBUTE(string_index, first_to_check)
 #endif
@@ -272,7 +287,7 @@ private:                                               \
 
 /// Util macros.
 
-#define BASE_VERSION_CHECK(major, minor, patch) ((major<<16)|(minor<<8)|(patch))
+#define BASE_VERSION_CHECK(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
 
 // Concatenate numbers in c/c++ macros.
 #ifndef BASE_CONCAT
