@@ -125,6 +125,18 @@ void PutFixed64(string *dst, uint64_t value)
   dst->append(buf, sizeof(buf));
 }
 
+void PutFixLength64PrefixedString(string *dst, const string &value)
+{
+  PutFixed64(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
+void PutFixLength64PrefixedStringPiece(string *dst, const StringPiece &value)
+{
+  PutFixed64(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
 void PutVarint32(string *dst, uint32_t v)
 {
   char buf[5];
@@ -183,15 +195,27 @@ void PutVarint32Varint32Varint64(string *dst, uint32_t v1,
   dst->append(buf, static_cast<size_t>(ptr - buf));
 }
 
-void PutLengthPrefixedString(string *dst, const string &value)
+void PutVarLength32PrefixedString(string *dst, const string &value)
 {
   PutVarint32(dst, value.size());
   dst->append(value.data(), value.size());
 }
 
-void PutLengthPrefixedStringPiece(string *dst, const StringPiece &value)
+void PutVarLength32PrefixedStringPiece(string *dst, const StringPiece &value)
 {
   PutVarint32(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
+void PutVarLength64PrefixedString(string *dst, const string &value)
+{
+  PutVarint64(dst, value.size());
+  dst->append(value.data(), value.size());
+}
+
+void PutVarLength64PrefixedStringPiece(string *dst, const StringPiece &value)
+{
+  PutVarint64(dst, value.size());
   dst->append(value.data(), value.size());
 }
 
@@ -227,6 +251,38 @@ bool GetFixed64(StringPiece *input, uint64_t *value)
   *value = DecodeFixed64(input->data());
   input->remove_prefix(sizeof(uint64_t));
   return true;
+}
+
+bool GetFixLength64PrefixedStringPiece(StringPiece *input, StringPiece *result)
+{
+  uint64_t len = 0;
+  GetFixed64(input, &len);
+  if (input->size() >= len)
+  {
+    *result = StringPiece(input->data(), len);
+    input->remove_prefix(len);
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+bool GetFixLength64PrefixedString(string *input, string *result)
+{
+  uint64_t len;
+  GetFixed64(input, &len);
+  if (input->size() >= len)
+  {
+    *result = (*input).substr(0, len);
+    input->erase(0, len);
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
 bool GetVarint32(string *input, uint32_t *value)
@@ -293,7 +349,7 @@ bool GetVarint64(StringPiece *input, uint64_t *value)
   }
 }
 
-bool GetLengthPrefixedStringPiece(StringPiece *input, StringPiece *result)
+bool GetVarLength32PrefixedStringPiece(StringPiece *input, StringPiece *result)
 {
   uint32_t len = 0;
   if (GetVarint32(input, &len) && input->size() >= len)
@@ -308,7 +364,7 @@ bool GetLengthPrefixedStringPiece(StringPiece *input, StringPiece *result)
   }
 }
 
-StringPiece GetLengthPrefixedStringPiece(const char *data)
+StringPiece GetVarLength32PrefixedStringPiece(const char *data)
 {
   uint32_t len = 0;
   // +5: we assume "data" is not corrupted
@@ -317,20 +373,7 @@ StringPiece GetLengthPrefixedStringPiece(const char *data)
   return StringPiece(p, len);
 }
 
-StringPiece GetStringPieceUntil(StringPiece *slice, char delimiter)
-{
-  uint32_t len = 0;
-  for (len = 0; len < slice->size() && slice->data()[len] != delimiter; ++len)
-  {
-    // nothing
-  }
-
-  StringPiece ret(slice->data(), len);
-  slice->remove_prefix(len + ((len < slice->size()) ? 1 : 0));
-  return ret;
-}
-
-bool GetLengthPrefixedString(string *input, string *result)
+bool GetVarLength32PrefixedString(string *input, string *result)
 {
   uint32_t len;
   if (GetVarint32(input, &len) &&
@@ -344,6 +387,59 @@ bool GetLengthPrefixedString(string *input, string *result)
   {
     return false;
   }
+}
+
+bool GetVarLength64PrefixedStringPiece(StringPiece *input, StringPiece *result)
+{
+  uint64_t len = 0;
+  if (GetVarint64(input, &len) && input->size() >= len)
+  {
+    *result = StringPiece(input->data(), len);
+    input->remove_prefix(len);
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+StringPiece GetVarLength64PrefixedStringPiece(const char *data)
+{
+  uint64_t len = 0;
+  // +5: we assume "data" is not corrupted
+  // unsigned char is 7 bits, uint64_t is 64 bits, need 5 unsigned char
+  const char *p = GetVarint64Ptr(data, data + 10 /* limit */, &len);
+  return StringPiece(p, len);
+}
+
+bool GetVarLength64PrefixedString(string *input, string *result)
+{
+  uint64_t len;
+  if (GetVarint64(input, &len) &&
+      input->size() >= len)
+  {
+    *result = (*input).substr(0, len);
+    input->erase(0, len);
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+StringPiece GetStringPieceUntil(StringPiece *slice, char delimiter)
+{
+  uint32_t len = 0;
+  for (len = 0; len < slice->size() && slice->data()[len] != delimiter; ++len)
+  {
+    // nothing
+  }
+
+  StringPiece ret(slice->data(), len);
+  slice->remove_prefix(len + ((len < slice->size()) ? 1 : 0));
+  return ret;
 }
 
 const char *GetVarint32PtrFallback(const char *p, const char *limit,

@@ -14,8 +14,15 @@ template <typename T>
 class ScopedRawPtrGuard
 {
 public:
-  explicit ScopedRawPtrGuard(T *&ptr, bool isNeedFree = false)
-      : ptr_(ptr), is_need_free_(isNeedFree)
+  enum Flag
+  {
+    kIsDelete,
+    kIsDeleteArray,
+    kIsFree,
+  };
+
+  explicit ScopedRawPtrGuard(T *&ptr, Flag flag = kIsDelete)
+      : ptr_(ptr), flag_(flag)
   {
   }
 
@@ -25,20 +32,24 @@ public:
     {
       return;
     }
-    if (UNLIKELY(is_need_free_))
+    switch (flag_)
     {
-      ::free(ptr_);
-    }
-    else
-    {
+    case kIsDelete:
       delete ptr_;
+      break;
+    case kIsDeleteArray:
+      delete[] ptr_;
+      break;
+    case kIsFree:
+      ::free(ptr_);
+      break;
     }
     ptr_ = NULL;
   }
 
 private:
   T *&ptr_;
-  bool is_need_free_;
+  Flag flag_;
 };
 
 } // namespace util

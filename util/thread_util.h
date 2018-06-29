@@ -60,29 +60,28 @@ public:
 
   static void *StartProcWrapper(void *arg);
 
-  PosixThread(void (*func)(void *arg), void *arg, const string &name = "Thread");
-  PosixThread(std::function<void()> func, const string &name = "Thread");
+  PosixThread(void (*func)(void *arg), void *arg, const string &name = "MyThread");
+  PosixThread(std::function<void()> func, const string &name = "MyThread");
   ~PosixThread(){};
 
-  pthread_t gettid() const { return tid_; }
-  const char *getName() const { return name_.c_str(); }
+  pthread_t tid() const { return tid_; }
+  string name() const { return name_; }
+  CountDownLatch &latch() { return latch_; }
   bool amSelf() const
   {
     return (pthread_self() == tid_);
   }
 
   bool isStarted();
-  bool isRuning(pthread_t id);
   bool start();
   bool startForLaunch();
-  bool Start();
   bool join();
   bool kill(int32_t signal_val);
   bool detach();
 
 private:
   pthread_t tid_;
-  pthread_attr_t attr_;
+  //pthread_attr_t attr_;
   string name_;
   CountDownLatch latch_;
   AtomicPointer started_;
@@ -90,7 +89,7 @@ private:
   void (*function_)(void *) = nullptr;
   void *arg_ = nullptr;
 
-  bool isProc_ = false;
+  bool isStdFunction_ = false;
   std::function<void()> user_proc_; // for c++11
 
   DISALLOW_COPY_AND_ASSIGN(PosixThread);

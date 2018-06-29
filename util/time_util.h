@@ -341,10 +341,14 @@ bool DateTimeToSeconds(const DateTime &time, int64_t *seconds);
 void SleepForMicros(uint32_t micros);
 void SleepForSecs(uint32_t secs);
 
-int64_t NowSystimeMicros();
+int64_t NowRealtimeNanos();
+int64_t NowRealtimeMicros();
+int64_t NowRealtimeSecs();
 int64_t NowMonotonicNanos();
 int64_t NowMonotonicMicros();
 int64_t NowMonotonicSecs();
+int64_t NowSystimeMicros();
+int64_t NowSystimeSecs();
 
 string CurrentSystimeString();
 string FormatSystime(int64_t micros);

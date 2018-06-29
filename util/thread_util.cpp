@@ -44,16 +44,7 @@ void *StartPthreadWrapper(void *arg)
   (data->latch)->countDown();
   //::prctl(PR_SET_NAME, (data->name).c_str());
   pthread_setname_np(data->tid, (data->name).c_str());
-  try
-  {
-    data->user_function(data->user_arg);
-  }
-  catch (...)
-  {
-    CurrentThread::t_threadName = "Crashed";
-    fprintf(stderr, "unknown exception caught in Thread %s\n", (data->name).c_str());
-    throw; // rethrow
-  }
+  data->user_function(data->user_arg);
   delete data;
   return NULL;
 }
@@ -82,8 +73,20 @@ uint64_t PthreadId()
 void *PosixThread::StartProcWrapper(void *arg)
 {
   PosixThread *pth = reinterpret_cast<PosixThread *>(arg);
-  ::prctl(PR_SET_NAME, pth->getName());
-  pth->user_proc_();
+  CountDownLatch &latch = pth->latch();
+  latch.countDown();
+  //::prctl(PR_SET_NAME, (pth->name()).c_str());
+  pthread_setname_np(pth->tid(), (pth->name()).c_str());
+  try
+  {
+    pth->user_proc_();
+  }
+  catch (...)
+  {
+    CurrentThread::t_threadName = "Crashed";
+    fprintf(stderr, "unknown exception caught in Thread %s\n", (pth->name()).c_str());
+    throw; // rethrow
+  }
   return nullptr;
 }
 
@@ -92,7 +95,8 @@ PosixThread::PosixThread(void (*func)(void *arg), void *arg, const string &name)
       latch_(1),
       started_(NULL),
       function_(func),
-      arg_(arg)
+      arg_(arg),
+      isStdFunction_(false)
 {
   memset(&tid_, 0, sizeof(tid_));
 }
@@ -101,7 +105,7 @@ PosixThread::PosixThread(std::function<void()> func, const string &name)
     : name_(name),
       latch_(1),
       started_(NULL),
-      isProc_(true),
+      isStdFunction_(true),
       user_proc_(func)
 {
   memset(&tid_, 0, sizeof(tid_));
@@ -112,21 +116,6 @@ bool PosixThread::isStarted()
   return (NULL != started_.Acquire_Load());
 }
 
-bool PosixThread::isRuning(pthread_t id)
-{
-  assert(0 != id);
-  int32_t ret = pthread_kill(id, 0);
-
-  if (0 == ret)
-    return true;
-  else if (ESRCH == ret)
-    return false;
-  else if (EINVAL == ret)
-    assert(false);
-
-  return false;
-}
-
 bool PosixThread::start()
 {
   if (isStarted())
@@ -134,10 +123,10 @@ bool PosixThread::start()
     return false;
   }
 
-  if (isProc_)
+  if (isStdFunction_)
   {
     bool ret = PthreadCall("pthread_create",
-                           pthread_create(&tid_, NULL, &PosixThread::StartProcWrapper, this));
+                           pthread_create(&tid_, NULL, &StartProcWrapper, this));
     if (!ret)
     {
       return false;

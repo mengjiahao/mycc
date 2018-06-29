@@ -216,48 +216,26 @@
 #define UNUSED_PARAM(param) (void)(param)
 #endif
 
-/// thread-annotations
-
-#if defined(__clang__) && (!defined(SWIG))
-#define THREAD_ANNOTATION_ATTRIBUTE__(x) __attribute__((x))
-#else
-#define THREAD_ANNOTATION_ATTRIBUTE__(x) // no-op
-#endif
-
-// Document if a shared variable/field needs to be protected by a mutex.
-// GUARDED_BY allows the user to specify a particular mutex that should be
-// held when accessing the annotated variable.  GUARDED_VAR indicates that
-// a shared variable is guarded by some unspecified mutex, for use in rare
-// cases where a valid mutex expression cannot be specified.
-#define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
-#define GUARDED_VAR THREAD_ANNOTATION_ATTRIBUTE__(guarded)
-
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
-#ifdef BASE_CXX11_ENABLED
-#define BASE_DELETE_FUNCTION(decl) decl = delete
-#else
-#define BASE_DELETE_FUNCTION(decl) decl
-#endif
-
 // Put this in the private: declarations for a class to be uncopyable.
 #ifndef DISALLOW_COPY
 #define DISALLOW_COPY(TypeName) \
-  BASE_DELETE_FUNCTION(TypeName(const TypeName &))
+  TypeName(const TypeName &)
 #endif
 
 // Put this in the private: declarations for a class to be unassignable.
 #ifndef DISALLOW_ASSIGN
 #define DISALLOW_ASSIGN(TypeName) \
-  BASE_DELETE_FUNCTION(void operator=(const TypeName &))
+  void operator=(const TypeName &)
 #endif
 
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
 #ifndef DISALLOW_COPY_AND_ASSIGN
-#define DISALLOW_COPY_AND_ASSIGN(TypeName)          \
-  BASE_DELETE_FUNCTION(TypeName(const TypeName &)); \
-  BASE_DELETE_FUNCTION(void operator=(const TypeName &))
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+  TypeName(const TypeName &);              \
+  void operator=(const TypeName &)
 #endif
 
 #ifndef DECLARE_SINGLETON

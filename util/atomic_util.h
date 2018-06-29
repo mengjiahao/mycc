@@ -14,7 +14,8 @@ namespace util
 #error "Arch not supprot asm atomic!"
 #endif
 
-inline void AsmVolatilePause() {
+inline void AsmVolatilePause()
+{
 #if defined(__i386__) || defined(__x86_64__)
   asm volatile("pause");
 #elif defined(__aarch64__)
@@ -26,13 +27,21 @@ inline void AsmVolatilePause() {
 }
 
 // Pause instruction to prevent excess processor bus usage, only works in GCC
-inline void AsmVolatileCpuRelax() {
-  asm volatile("pause\n": : :"memory");
+inline void AsmVolatileCpuRelax()
+{
+  asm volatile("pause\n"
+               :
+               :
+               : "memory");
 }
 
 // Compile read-write barrier
-inline void AsmVolatileBarrier() {
-  asm volatile("": : :"memory");
+inline void AsmVolatileBarrier()
+{
+  asm volatile(""
+               :
+               :
+               : "memory");
 }
 
 inline void CompilerBarrier()
@@ -128,7 +137,7 @@ inline T AtomicSyncFetchSub(volatile T *ptr, T value)
 }
 
 template <typename T>
-inline T AtomicvFetchOr(volatile T *ptr, T value)
+inline T AtomicSyncFetchOr(volatile T *ptr, T value)
 {
   return __sync_fetch_and_or(ptr, value);
 }

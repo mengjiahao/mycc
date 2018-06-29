@@ -221,11 +221,23 @@ void SleepForSecs(uint32_t secs)
   sleep(secs);
 }
 
-int64_t NowSystimeMicros()
+int64_t NowRealtimeNanos()
 {
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
-  return static_cast<int64_t>(ts.tv_sec) * 1000000 + static_cast<int64_t>(ts.tv_nsec) / 1000;
+  return static_cast<int64_t>(ts.tv_sec) * 1000000000 + static_cast<int64_t>(ts.tv_nsec);
+}
+
+int64_t NowRealtimeMicros()
+{
+  return NowRealtimeNanos() / 1000;
+}
+
+int64_t NowRealtimeSecs()
+{
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+  return static_cast<int64_t>(ts.tv_sec);
 }
 
 int64_t NowMonotonicNanos()
@@ -247,20 +259,33 @@ int64_t NowMonotonicSecs()
   return static_cast<int64_t>(ts.tv_sec);
 }
 
+int64_t NowSystimeMicros()
+{
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  int64_t micros = tv.tv_sec * 1000000 + tv.tv_usec;
+  return micros;
+}
+
+int64_t NowSystimeSecs()
+{
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  return tv.tv_sec;
+}
+
 string CurrentSystimeString()
 {
   char buf[64] = {0};
-  struct timeval tv_now;
-  time_t now;
-  struct tm tm_now;
-
-  gettimeofday(&tv_now, NULL);
-  now = (time_t)tv_now.tv_sec;
-  localtime_r(&now, &tm_now);
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  const time_t time_now = tv.tv_sec;
+  struct tm now;
+  struct tm *pnow = localtime_r(&time_now, &now);
 
   snprintf(buf, sizeof(buf), kTimeFormat,
-           tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday, tm_now.tm_hour, tm_now.tm_min,
-           tm_now.tm_sec, static_cast<int>(tv_now.tv_usec));
+           pnow->tm_year + 1900, pnow->tm_mon + 1, pnow->tm_mday, pnow->tm_hour, pnow->tm_min,
+           pnow->tm_sec, static_cast<int32_t>(tv.tv_usec));
 
   return string(buf);
 }

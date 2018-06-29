@@ -17,7 +17,7 @@ namespace mycc
 namespace util
 {
 
-#define HOST_IS_BIG_ENDIAN (bool)(*(unsigned short *)"\0\xff" < 0x100) 
+#define HOST_IS_BIG_ENDIAN (bool)(*(unsigned short *)"\0\xff" < 0x100)
 
 inline bool IsBigEndian()
 {
@@ -449,6 +449,9 @@ extern void PutFixed16(string *dst, uint16_t value);
 extern void PutFixed32(string *dst, uint32_t value);
 extern void PutFixed64(string *dst, uint64_t value);
 
+extern void PutFixLength64PrefixedString(string *dst, const string &value);
+extern void PutFixLength64PrefixedStringPiece(string *dst, const StringPiece &value);
+
 extern void PutVarint32(string *dst, uint32_t value);
 extern void PutVarint64(string *dst, uint64_t value);
 
@@ -463,8 +466,10 @@ extern void PutVarint32Varint64(string *dst, uint32_t value1,
 extern void PutVarint32Varint32Varint64(string *dst, uint32_t value1,
                                         uint32_t value2, uint64_t value3);
 
-extern void PutLengthPrefixedString(string *dst, const string &value);
-extern void PutLengthPrefixedStringPiece(string *dst, const StringPiece &value);
+extern void PutVarLength32PrefixedString(string *dst, const string &value);
+extern void PutVarLength32PrefixedStringPiece(string *dst, const StringPiece &value);
+extern void PutVarLength64PrefixedString(string *dst, const string &value);
+extern void PutVarLength64PrefixedStringPiece(string *dst, const StringPiece &value);
 
 // Standard Get... routines parse a value from the beginning of a StringPiece
 // and advance the slice past the parsed value.
@@ -473,16 +478,24 @@ extern void GetFixed64(string *dst, uint64_t *value);
 extern bool GetFixed32(StringPiece *input, uint32_t *value);
 extern bool GetFixed64(StringPiece *input, uint64_t *value);
 
+extern bool GetFixLength64PrefixedStringPiece(StringPiece *input, StringPiece *result);
+extern bool GetFixLength64PrefixedString(string *input, string *result);
+
 extern bool GetVarint32(string *input, uint32_t *value);
 extern bool GetVarint64(string *input, uint64_t *value);
 extern bool GetVarint32(StringPiece *input, uint32_t *value);
 extern bool GetVarint64(StringPiece *input, uint64_t *value);
 
-extern bool GetLengthPrefixedStringPiece(StringPiece *input, StringPiece *result);
+extern bool GetVarLength32PrefixedStringPiece(StringPiece *input, StringPiece *result);
 // This function assumes data is well-formed.
-extern StringPiece GetLengthPrefixedStringPiece(const char *data);
+extern StringPiece GetVarLength32PrefixedStringPiece(const char *data);
+extern bool GetVarLength32PrefixedString(string *input, string *result);
+extern bool GetVarLength64PrefixedStringPiece(StringPiece *input, StringPiece *result);
+// This function assumes data is well-formed.
+extern StringPiece GetVarLength64PrefixedStringPiece(const char *data);
+extern bool GetVarLength64PrefixedString(string *input, string *result);
+
 extern StringPiece GetStringPieceUntil(StringPiece *slice, char delimiter);
-extern bool GetLengthPrefixedString(string *input, string *result);
 
 // Pointer-based variants of GetVarint...  These either store a value
 // in *v and return a pointer just past the parsed value, or return
