@@ -26,6 +26,11 @@ static int PthreadCall(const char *label, int result)
 
 } // namespace
 
+void InitPthreadOnce(PthreadOnceType *once, void (*initializer)())
+{
+  PthreadCall("pthread_once", pthread_once(once, initializer));
+}
+
 Mutex::Mutex()
 {
 #ifdef MUTEX_DEBUG
@@ -463,21 +468,25 @@ int32_t CountDownLatch::getCount() const
   return count_;
 }
 
-class SemaphorePrivate {
+class SemaphorePrivate
+{
 public:
   sem_t sem;
 };
 
-Semaphore::Semaphore(int32_t initValue) : m(new SemaphorePrivate()) {
+Semaphore::Semaphore(int32_t initValue) : m(new SemaphorePrivate())
+{
   sem_init(&m->sem, 0, initValue);
 }
 
-Semaphore::~Semaphore() {
+Semaphore::~Semaphore()
+{
   sem_destroy(&m->sem);
   delete m;
 }
 
-bool Semaphore::timeWait(struct timespec* ts) {
+bool Semaphore::timeWait(struct timespec *ts)
+{
   return (0 == sem_timedwait(&m->sem, ts));
 }
 

@@ -7,7 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "macros_util.h"
+#include <stdexcept>
+#include "types_util.h"
 
 namespace mycc
 {
@@ -188,6 +189,24 @@ namespace util
     if (PREDICT_FALSE(!_status.ok()))            \
       return _status;                            \
   } while (0)
+
+class Exception : public std::exception
+{
+public:
+  explicit Exception(const string &buffer);
+  Exception(const string &buffer, int err);
+
+  virtual ~Exception() throw();
+  virtual const char *what() const throw();
+  int getErrCode() { return _code; }
+
+private:
+  void getBacktrace();
+
+private:
+  string _buffer;
+  int _code; // errno
+};
 
 } // namespace util
 } // namespace mycc

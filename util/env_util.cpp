@@ -47,19 +47,19 @@ struct StartThreadState
   void *arg;
 };
 
-Status IOError(const string &context, int32_t err_number)
+Status IOError(const string &context, int err_number)
 {
   return Status::IOError(context, strerror(err_number));
 }
 
 // file_name can be left empty if it is not unkown.
 Status IOError(const string &context, const string &file_name,
-               int32_t err_number)
+               int err_number)
 {
   return Status::IOError(context + ": " + file_name, strerror(err_number));
 }
 
-void PthreadCall(const char *label, int32_t result)
+void PthreadCall(const char *label, int result)
 {
   if (result != 0)
   {
@@ -122,7 +122,54 @@ int32_t LockOrUnlock(int fd, bool lock)
   return ::fcntl(fd, F_SETLK, &f);
 }
 
+#ifdef OS_LINUX
+static Status OSLinuxCopyFile(const char *src, const char *dst)
+{
+  Status status;
+  int r = -1;
+  int w = -1;
+  if ((r = open(src, O_RDONLY)) == -1)
+  {
+    status = IOError(src, errno);
+  }
+  if (status.ok())
+  {
+    if ((w = open(dst, O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1)
+    {
+      status = IOError(dst, errno);
+    }
+  }
+  if (status.ok())
+  {
+    int p[2];
+    if (pipe(p) == -1)
+    {
+      status = IOError("pipe", errno);
+    }
+    else
+    {
+      const size_t batch_size = 4096;
+      while (splice(p[0], 0, w, 0, splice(r, 0, p[1], 0, batch_size, 0), 0) > 0)
+        ;
+      close(p[0]);
+      close(p[1]);
+    }
+  }
+  if (r != -1)
+  {
+    close(r);
+  }
+  if (w != -1)
+  {
+    close(w);
+  }
+  return status;
+}
+#endif
+
 } // namespace
+
+/// utils
 
 /// PosixEnv
 
@@ -143,11 +190,11 @@ public:
     }
   }
 
-  virtual uint64_t NowMicros() override;
-  virtual uint64_t NowNanos() override;
-  virtual uint64_t NowMonotonicMicros() override;
-  virtual uint64_t NowMonotonicNanos() override;
-  virtual uint64_t NowChronoNanos() override;
+  virtual int64_t NowMicros() override;
+  virtual int64_t NowNanos() override;
+  virtual int64_t NowMonotonicMicros() override;
+  virtual int64_t NowMonotonicNanos() override;
+  virtual int64_t NowChronoNanos() override;
   virtual void SleepForMicros(int32_t micros) override;
   virtual Status GetCurrentTimeEpoch(int64_t *unix_time) override;
   virtual string TimeToString(uint64_t time) override;
@@ -209,15 +256,15 @@ public:
   virtual Status CreateDirRecursively(const string &dirname) override;
   virtual Status CreatePath(const string &path) override;
   virtual Status DeleteDir(const string &dirname) override;
-  virtual Status DeleteDirRecursively(const string &dirname, int64_t *undeleted_files,
-                                      int64_t *undeleted_dirs) override;
+  virtual Status DeleteSubFiles(const string &dirname) override;
   virtual Status RenameFile(const string &src, const string &target) override;
   virtual Status LinkFile(const string &src, const string &target) override;
   virtual Status AreFilesSame(const string &first,
                               const string &second, bool *res) override;
   virtual Status LockFile(const string &fname, FileLock **lock) override;
   virtual Status UnlockFile(FileLock *lock) override;
-  virtual uint64_t Du(const string &path) override;
+  virtual Status CopyFile(const string &src, const string &dst) override;
+  virtual Status CopyDir(const string &from, const string &to) override;
   // A utility routine: write "data" to the named file.
   virtual Status WriteStringToFile(const StringPiece &data,
                                    const string &fname,
@@ -252,33 +299,33 @@ private:
   std::vector<pthread_t> threads_to_join_;
 }; // namespace util
 
-uint64_t PosixEnv::NowMicros()
+int64_t PosixEnv::NowMicros()
 {
   struct timeval tv;
   ::gettimeofday(&tv, nullptr); // wall time?
-  return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+  return static_cast<int64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
 }
 
-uint64_t PosixEnv::NowNanos()
+int64_t PosixEnv::NowNanos()
 {
   struct timespec ts;
   ::clock_gettime(CLOCK_REALTIME, &ts); // for linux
-  return static_cast<uint64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+  return static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 }
 
-uint64_t PosixEnv::NowMonotonicMicros()
+int64_t PosixEnv::NowMonotonicMicros()
 {
   return NowMonotonicNanos() / 1000;
 }
 
-uint64_t PosixEnv::NowMonotonicNanos()
+int64_t PosixEnv::NowMonotonicNanos()
 {
   struct timespec ts;
   ::clock_gettime(CLOCK_MONOTONIC, &ts); // for linux
-  return static_cast<uint64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
+  return static_cast<int64_t>(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 }
 
-uint64_t PosixEnv::NowChronoNanos()
+int64_t PosixEnv::NowChronoNanos()
 {
   // steady_clock used for calculate duration
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1089,37 +1136,36 @@ Status PosixEnv::CreateDirIfMissing(const string &name)
 
 Status PosixEnv::CreateDirRecursively(const string &dirname)
 {
-  StringPiece remaining_dir(dirname);
-  std::vector<StringPiece> sub_dirs;
-  while (!remaining_dir.empty())
+  string path = dirname;
+  for (uint64_t i = 1; i < dirname.size(); ++i)
   {
-    Status status = FileExists(remaining_dir.toString());
-    if (status.ok())
+    if (dirname[i] == '/')
     {
-      break;
+      // Whenever a '/' is encountered, create a temporary view from
+      // the start of the path to the character right before this.
+      path[i] = 0;
+
+      if (::mkdir(path.c_str(), S_IRWXU) != 0)
+      {
+        if (errno != EEXIST)
+        {
+          return IOError("mkdir filee", path.c_str(), errno);
+        }
+      }
+      // Revert the temporary view back to the original.
+      path[i] = '/';
     }
-    // Basename returns "" for / ending dirs.
-    if (!remaining_dir.ends_with("/"))
-    {
-      sub_dirs.push_back(Basename(remaining_dir));
-    }
-    remaining_dir = Dirname(remaining_dir);
   }
 
-  // sub_dirs contains all the dirs to be created but in reverse order.
-  std::reverse(sub_dirs.begin(), sub_dirs.end());
-
-  // Now create the directories.
-  string built_path = remaining_dir.toString();
-  for (const StringPiece sub_dir : sub_dirs)
+  // Make the final (full) directory.
+  if (::mkdir(path.c_str(), S_IRWXU) != 0)
   {
-    built_path = JoinPath(built_path, sub_dir);
-    Status status = CreateDir(built_path);
-    if (!status.ok())
+    if (errno != EEXIST)
     {
-      return status;
+      return IOError("mkdir filee", path.c_str(), errno);
     }
   }
+
   return Status::OK();
 }
 
@@ -1161,76 +1207,33 @@ Status PosixEnv::DeleteDir(const string &name)
   return result;
 };
 
-Status PosixEnv::DeleteDirRecursively(const string &dirname,
-                                      int64_t *undeleted_files,
-                                      int64_t *undeleted_dirs)
+Status PosixEnv::DeleteSubFiles(const string &dirname)
 {
-  *undeleted_files = 0;
-  *undeleted_dirs = 0;
-  // Make sure that dirname exists;
-  Status exists_status = FileExists(dirname);
-  if (!exists_status.ok())
+  Status s;
+  DIR *directory = ::opendir(dirname.c_str());
+  if (directory == nullptr)
   {
-    (*undeleted_dirs)++;
-    return exists_status;
+    return IOError("opendir error", dirname.c_str(), errno);
   }
-  std::deque<string> dir_q;     // Queue for the BFS
-  std::vector<string> dir_list; // List of all dirs discovered
-  dir_q.push_back(dirname);
-  Status ret; // Status to be returned.
-  // Do a BFS on the directory to discover all the sub-directories. Remove all
-  // children that are files along the way. Then cleanup and remove the
-  // directories in reverse order.;
-  while (!dir_q.empty())
+
+  struct dirent *file;
+  while ((file = ::readdir(directory)) != nullptr)
   {
-    string dir = dir_q.front();
-    dir_q.pop_front();
-    dir_list.push_back(dir);
-    std::vector<string> children;
-    // GetChildren might fail if we don't have appropriate permissions.
-    Status s = GetDirChildren(dir, &children);
-    ret.update(s);
-    if (!s.ok())
+    // skip dirname/. and dirname/..
+    if (!strcmp(file->d_name, ".") || !strcmp(file->d_name, ".."))
     {
-      (*undeleted_dirs)++;
       continue;
     }
-    for (const string &child : children)
+    // build the path for each file in the folder
+    string file_path = dirname + "/" + file->d_name;
+    if (::remove(file_path.c_str()) < 0)
     {
-      const string child_path = JoinPath(dir, child);
-      // If the child is a directory add it to the queue, otherwise delete it.
-      if (IsDirectory(child_path))
-      {
-        dir_q.push_back(child_path);
-      }
-      else
-      {
-        // Delete file might fail because of permissions issues or might be
-        // unimplemented.
-        Status del_status = DeleteFile(child_path);
-        ret.update(del_status);
-        if (!del_status.ok())
-        {
-          (*undeleted_files)++;
-        }
-      }
+      ::closedir(directory);
+      return IOError("remove error", file_path.c_str(), errno);
     }
   }
-  // Now reverse the list of directories and delete them. The BFS ensures that
-  // we can delete the directories in this order.
-  std::reverse(dir_list.begin(), dir_list.end());
-  for (const string &dir : dir_list)
-  {
-    // Delete dir might fail because of permissions issues or might be
-    // unimplemented.
-    Status s = DeleteDir(dir);
-    ret.update(s);
-    if (!s.ok())
-    {
-      (*undeleted_dirs)++;
-    }
-  }
-  return ret;
+  ::closedir(directory);
+  return Status::OK();
 }
 
 Status PosixEnv::RenameFile(const string &src,
@@ -1259,8 +1262,8 @@ Status PosixEnv::LinkFile(const string &src,
   return result;
 }
 
-Status PosixEnv::AreFilesSame(const std::string &first,
-                              const std::string &second, bool *res)
+Status PosixEnv::AreFilesSame(const string &first,
+                              const string &second, bool *res)
 {
   struct stat statbuf[2];
   if (::stat(first.c_str(), &statbuf[0]) != 0)
@@ -1285,7 +1288,7 @@ Status PosixEnv::AreFilesSame(const std::string &first,
   return Status::OK();
 }
 
-Status PosixEnv::LockFile(const std::string &fname, FileLock **lock)
+Status PosixEnv::LockFile(const string &fname, FileLock **lock)
 {
   *lock = NULL;
   Status result;
@@ -1321,42 +1324,101 @@ Status PosixEnv::UnlockFile(FileLock *lock)
   return result;
 }
 
-uint64_t PosixEnv::Du(const string &filename)
+Status PosixEnv::CopyFile(const string &src, const string &dst)
 {
-  struct stat statbuf;
-  uint64_t sum;
-  if (::lstat(filename.c_str(), &statbuf) != 0)
+#if defined(OS_LINUX) && defined(_GNU_SOURCE)
+  return OSLinuxCopyFile(src.c_str(), dst.c_str());
+#else
+  Status status;
+  int r = -1;
+  int w = -1;
+  if ((r = open(src.c_str(), O_RDONLY)) == -1)
   {
-    return 0;
+    status = IOError(src, errno);
   }
-  if (S_ISLNK(statbuf.st_mode) && ::stat(filename.c_str(), &statbuf) != 0)
+  if (status.ok())
   {
-    return 0;
-  }
-  sum = statbuf.st_size;
-  if (S_ISDIR(statbuf.st_mode))
-  {
-    DIR *dir = NULL;
-    struct dirent *entry;
-    string newfile;
-
-    dir = ::opendir(filename.c_str());
-    if (!dir)
+    if ((w = open(dst.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1)
     {
-      return sum;
+      status = IOError(dst, errno);
     }
-    while ((entry = ::readdir(dir)))
+  }
+  if (status.ok())
+  {
+    ssize_t n;
+    char buf[4096];
+    while ((n = read(r, buf, 4096)) > 0)
     {
-      if (strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, ".") == 0)
+      ssize_t m = write(w, buf, n);
+      if (m != n)
       {
-        continue;
+        status = IOError(dst, errno);
+        break;
       }
-      newfile = filename + "/" + entry->d_name;
-      sum += Du(newfile);
     }
-    ::closedir(dir);
+    if (n == -1)
+    {
+      if (status.ok())
+      {
+        status = IOError(src, errno);
+      }
+    }
   }
-  return sum;
+  if (r != -1)
+  {
+    close(r);
+  }
+  if (w != -1)
+  {
+    close(w);
+  }
+  return status;
+#endif
+}
+
+Status PosixEnv::CopyDir(const string &from, const string &to)
+{
+  Status s;
+  DIR *directory = ::opendir(from.c_str());
+  if (directory == nullptr)
+  {
+    return IOError("opendir error", from.c_str(), errno);
+  }
+  s = CreateDirRecursively(to);
+  if (!s.ok())
+  {
+    return IOError("Cannot create target directory", from.c_str(), errno);
+  }
+
+  struct dirent *entry;
+  while ((entry = ::readdir(directory)) != nullptr)
+  {
+    // skip directory_path/. and directory_path/..
+    if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+    {
+      continue;
+    }
+    const string sub_path_from = from + "/" + entry->d_name;
+    const string sub_path_to = to + "/" + entry->d_name;
+    if (entry->d_type == DT_DIR)
+    {
+      s = CopyDir(sub_path_from, sub_path_to);
+      if (!s.ok())
+      {
+        break;
+      }
+    }
+    else
+    {
+      s = CopyFile(sub_path_from, sub_path_to);
+      if (!s.ok())
+      {
+        break;
+      }
+    }
+  }
+  ::closedir(directory);
+  return s;
 }
 
 Status PosixEnv::WriteStringToFile(const StringPiece &data, const string &fname,
@@ -1418,7 +1480,7 @@ string PosixEnv::GenerateUniqueId()
   Status s = FileExists(uuid_file);
   if (s.ok())
   {
-    std::string uuid;
+    string uuid;
     s = ReadFileToString(uuid_file, &uuid);
     if (s.ok())
     {

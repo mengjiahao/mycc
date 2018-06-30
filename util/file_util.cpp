@@ -4,15 +4,18 @@
 #include <netinet/in.h>  // IPPROTO_TCP
 #include <netinet/tcp.h> // TCP_NODELAY
 #include <limits.h>
-#include <stdarg.h>      // va_list
-#include <stdio.h>       // snprintf, vdprintf
-#include <stdlib.h>      // mkstemp
-#include <string.h>      // strlen
+#include <stdarg.h> // va_list
+#include <stdio.h>  // snprintf, vdprintf
+#include <stdlib.h> // mkstemp
+#include <string.h> // strlen
 #include <sys/stat.h>
 #include <sys/socket.h> // setsockopt
 #include <sys/types.h>
 #include <unistd.h> // close
-#include <new>      // placement new
+#include <fstream>
+#include <iostream>
+#include <new> // placement new
+#include <sstream>
 
 #include <linux/limits.h> // PATH_MAX
 
@@ -377,6 +380,38 @@ int make_dir_p(const string &path)
   return make_dir(path);
 }
 
+bool GetFileContent(const string &file_name, string *content)
+{
+  std::ifstream fin(file_name);
+  if (!fin)
+  {
+    return false;
+  }
+
+  std::stringstream str_stream;
+  str_stream << fin.rdbuf();
+  *content = str_stream.str();
+  return true;
+}
+
+bool CopyFileContent(const string &from, const string &to)
+{
+  std::ifstream src(from, std::ios::binary);
+  if (!src)
+  {
+    return false;
+  }
+
+  std::ofstream dst(to, std::ios::binary);
+  if (!dst)
+  {
+    return false;
+  }
+
+  dst << src.rdbuf();
+  return true;
+}
+
 static const FileWatcher::Timestamp NON_EXIST_TS =
     static_cast<FileWatcher::Timestamp>(-1);
 
@@ -384,7 +419,7 @@ FileWatcher::FileWatcher() : _last_ts(NON_EXIST_TS)
 {
 }
 
-int32_t FileWatcher::init(const char *file_path)
+int FileWatcher::init(const char *file_path)
 {
   if (init_from_not_exist(file_path) != 0)
   {
@@ -394,7 +429,7 @@ int32_t FileWatcher::init(const char *file_path)
   return 0;
 }
 
-int32_t FileWatcher::init_from_not_exist(const char *file_path)
+int FileWatcher::init_from_not_exist(const char *file_path)
 {
   if (NULL == file_path)
   {
@@ -549,12 +584,12 @@ TempFile::~TempFile()
   }
 }
 
-int32_t TempFile::save(const char *content)
+int TempFile::save(const char *content)
 {
   return save_bin(content, strlen(content));
 }
 
-int32_t TempFile::save_format(const char *fmt, ...)
+int TempFile::save_format(const char *fmt, ...)
 {
   if (_reopen_if_necessary() < 0)
   {
@@ -596,7 +631,7 @@ static int64_t temp_file_write_all(int fd, const void *buf, uint64_t count)
   }
 }
 
-int32_t TempFile::save_bin(const void *buf, uint64_t count)
+int TempFile::save_bin(const void *buf, uint64_t count)
 {
   if (_reopen_if_necessary() < 0)
   {

@@ -52,10 +52,6 @@
 #endif
 #endif
 
-#if !defined(BASE_CXX11_ENABLED)
-#define nullptr NULL
-#endif
-
 // Mark a branch likely or unlikely to be true.
 // We can't remove the BAIDU_ prefix because the name is likely to conflict,
 // namely kylin already has the macro.
@@ -264,6 +260,8 @@ private:                                               \
 #endif // #ifndef DECLARE_PROPERTY
 
 /// Util macros.
+
+#define ASSERT(x) assert(x)
 
 #define BASE_VERSION_CHECK(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
 

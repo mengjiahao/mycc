@@ -1,6 +1,6 @@
 
 # OPT ?= -O2 -DNDEBUG # (A) Production use (optimized mode)
-OPT ?= -g2 -Werror #-Wno-unused # (B) Debug mode, w/ full line-level debugging symbols
+OPT ?= -O0 -g2 -Werror #-Wno-unused # (B) Debug mode, w/ full line-level debugging symbols
 # OPT ?= -O2 -g2 -DNDEBUG # (C) Profiling mode: opt, but w/debugging symbols
 # OPT ?= -O2 -pipe -Wall -W --fstrict-aliasing -Wno-invalid-offsetof -Wno-unused-parameter -fno-omit-frame-pointer
 

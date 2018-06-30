@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/prctl.h>
 #include <time.h>
+#include "math_util.h"
 
 namespace mycc
 {
@@ -28,7 +29,7 @@ struct ThreadData
 namespace
 { // anonymous namespace
 
-bool PthreadCall(const char *label, int32_t result)
+bool PthreadCall(const char *label, int result)
 {
   if (result != 0)
   {
@@ -51,22 +52,17 @@ void *StartPthreadWrapper(void *arg)
 
 } // namespace
 
-void InitOnce(OnceType *once, void (*initializer)())
+uint64_t PosixThread::GetTID()
 {
-  PthreadCall("pthread_once", pthread_once(once, initializer));
-}
-
-pid_t GetTID()
-{
-  pid_t tid = syscall(__NR_gettid);
+  uint64_t tid = syscall(__NR_gettid);
   return tid;
 }
 
-uint64_t PthreadId()
+uint64_t PosixThread::PthreadIntId()
 {
   pthread_t tid = pthread_self();
   uint64_t thread_id = 0;
-  memcpy(&thread_id, &tid, std::min(sizeof(thread_id), sizeof(tid)));
+  memcpy(&thread_id, &tid, MATH_MIN(sizeof(thread_id), sizeof(tid)));
   return thread_id;
 }
 
@@ -93,27 +89,44 @@ void *PosixThread::StartProcWrapper(void *arg)
 PosixThread::PosixThread(void (*func)(void *arg), void *arg, const string &name)
     : name_(name),
       latch_(1),
-      started_(NULL),
       function_(func),
       arg_(arg),
       isStdFunction_(false)
 {
   memset(&tid_, 0, sizeof(tid_));
+  pthread_attr_init(&attr_);
 }
 
 PosixThread::PosixThread(std::function<void()> func, const string &name)
     : name_(name),
       latch_(1),
-      started_(NULL),
       isStdFunction_(true),
       user_proc_(func)
 {
   memset(&tid_, 0, sizeof(tid_));
+  pthread_attr_init(&attr_);
+}
+
+PosixThread::~PosixThread()
+{
+  pthread_attr_destroy(&attr_);
 }
 
 bool PosixThread::isStarted()
 {
-  return (NULL != started_.Acquire_Load());
+  return ((uint64_t)tid_) != 0;
+}
+
+void PosixThread::setAttr(uint64_t stack_size, bool joinable)
+{
+  if (!stack_size)
+  {
+    pthread_attr_setstacksize(&attr_, stack_size);
+  }
+  if (!joinable)
+  {
+    pthread_attr_setdetachstate(&attr_, PTHREAD_CREATE_DETACHED);
+  }
 }
 
 bool PosixThread::start()
@@ -123,14 +136,21 @@ bool PosixThread::start()
     return false;
   }
 
+  // The child thread will inherit our signal mask.  Set our signal mask to
+  // the set of signals we want to block.  (It's ok to block signals more
+  // signals than usual for a little while-- they will just be delivered to
+  // another thread or delieverd to this thread later.)
+  // sigset_t old_sigset;
+  // int to_block[] = {SIGPIPE, 0};
+  // BlockSignals(to_block, &old_sigset);
+  // pthread_create()...
+  // RestoreSigset(&old_sigset);
+
+  bool ret = false;
   if (isStdFunction_)
   {
-    bool ret = PthreadCall("pthread_create",
-                           pthread_create(&tid_, NULL, &StartProcWrapper, this));
-    if (!ret)
-    {
-      return false;
-    }
+    ret = PthreadCall("pthread_create",
+                      pthread_create(&tid_, NULL, &StartProcWrapper, this));
   }
   else
   {
@@ -140,16 +160,16 @@ bool PosixThread::start()
     data->name = name_;
     data->tid = tid_;
     data->latch = &latch_;
-    bool ret = PthreadCall("pthread_create",
-                           pthread_create(&tid_, NULL, &StartPthreadWrapper, data));
+    ret = PthreadCall("pthread_create",
+                      pthread_create(&tid_, NULL, &StartPthreadWrapper, data));
     if (!ret)
     {
       delete data; // or no delete?
-      return false;
     }
+
+    return ret;
   }
 
-  started_.Release_Store(this);
   return true;
 }
 
@@ -169,6 +189,7 @@ bool PosixThread::join()
   {
     return PthreadCall("pthread_join", pthread_join(tid_, NULL));
   }
+  tid_ = 0;
   return true;
 }
 

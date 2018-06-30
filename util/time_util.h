@@ -338,6 +338,7 @@ bool SecondsToDateTime(int64_t seconds, DateTime *time);
 // Returns false if the DateTime is not valid or is not in the valid range.
 bool DateTimeToSeconds(const DateTime &time, int64_t *seconds);
 
+void SleepForNanos(uint32_t nanos);
 void SleepForMicros(uint32_t micros);
 void SleepForSecs(uint32_t secs);
 

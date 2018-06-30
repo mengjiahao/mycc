@@ -29,6 +29,16 @@ inline uint64_t Hash64Combine(uint64_t a, uint64_t b)
   return a ^ (b + 0x9e3779b97f4a7800ULL + (a << 10) + (a >> 4));
 }
 
+/*!
+ * \brief hash an object and combines the key with previous keys
+ */
+template <typename T>
+inline uint64_t StdHashCombine(uint64_t key, const T &value)
+{
+  std::hash<T> hash_func;
+  return key ^ (hash_func(value) + 0x9e3779b9 + (key << 6) + (key >> 2));
+}
+
 } // namespace util
 } // namespace mycc
 

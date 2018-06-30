@@ -62,7 +62,7 @@ string SignalMaskToStr()
 
 void RestoreSigset(const sigset_t *old_sigset)
 {
-  int32_t ret = pthread_sigmask(SIG_SETMASK, old_sigset, NULL);
+  int ret = pthread_sigmask(SIG_SETMASK, old_sigset, NULL);
   assert(ret == 0);
 }
 
@@ -84,7 +84,7 @@ void BlockSignals(const int *siglist, sigset_t *old_sigset)
       ++i;
     }
   }
-  int32_t ret = pthread_sigmask(SIG_BLOCK, &sigset, old_sigset);
+  int ret = pthread_sigmask(SIG_BLOCK, &sigset, old_sigset);
   assert(ret == 0);
 }
 
@@ -93,7 +93,7 @@ void UnblockAllSignals(sigset_t *old_sigset)
   sigset_t sigset;
   sigfillset(&sigset);
   sigdelset(&sigset, SIGKILL);
-  int32_t ret = pthread_sigmask(SIG_UNBLOCK, &sigset, old_sigset);
+  int ret = pthread_sigmask(SIG_UNBLOCK, &sigset, old_sigset);
   assert(ret == 0);
 }
 

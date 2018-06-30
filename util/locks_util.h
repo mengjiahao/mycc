@@ -20,6 +20,16 @@ namespace mycc
 namespace util
 {
 
+typedef pthread_once_t PthreadOnceType;
+void InitPthreadOnce(PthreadOnceType *once, void (*initializer)());
+
+// Thinly wraps std::call_once.
+using OnceType = std::once_flag;
+inline void InitOnce(OnceType *once, void (*initializer)())
+{
+  std::call_once(*once, *initializer);
+}
+
 class mutex_lock : public std::unique_lock<std::mutex>
 {
 public:

@@ -211,6 +211,14 @@ bool DateTimeToSeconds(const DateTime &time, int64_t *seconds)
   return true;
 }
 
+void SleepForNanos(uint32_t nanos)
+{
+  struct timespec sleep_time;
+  sleep_time.tv_sec = static_cast<time_t>(nanos / 1000000000);
+  sleep_time.tv_nsec = static_cast<long>(nanos % 1000000000);
+  nanosleep(&sleep_time, NULL);
+}
+
 void SleepForMicros(uint32_t micros)
 {
   usleep(micros);

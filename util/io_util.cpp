@@ -33,14 +33,14 @@ namespace util
 namespace
 { // anonymous namesapce
 
-Status IOError(const string &context, int32_t err_number)
+Status IOError(const string &context, int err_number)
 {
   return Status::IOError(context, strerror(err_number));
 }
 
 // file_name can be left empty if it is not unkown.
-Status IOError(const std::string &context, const std::string &file_name,
-               int32_t err_number)
+Status IOError(const string &context, const string &file_name,
+               int err_number)
 {
   return Status::IOError(context + ": " + file_name, strerror(err_number));
 }
@@ -56,7 +56,7 @@ bool IsSectorAligned(const void *ptr, uint64_t sector_size)
 }
 
 // A wrapper for fadvise, if the platform doesn't support fadvise, it will simply return 0.
-int32_t Fadvise(int32_t fd, off_t offset, uint64_t len, int32_t advice)
+int Fadvise(int fd, off_t offset, uint64_t len, int32_t advice)
 {
 #if defined(OS_LINUX)
   return ::posix_fadvise(fd, offset, len, advice);
@@ -83,7 +83,7 @@ uint64_t GetUniqueIdFromFile(int32_t fd, char *id, uint64_t max_size)
   }
 
   struct stat buf;
-  int32_t result = ::fstat(fd, &buf);
+  int result = ::fstat(fd, &buf);
   assert(result != -1);
   if (result == -1)
   {
@@ -242,7 +242,7 @@ Status PosixSequentialFile::invalidateCache(uint64_t offset, uint64_t length)
     return Status::OK();
   }
   // free OS pages
-  int32_t ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
+  int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
   if (ret != 0)
   {
     return IOError("While fadvise NotNeeded offset " + ToString(offset) +
@@ -394,7 +394,7 @@ Status PosixRandomAccessFile::invalidateCache(uint64_t offset, uint64_t length)
     return Status::OK();
   }
   // free OS pages
-  int32_t ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
+  int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
   if (ret == 0)
   {
     return Status::OK();
@@ -431,7 +431,7 @@ PosixMmapReadableFile::PosixMmapReadableFile(const int fd,
 
 PosixMmapReadableFile::~PosixMmapReadableFile()
 {
-  int32_t ret = ::munmap(mmapped_region_, length_);
+  int ret = ::munmap(mmapped_region_, length_);
   if (ret != 0)
   {
     fprintf(stderr, "failed to munmap %p length %" PRIu64 " \n",
@@ -462,7 +462,7 @@ Status PosixMmapReadableFile::read(uint64_t offset, uint64_t n, StringPiece *res
 Status PosixMmapReadableFile::invalidateCache(uint64_t offset, uint64_t length)
 {
   // free OS pages
-  int32_t ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
+  int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
   if (ret == 0)
   {
     return Status::OK();
@@ -562,7 +562,7 @@ Status PosixWritableFile::positionedAppend(const StringPiece &data, uint64_t off
 Status PosixWritableFile::truncate(uint64_t size)
 {
   Status s;
-  int32_t r = ::ftruncate(fd_, size);
+  int r = ::ftruncate(fd_, size);
   if (r < 0)
   {
     s = IOError("While ftruncate file to size " + ToString(size), filename_,
@@ -639,7 +639,7 @@ Status PosixWritableFile::invalidateCache(uint64_t offset, uint64_t length)
     return Status::OK();
   }
   // free OS pages
-  int32_t ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
+  int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
   if (ret == 0)
   {
     return Status::OK();
@@ -686,7 +686,7 @@ Status PosixMmapFile::unmapCurrentRegion()
 {
   if (base_ != nullptr)
   {
-    int32_t munmap_status = ::munmap(base_, limit_ - base_);
+    int munmap_status = ::munmap(base_, limit_ - base_);
     if (munmap_status != 0)
     {
       return IOError(filename_, munmap_status);
@@ -709,7 +709,7 @@ Status PosixMmapFile::unmapCurrentRegion()
 Status PosixMmapFile::mapNewRegion()
 {
   assert(base_ == nullptr);
-  int32_t alloc_status = ::ftruncate(fd_, file_offset_ + map_size_);
+  int alloc_status = ::ftruncate(fd_, file_offset_ + map_size_);
   if (alloc_status)
   {
     return IOError("Error ftruncate space to file : ", filename_,
@@ -879,7 +879,7 @@ uint64_t PosixMmapFile::getFileSize()
 Status PosixMmapFile::invalidateCache(uint64_t offset, uint64_t length)
 {
   // free OS pages
-  int32_t ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
+  int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
   if (ret == 0)
   {
     return Status::OK();

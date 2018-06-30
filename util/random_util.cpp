@@ -11,6 +11,13 @@ namespace mycc
 namespace util
 {
 
+std::mt19937 &RandomHelper::getEngine()
+{
+  static std::random_device seed_gen;
+  static std::mt19937 engine(seed_gen());
+  return engine;
+}
+
 // We keep the file descriptor for /dev/urandom around so we don't need to
 // reopen it (which is expensive), and since we may not even be able to reopen
 // it if we are later put in a sandbox. This class wraps the file descriptor so
@@ -114,14 +121,15 @@ StringPiece RandomString(Random *rnd, int32_t len, string *dst)
   return StringPiece(*dst);
 }
 
-string RandomKey(Random* rnd, int len) {
+string RandomKey(Random *rnd, int len)
+{
   // Make sure to generate a wide variety of characters so we
   // test the boundary conditions for short-key optimizations.
   static const char kTestChars[] = {
-    '\0', '\1', 'a', 'b', 'c', 'd', 'e', '\xfd', '\xfe', '\xff'
-  };
+      '\0', '\1', 'a', 'b', 'c', 'd', 'e', '\xfd', '\xfe', '\xff'};
   string result;
-  for (int32_t i = 0; i < len; i++) {
+  for (int32_t i = 0; i < len; i++)
+  {
     result += kTestChars[rnd->uniform(sizeof(kTestChars))];
   }
   return result;

@@ -56,7 +56,7 @@ extern int64_t AmountOfPhysicalMemory();
 extern int64_t AmountOfVirtualMemory();
 
 // Return the number of logical processors/cores on the current machine.
-int NumberOfProcessors();
+int64_t NumberOfProcessors();
 
 } // namespace util
 } // namespace mycc

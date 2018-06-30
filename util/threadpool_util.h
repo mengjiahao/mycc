@@ -3,9 +3,15 @@
 #define MYCC_UTIL_THREADPOOL_UTIL_H_
 
 #include <pthread.h>
+#include <condition_variable>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <utility>
 #include <vector>
 #include "env_util.h"
 #include "locks_util.h"
@@ -183,7 +189,274 @@ private:
   typedef std::deque<BGItem> BGQueue;
   BGQueue queue_;
   std::vector<pthread_t> bgthreads_;
+
   DISALLOW_COPY_AND_ASSIGN(PosixFixedThreadPool);
+};
+
+// An simple unscalable thread pool.
+class SimpleThreadPool
+{
+public:
+  SimpleThreadPool(int32_t thread_num = 10)
+      : threads_num_(thread_num),
+        pending_num_(0),
+        work_cv_(&mutex_),
+        stop_(false),
+        last_task_id_(0),
+        running_task_id_(0),
+        schedule_cost_sum_(0),
+        schedule_count_(0),
+        task_cost_sum_(0),
+        task_count_(0)
+  {
+    //start();
+  }
+
+  ~SimpleThreadPool()
+  {
+    //stop(false);
+  }
+
+  bool start();
+
+  // Stop the thread pool.
+  // Wait for all pending task to complete if wait is true.
+  bool stop(bool wait);
+
+  // Task definition.
+  typedef std::function<void()> Task;
+
+  // Add a task to the thread pool.
+  void addTask(const Task &task);
+
+  void addPriorityTask(const Task &task);
+
+  int64_t delayTask(int64_t delay, const Task &task);
+
+  /// Cancel a delayed task
+  /// if running, wait if non_block==false; return immediately if non_block==true
+  bool cancelTask(int64_t task_id, bool non_block = false,
+                  bool *is_running = nullptr);
+
+  int64_t pending_num() const
+  {
+    return pending_num_;
+  }
+
+  // log format: 3 numbers seperated by " ", e.g. "15 24 32"
+  // 1st: thread pool schedule average cost (ms)
+  // 2nd: user task average cost (ms)
+  // 3rd: total task count since last ProfilingLog called
+  string profilingLog();
+
+private:
+  static void *ThreadWrapper(void *arg)
+  {
+    reinterpret_cast<SimpleThreadPool *>(arg)->ThreadProc();
+    return nullptr;
+  }
+
+  void ThreadProc();
+
+private:
+  struct BGItem
+  {
+    int64_t id;
+    int64_t exe_time;
+    Task task;
+    bool operator<(const BGItem &item) const
+    { // top is min-heap
+      if (exe_time != item.exe_time)
+      {
+        return exe_time > item.exe_time;
+      }
+      else
+      {
+        return id > item.id;
+      }
+    }
+
+    BGItem() {}
+    BGItem(int64_t id_t, int64_t exe_time_t, const Task &task_t)
+        : id(id_t), exe_time(exe_time_t), task(task_t) {}
+  };
+  typedef std::priority_queue<BGItem> BGQueue;
+  typedef std::map<int64_t, BGItem> BGMap;
+
+  int32_t threads_num_;
+  std::deque<BGItem> queue_;
+  volatile int pending_num_;
+  Mutex mutex_;
+  CondVar work_cv_;
+  bool stop_;
+  std::vector<pthread_t> tids_;
+
+  BGQueue time_queue_;
+  BGMap latest_;
+  int64_t last_task_id_;
+  int64_t running_task_id_;
+
+  // for profiling
+  int64_t schedule_cost_sum_;
+  int64_t schedule_count_;
+  int64_t task_cost_sum_;
+  int64_t task_count_;
+};
+
+// c++11 std::thread threadpool
+class TaskThreadPool
+{
+private:
+  struct task_element_t
+  {
+    bool run_with_id;
+    const std::function<void()> no_id;
+    const std::function<void(uint64_t)> with_id;
+
+    explicit task_element_t(const std::function<void()> &f) : run_with_id(false), no_id(f), with_id(nullptr) {}
+    explicit task_element_t(const std::function<void(uint64_t)> &f) : run_with_id(true), no_id(nullptr), with_id(f) {}
+  };
+  std::queue<task_element_t> tasks_;
+  std::vector<std::thread> threads_;
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  std::condition_variable completed_;
+  bool running_;
+  bool complete_;
+  uint64_t available_;
+  uint64_t total_;
+
+public:
+  /// @brief Constructor.
+  explicit TaskThreadPool(uint64_t pool_size)
+      : threads_(pool_size), running_(true), complete_(true),
+        available_(pool_size), total_(pool_size)
+  {
+    for (uint64_t i = 0; i < pool_size; ++i)
+    {
+      threads_[i] = std::thread(
+          std::bind(&TaskThreadPool::main_loop, this, i));
+    }
+  }
+
+  /// @brief Destructor.
+  ~TaskThreadPool()
+  {
+    // Set running flag to false then notify all threads.
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      running_ = false;
+      condition_.notify_all();
+    }
+
+    try
+    {
+      for (auto &t : threads_)
+      {
+        t.join();
+      }
+    }
+    // Suppress all exceptions.
+    catch (const std::exception &)
+    {
+    }
+  }
+
+  /// @brief Add task to the thread pool if a thread is currently available.
+  template <typename Task>
+  void RunTask(Task task)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    // Set task and signal condition variable so that a worker thread will
+    // wake up and use the task.
+    tasks_.push(task_element_t(static_cast<std::function<void()>>(task)));
+    complete_ = false;
+    condition_.notify_one();
+  }
+
+  template <typename Task>
+  void RunTaskWithID(Task task)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+
+    // Set task and signal condition variable so that a worker thread will
+    // wake up and use the task.
+    tasks_.push(task_element_t(static_cast<std::function<void(uint64_t)>>(
+        task)));
+    complete_ = false;
+    condition_.notify_one();
+  }
+
+  /// @brief Wait for queue to be empty
+  void WaitWorkComplete()
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (!complete_)
+      completed_.wait(lock);
+  }
+
+private:
+  /// @brief Entry point for pool threads.
+  void main_loop(uint64_t index)
+  {
+    while (running_)
+    {
+      // Wait on condition variable while the task is empty and
+      // the pool is still running.
+      std::unique_lock<std::mutex> lock(mutex_);
+      while (tasks_.empty() && running_)
+      {
+        condition_.wait(lock);
+      }
+      // If pool is no longer running, break out of loop.
+      if (!running_)
+        break;
+
+      // Copy task locally and remove from the queue.  This is
+      // done within its own scope so that the task object is
+      // destructed immediately after running the task.  This is
+      // useful in the event that the function contains
+      // shared_ptr arguments bound via bind.
+      {
+        auto tasks = tasks_.front();
+        tasks_.pop();
+        // Decrement count, indicating thread is no longer available.
+        --available_;
+
+        lock.unlock();
+
+        // Run the task.
+        try
+        {
+          if (tasks.run_with_id)
+          {
+            tasks.with_id(index);
+          }
+          else
+          {
+            tasks.no_id();
+          }
+        }
+        // Suppress all exceptions.
+        catch (const std::exception &)
+        {
+        }
+
+        // Update status of empty, maybe
+        // Need to recover the lock first
+        lock.lock();
+
+        // Increment count, indicating thread is available.
+        ++available_;
+        if (tasks_.empty() && available_ == total_)
+        {
+          complete_ = true;
+          completed_.notify_one();
+        }
+      }
+    } // while running_
+  }
 };
 
 } // namespace util

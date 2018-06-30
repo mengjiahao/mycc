@@ -23,6 +23,43 @@ namespace mycc
 namespace util
 {
 
+// /proc/pid/stat字段定义
+struct pid_stat_fields
+{
+  int64_t pid;
+  char comm[PATH_MAX];
+  char state;
+  int64_t ppid;
+  int64_t pgrp;
+  int64_t session;
+  int64_t tty_nr;
+  int64_t tpgid;
+  int64_t flags;
+  int64_t minflt;
+  int64_t cminflt;
+  int64_t majflt;
+  int64_t cmajflt;
+  int64_t utime;
+  int64_t stime;
+  int64_t cutime;
+  int64_t cstime;
+  // ...
+};
+
+// /proc/stat/cpu信息字段定义
+struct cpu_stat_fields
+{
+  char cpu_label[16];
+  int64_t user;
+  int64_t nice;
+  int64_t system;
+  int64_t idle;
+  int64_t iowait;
+  int64_t irq;
+  int64_t softirq;
+  // ...
+};
+
 string RunShellCmd(const char *cmd, ...)
 {
   std::vector<const char *> arr;
@@ -164,43 +201,6 @@ string FormatLibraryFileName(const string &name, const string &version)
   }
   return filename;
 }
-
-// /proc/pid/stat字段定义
-struct pid_stat_fields
-{
-  int64_t pid;
-  char comm[PATH_MAX];
-  char state;
-  int64_t ppid;
-  int64_t pgrp;
-  int64_t session;
-  int64_t tty_nr;
-  int64_t tpgid;
-  int64_t flags;
-  int64_t minflt;
-  int64_t cminflt;
-  int64_t majflt;
-  int64_t cmajflt;
-  int64_t utime;
-  int64_t stime;
-  int64_t cutime;
-  int64_t cstime;
-  // ...
-};
-
-// /proc/stat/cpu信息字段定义
-struct cpu_stat_fields
-{
-  char cpu_label[16];
-  int64_t user;
-  int64_t nice;
-  int64_t system;
-  int64_t idle;
-  int64_t iowait;
-  int64_t irq;
-  int64_t softirq;
-  // ...
-};
 
 int64_t GetCurCpuTime()
 {
@@ -357,16 +357,16 @@ int64_t AmountOfVirtualMemory()
   return limit.rlim_cur == RLIM_INFINITY ? 0 : limit.rlim_cur;
 }
 
-int NumberOfProcessors()
+int64_t NumberOfProcessors()
 {
   // It seems that sysconf returns the number of "logical" processors on both
   // Mac and Linux.  So we get the number of "online logical" processors.
   long res = sysconf(_SC_NPROCESSORS_ONLN);
   if (res == -1)
   {
-    return 1;
+    return 0;
   }
-  return static_cast<int>(res);
+  return res;
 }
 
 } // namespace util

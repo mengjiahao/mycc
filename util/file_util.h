@@ -73,6 +73,9 @@ int make_dir(const string &path);
 /// @return 0成功，非0失败
 int make_dir_p(const string &path);
 
+bool GetFileContent(const string &file_name, string *content);
+bool CopyFileContent(const string &from, const string &to);
+
 // Example:
 //   FileWatcher fw;
 //   fw.init("to_be_watched_file");
@@ -99,9 +102,9 @@ public:
 
   // Watch file at `file_path', must be called before calling other methods.
   // Returns 0 on success, -1 otherwise.
-  int32_t init(const char *file_path);
+  int init(const char *file_path);
   // Let check_and_consume returns CREATE when file_path already exists.
-  int32_t init_from_not_exist(const char *file_path);
+  int init_from_not_exist(const char *file_path);
 
   // Check and consume change of the watched file. Write `last_timestamp'
   // if it's not NULL.
@@ -154,15 +157,15 @@ public:
 
   // Save |content| to file, overwriting existing file.
   // Returns 0 when successful, -1 otherwise.
-  int32_t save(const char *content);
+  int save(const char *content);
 
   // Save |fmt| and associated values to file, overwriting existing file.
   // Returns 0 when successful, -1 otherwise.
-  int32_t save_format(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+  int save_format(const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
   // Save binary data |buf| (|count| bytes) to file, overwriting existing file.
   // Returns 0 when successful, -1 otherwise.
-  int32_t save_bin(const void *buf, size_t count);
+  int save_bin(const void *buf, size_t count);
 
   // Get name of the temporary file.
   const char *fname() const { return _fname; }

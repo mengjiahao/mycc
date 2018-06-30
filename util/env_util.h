@@ -2,6 +2,7 @@
 #ifndef MYCC_UTIL_ENV_UTIL_H_
 #define MYCC_UTIL_ENV_UTIL_H_
 
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <functional>
@@ -25,6 +26,8 @@ class MemoryMappedFileBuffer;
 class Directory;
 class Thread;
 class ThreadPool;
+
+/// Utils
 
 // Options while opening a file to read/write
 struct EnvOptions
@@ -159,18 +162,18 @@ public:
   static Env *Default();
 
   // Returns the number of micro-seconds since some fixed point in time.
-  virtual uint64_t NowMicros() = 0;
+  virtual int64_t NowMicros() = 0;
 
   // Returns the number of nano-seconds since some fixed point in time.
-  virtual uint64_t NowNanos() = 0;
+  virtual int64_t NowNanos() = 0;
 
   // Returns the number of micro-seconds since some fixed point in time.
-  virtual uint64_t NowMonotonicMicros() = 0;
+  virtual int64_t NowMonotonicMicros() = 0;
 
   // Returns the number of nano-seconds since some fixed point in time.
-  virtual uint64_t NowMonotonicNanos() = 0;
+  virtual int64_t NowMonotonicNanos() = 0;
 
-  virtual uint64_t NowChronoNanos() = 0;
+  virtual int64_t NowChronoNanos() = 0;
 
   virtual void SleepForMicros(int32_t micros) = 0;
 
@@ -374,15 +377,8 @@ public:
   // Delete the specified directory.
   virtual Status DeleteDir(const string &dirname) = 0;
 
-  /// \brief Deletes the specified directory and all subdirectories and files
-  /// underneath it. undeleted_files and undeleted_dirs stores the number of
-  /// files and directories that weren't deleted (unspecified if the return
-  /// status is not OK).
-  /// REQUIRES: undeleted_files, undeleted_dirs to be not null.
-  /// Typical return codes
-  ///  * OK - dirname exists and we were able to delete everything underneath.
-  virtual Status DeleteDirRecursively(const string &dirname, int64_t *undeleted_files,
-                                      int64_t *undeleted_dirs) = 0;
+  // Delete only dir sub files
+  virtual Status DeleteSubFiles(const string &dirname) = 0;
 
   // Rename file src to target.
   virtual Status RenameFile(const string &src, const string &target) = 0;
@@ -414,7 +410,9 @@ public:
   // REQUIRES: lock has not already been unlocked.
   virtual Status UnlockFile(FileLock *lock) = 0;
 
-  virtual uint64_t Du(const string &path) = 0;
+  // Copy file src to dst.
+  virtual Status CopyFile(const string &src, const string &dst) = 0;
+  virtual Status CopyDir(const string &from, const string &to) = 0;
 
   // A utility routine: write "data" to the named file.
   virtual Status WriteStringToFile(const StringPiece &data,

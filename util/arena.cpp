@@ -10,19 +10,85 @@ namespace mycc
 namespace util
 {
 
+ArenaEasy::ArenaEasy() : memory_usage_(0)
+{
+  alloc_ptr_ = nullptr; // First allocation will allocate a block
+  alloc_bytes_remaining_ = 0;
+}
+
+ArenaEasy::~ArenaEasy()
+{
+  for (uint64_t i = 0; i < blocks_.size(); i++)
+  {
+    delete[] blocks_[i];
+  }
+}
+
+char *ArenaEasy::AllocateFallback(uint64_t bytes)
+{
+  if (bytes > kBlockSize / 4)
+  {
+    // Object is more than a quarter of our block size.  Allocate it separately
+    // to avoid wasting too much space in leftover bytes.
+    char *result = AllocateNewBlock(bytes);
+    return result;
+  }
+
+  // We waste the remaining space in the current block.
+  alloc_ptr_ = AllocateNewBlock(kBlockSize);
+  alloc_bytes_remaining_ = kBlockSize;
+
+  char *result = alloc_ptr_;
+  alloc_ptr_ += bytes;
+  alloc_bytes_remaining_ -= bytes;
+  return result;
+}
+
+char *ArenaEasy::AllocateAligned(uint64_t bytes)
+{
+  const int align = (sizeof(void *) > 8) ? sizeof(void *) : 8;
+  assert((align & (align - 1)) == 0); // Pointer size should be a power of 2
+  uint64_t current_mod = reinterpret_cast<uint64_t>(alloc_ptr_) & (align - 1);
+  uint64_t slop = (current_mod == 0 ? 0 : align - current_mod);
+  uint64_t needed = bytes + slop;
+  char *result;
+  if (needed <= alloc_bytes_remaining_)
+  {
+    result = alloc_ptr_ + slop;
+    alloc_ptr_ += needed;
+    alloc_bytes_remaining_ -= needed;
+  }
+  else
+  {
+    // AllocateFallback always returned aligned memory
+    result = AllocateFallback(bytes);
+  }
+  assert((reinterpret_cast<uintptr_t>(result) & (align - 1)) == 0);
+  return result;
+}
+
+char *ArenaEasy::AllocateNewBlock(uint64_t block_bytes)
+{
+  char *result = new char[block_bytes];
+  blocks_.push_back(result);
+  memory_usage_.NoBarrier_Store(
+      reinterpret_cast<void *>(MemoryUsage() + block_bytes + sizeof(char *)));
+  return result;
+}
+
 // This approach to arenas overcomes many of the limitations described
 // in the "Specialized allocators" section of
 //     http://www.pdos.lcs.mit.edu/~dm/c++-new.html
 //
 // A somewhat similar approach to Gladiator, but for heap-detection, was
 // suggested by Ron van der Wal and Scott Meyers at
-//     http://www.aristeia.com/BookErrata/M27Comments_frames.html  
+//     http://www.aristeia.com/BookErrata/M27Comments_frames.html
 
-const size_t Arena::kMinBlockSize = 1024;
-const size_t Arena::kMaxBlockSize = 2u << 30;
+const uint64_t Arena::kMinBlockSize = 1024;
+const uint64_t Arena::kMaxBlockSize = 2u << 30;
 static const int kAlignUnit = sizeof(void *);
 
-size_t OptimizeBlockSize(size_t block_size)
+uint64_t OptimizeBlockSize(uint64_t block_size)
 {
   // Make sure block_size is in optimal range
   block_size = std::max(Arena::kMinBlockSize, block_size);
@@ -43,7 +109,7 @@ size_t OptimizeBlockSize(size_t block_size)
 //    Destroying the arena automatically calls Reset()
 // ----------------------------------------------------------------------
 
-Arena::Arena(const size_t block_size)
+Arena::Arena(const uint64_t block_size)
     : remaining_(0),
       block_size_(block_size),
       freestart_(nullptr), // set for real in Reset()
@@ -65,7 +131,7 @@ Arena::~Arena()
   FreeBlocks();
   assert(overflow_blocks_ == nullptr); // FreeBlocks() should do that
   // The first X blocks stay allocated always by default.  Delete them now.
-  for (size_t i = 0; i < blocks_alloced_; ++i)
+  for (uint64_t i = 0; i < blocks_alloced_; ++i)
   {
     AlignedFree(first_blocks_[i].mem);
   }
@@ -73,12 +139,12 @@ Arena::~Arena()
 
 // Returns true iff it advances freestart_ to the first position
 // satisfying alignment without exhausting the current block.
-bool Arena::SatisfyAlignment(size_t alignment)
+bool Arena::SatisfyAlignment(uint64_t alignment)
 {
-  const size_t overage = reinterpret_cast<size_t>(freestart_) & (alignment - 1);
+  const uint64_t overage = reinterpret_cast<uint64_t>(freestart_) & (alignment - 1);
   if (overage > 0)
   {
-    const size_t waste = alignment - overage;
+    const uint64_t waste = alignment - overage;
     if (waste >= remaining_)
     {
       return false;
@@ -86,7 +152,7 @@ bool Arena::SatisfyAlignment(size_t alignment)
     freestart_ += waste;
     remaining_ -= waste;
   }
-  //DCHECK_EQ(size_t{0}, reinterpret_cast<size_t>(freestart_) & (alignment - 1));
+  //DCHECK_EQ(uint64_t{0}, reinterpret_cast<uint64_t>(freestart_) & (alignment - 1));
   return true;
 }
 
@@ -162,7 +228,7 @@ static uint32_t LeastCommonMultiple(uint32_t a, uint32_t b)
 //    affect overflow_blocks_).
 // -------------------------------------------------------------
 
-Arena::AllocatedBlock *Arena::AllocNewBlock(const size_t block_size,
+Arena::AllocatedBlock *Arena::AllocNewBlock(const uint64_t block_size,
                                             const uint32_t alignment)
 {
   AllocatedBlock *block;
@@ -199,7 +265,7 @@ Arena::AllocatedBlock *Arena::AllocNewBlock(const size_t block_size,
 
   // If block_size > alignment we force block_size to be a multiple
   // of alignment; if block_size < alignment we make no adjustment.
-  size_t adjusted_block_size = block_size;
+  uint64_t adjusted_block_size = block_size;
   if (adjusted_block_size > adjusted_alignment)
   {
     const uint32_t excess = adjusted_block_size % adjusted_alignment;
@@ -226,7 +292,7 @@ Arena::AllocatedBlock *Arena::AllocNewBlock(const size_t block_size,
 //    allocation -- this is equivalent to not using the arena at all.
 // ----------------------------------------------------------------------
 
-void *Arena::GetMemoryFallback(const size_t size, const int alignment)
+void *Arena::GetMemoryFallback(const uint64_t size, const int alignment)
 {
   if (0 == size)
   {
@@ -272,7 +338,7 @@ void *Arena::GetMemoryFallback(const size_t size, const int alignment)
 
 void Arena::FreeBlocks()
 {
-  for (size_t i = 1; i < blocks_alloced_; ++i)
+  for (uint64_t i = 1; i < blocks_alloced_; ++i)
   { // keep first block alloced
     AlignedFree(first_blocks_[i].mem);
     first_blocks_[i].mem = nullptr;

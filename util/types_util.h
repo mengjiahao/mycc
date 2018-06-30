@@ -7,6 +7,7 @@
 #include <limits.h> // So we can set the bounds of our types.
 #include <stddef.h> // For size_t.
 #include <stdint.h> // For intptr_t.
+#include <sys/types.h>
 #include <limits>
 #include <string>
 #include "macros_util.h"
@@ -93,6 +94,22 @@ namespace port
 constexpr bool kLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 
 } // namespace port
+
+template <typename T>
+inline void CheckedDelete(T *p)
+{
+  typedef char type_must_be_complete[sizeof(T) ? 1 : -1];
+  (void)sizeof(type_must_be_complete);
+  delete p;
+}
+
+template <typename T>
+inline void CheckedArrayDelete(T *p)
+{
+  typedef char type_must_be_complete[sizeof(T) ? 1 : -1];
+  (void)sizeof(type_must_be_complete);
+  delete[] p;
+}
 
 } // namespace mycc
 

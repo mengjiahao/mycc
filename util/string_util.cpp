@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "macros_util.h"
@@ -80,6 +81,18 @@ bool DoSplitAndParseAsInts(StringPiece text, char delim,
     result->push_back(num);
   }
   return true;
+}
+
+char SafeFirstChar(StringPiece str)
+{
+  if (str.empty())
+    return '\0';
+  return str[0];
+}
+void SkipSpaces(StringPiece *str)
+{
+  while (isspace(SafeFirstChar(*str)))
+    str->remove_prefix(1);
 }
 
 } // namespace
@@ -430,21 +443,6 @@ bool HexStringToUint64(const StringPiece &s, uint64_t *result)
   return true;
 }
 
-namespace
-{ // namespace anonymous
-char SafeFirstChar(StringPiece str)
-{
-  if (str.empty())
-    return '\0';
-  return str[0];
-}
-void SkipSpaces(StringPiece *str)
-{
-  while (isspace(SafeFirstChar(*str)))
-    str->remove_prefix(1);
-}
-} // namespace
-
 bool SafeStrToInt32(StringPiece str, int32_t *value)
 {
   SkipSpaces(&str);
@@ -774,6 +772,19 @@ char *DoubleToString(double n, char *buffer)
 {
   WriteDoubleToBuffer(n, buffer);
   return buffer;
+}
+
+string RoundNumberToNDecimalString(double n, int32_t d)
+{
+  if (d < 0 || 9 < d)
+  {
+    return "(null)";
+  }
+  std::stringstream ss;
+  ss << std::fixed;
+  ss.precision(d);
+  ss << n;
+  return ss.str();
 }
 
 char *FloatToString(float n, char *buffer)

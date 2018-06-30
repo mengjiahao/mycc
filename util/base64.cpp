@@ -1,6 +1,6 @@
 
 #include "base64.h"
-#include <cstring>
+#include <string.h>
 #include <memory>
 #include "error_util.h"
 
@@ -128,7 +128,7 @@ Status Base64Decode(StringPiece data, string *decoded)
   char tail[4] = {kBase64UrlSafeChars[0], kBase64UrlSafeChars[0],
                   kBase64UrlSafeChars[0], kBase64UrlSafeChars[0]};
   // Copy tail of the input into the array, then decode.
-  std::memcpy(tail, b64, remain * sizeof(*b64));
+  ::memcpy(tail, b64, remain * sizeof(*b64));
   RETURN_IF_ERROR(DecodeThreeChars(tail, current));
   // We know how many parsed characters are valid.
   current += remain - 1;

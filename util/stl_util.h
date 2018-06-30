@@ -27,6 +27,83 @@ namespace mycc
 namespace util
 {
 
+// comparators for stl containers
+// for std::unordered_map:
+//   std::unordered_map<const char*, long, hash<const char*>, eqstr> vals;
+struct EqStr
+{
+  bool operator()(const char* s1, const char* s2) const
+  {
+    return strcmp(s1, s2) == 0;
+  }
+};
+
+// for set, map
+struct LtStr
+{
+  bool operator()(const char* s1, const char* s2) const
+  {
+    return strcmp(s1, s2) < 0;
+  }
+};
+
+/*!
+ * \brief safely get the beginning address of a vector
+ * \param vec input vector
+ * \return beginning address of a vector
+ */
+template <typename T>
+inline T *BeginPtr(std::vector<T> &vec)
+{ // NOLINT(*)
+  if (vec.size() == 0)
+  {
+    return NULL;
+  }
+  else
+  {
+    return &vec[0];
+  }
+}
+/*!
+ * \brief get the beginning address of a const vector
+ * \param vec input vector
+ * \return beginning address of a vector
+ */
+template <typename T>
+inline const T *BeginPtr(const std::vector<T> &vec)
+{
+  if (vec.size() == 0)
+  {
+    return NULL;
+  }
+  else
+  {
+    return &vec[0];
+  }
+}
+/*!
+ * \brief get the beginning address of a string
+ * \param str input string
+ * \return beginning address of a string
+ */
+inline char *BeginPtr(std::string &str)
+{ // NOLINT(*)
+  if (str.length() == 0)
+    return NULL;
+  return &str[0];
+}
+/*!
+ * \brief get the beginning address of a const string
+ * \param str input string
+ * \return beginning address of a string
+ */
+inline const char *BeginPtr(const std::string &str)
+{
+  if (str.length() == 0)
+    return NULL;
+  return &str[0];
+}
+
 template <class T, class A>
 T STLJoinify(const A &begin, const A &end, const T &t)
 {

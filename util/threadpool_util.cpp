@@ -7,10 +7,12 @@
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <sstream>
 #include <thread>
 #include <vector>
 #include "math_util.h"
 #include "string_util.h"
+#include "time_util.h"
 #include "types_util.h"
 
 #ifdef OS_LINUX
@@ -27,7 +29,7 @@ namespace
 { // namespace anonymous
 
 // check for result = pthread_xxx()
-void PthreadCall(const char *label, int32_t result)
+void PthreadCall(const char *label, int result)
 {
   if (result != 0)
   {
@@ -631,6 +633,220 @@ void PosixFixedThreadPool::pause()
 {
   MutexLock ml(&mu_);
   paused_ = true;
+}
+
+//////////// SimpleThreadPool ///////////////////
+
+bool SimpleThreadPool::start()
+{
+  MutexLock lock(&mutex_);
+  if (tids_.size())
+  {
+    return false;
+  }
+  stop_ = false;
+  for (int32_t i = 0; i < threads_num_; i++)
+  {
+    pthread_t tid;
+    PthreadCall("pthread_create",
+                pthread_create(&tid, NULL, ThreadWrapper, this));
+    tids_.push_back(tid);
+  }
+  return true;
+}
+
+bool SimpleThreadPool::stop(bool wait)
+{
+  if (wait)
+  {
+    while (pending_num_ > 0)
+    {
+      usleep(10000);
+    }
+  }
+
+  {
+    MutexLock lock(&mutex_);
+    stop_ = true;
+    work_cv_.signalAll();
+  }
+  for (uint32_t i = 0; i < tids_.size(); i++)
+  {
+    pthread_join(tids_[i], nullptr);
+  }
+  tids_.clear();
+  return true;
+}
+
+void SimpleThreadPool::addTask(const Task &task)
+{
+  MutexLock lock(&mutex_);
+  if (stop_)
+    return;
+  queue_.push_back(BGItem(0, NowMonotonicMicros(), task));
+  ++pending_num_;
+  work_cv_.signal();
+}
+
+void SimpleThreadPool::addPriorityTask(const Task &task)
+{
+  MutexLock lock(&mutex_);
+  if (stop_)
+    return;
+  queue_.push_front(BGItem(0, NowMonotonicMicros(), task));
+  ++pending_num_;
+  work_cv_.signal();
+}
+
+int64_t SimpleThreadPool::delayTask(int64_t delay, const Task &task)
+{
+  MutexLock lock(&mutex_);
+  if (stop_)
+    return 0;
+  int64_t now_time = NowMonotonicMicros();
+  int64_t exe_time = now_time + delay * 1000;
+  BGItem bg_item(++last_task_id_, exe_time, task); // id > 1
+  time_queue_.push(bg_item);
+  latest_[bg_item.id] = bg_item;
+  work_cv_.signal();
+  return bg_item.id;
+}
+
+bool SimpleThreadPool::cancelTask(int64_t task_id, bool non_block, bool *is_running)
+{
+  if (task_id == 0)
+  { // not delay task
+    if (is_running != nullptr)
+    {
+      *is_running = false;
+    }
+    return false;
+  }
+  while (1)
+  {
+    {
+      MutexLock lock(&mutex_);
+      if (running_task_id_ != task_id)
+      {
+        BGMap::iterator it = latest_.find(task_id);
+        if (it == latest_.end())
+        {
+          if (is_running != nullptr)
+          {
+            *is_running = false;
+          }
+          return false;
+        }
+        latest_.erase(it); // cancel task
+        return true;
+      }
+      else if (non_block)
+      { // already running
+        if (is_running != nullptr)
+        {
+          *is_running = true;
+        }
+        return false;
+      }
+      // else block
+    }
+    SleepForNanos(100000);
+  }
+}
+
+string SimpleThreadPool::profilingLog()
+{
+  int64_t schedule_cost_sum;
+  int64_t schedule_count;
+  int64_t task_cost_sum;
+  int64_t task_count;
+  {
+    MutexLock lock(&mutex_);
+    schedule_cost_sum = schedule_cost_sum_;
+    schedule_cost_sum_ = 0;
+    schedule_count = schedule_count_;
+    schedule_count_ = 0;
+    task_cost_sum = task_cost_sum_;
+    task_cost_sum_ = 0;
+    task_count = task_count_;
+    task_count_ = 0;
+  }
+  std::stringstream ss;
+  ss << (schedule_count == 0 ? 0 : schedule_cost_sum / schedule_count / 1000)
+     << " " << (task_count == 0 ? 0 : task_cost_sum / task_count / 1000)
+     << " " << task_count;
+  return ss.str();
+}
+
+void SimpleThreadPool::ThreadProc()
+{
+  while (true)
+  {
+    Task task;
+    MutexLock lock(&mutex_);
+
+    while (time_queue_.empty() && queue_.empty() && !stop_)
+    {
+      work_cv_.wait();
+    }
+    if (stop_)
+    {
+      break;
+    }
+
+    // Timer task
+    if (!time_queue_.empty())
+    {
+      int64_t now_time = NowMonotonicMicros();
+      BGItem bg_item = time_queue_.top();
+      int64_t wait_time = (bg_item.exe_time - now_time) / 1000; // in ms
+      if (wait_time <= 0)
+      {
+        time_queue_.pop();
+        BGMap::iterator it = latest_.find(bg_item.id);
+        if (it != latest_.end() && it->second.exe_time == bg_item.exe_time)
+        {
+          schedule_cost_sum_ += now_time - bg_item.exe_time;
+          schedule_count_++;
+          task = bg_item.task;
+          latest_.erase(it);
+          running_task_id_ = bg_item.id;
+          {
+            mutex_.unlock();
+            task(); // not use mutex in task, may call threadpool funcs
+            task_cost_sum_ += NowMonotonicMicros() - now_time;
+            task_count_++;
+            mutex_.lock();
+          }
+          running_task_id_ = 0;
+        }
+        continue;
+      }
+      else if (queue_.empty() && !stop_)
+      {
+        work_cv_.timedWait(wait_time);
+        continue;
+      }
+    }
+
+    // Normal task
+    if (!queue_.empty())
+    {
+      task = queue_.front().task;
+      int64_t exe_time = queue_.front().exe_time;
+      queue_.pop_front();
+      --pending_num_;
+      int64_t start_time = NowMonotonicMicros();
+      schedule_cost_sum_ += start_time - exe_time;
+      schedule_count_++;
+      mutex_.unlock();
+      task();
+      int64_t finish_time = NowMonotonicMicros();
+      task_cost_sum_ += finish_time - start_time;
+      task_count_++;
+      mutex_.lock();
+    }
+  }
 }
 
 } // namespace util

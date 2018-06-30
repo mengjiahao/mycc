@@ -279,6 +279,7 @@ string Int32ToString(int32_t num);
 string Uint32ToString(uint32_t num);
 string FloatToString(float n);
 string DoubleToString(double n);
+string RoundNumberToNDecimalString(double n, int32_t d);
 
 // string human-readable
 

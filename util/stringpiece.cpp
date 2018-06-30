@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string>
 #include "hash_util.h"
+#include "locks_util.h"
 #include "math_util.h"
 
 namespace mycc
@@ -152,7 +153,7 @@ bool StringPiece::decodeHex(string *result) const
   return true;
 }
 
-// Compare two slices and returns the first byte where they differ
+// Compare two StringPieces and returns the first byte where they differ
 uint64_t StringPiece::difference_offset(const StringPiece b) const
 {
   uint64_t off = 0;
@@ -165,9 +166,91 @@ uint64_t StringPiece::difference_offset(const StringPiece b) const
   return off;
 }
 
-std::size_t StringPiece::Hasher::operator()(StringPiece s) const
+std::uint64_t StringPiece::Hasher::operator()(StringPiece s) const
 {
-  return (std::size_t)Hash64(s.data(), s.size(), 0xDECAFCAFFE);
+  return (std::uint64_t)Hash64(s.data(), s.size(), 0xDECAFCAFFE);
+}
+
+namespace
+{ // namespace anonymous
+
+class BytewiseStringPieceComparatorImpl : public StringPieceComparator
+{
+public:
+  BytewiseStringPieceComparatorImpl() {}
+
+  virtual const char *Name() const
+  {
+    return "leveldb.BytewiseStringPieceComparator";
+  }
+
+  virtual int32_t Compare(const StringPiece &a, const StringPiece &b) const
+  {
+    return a.compare(b);
+  }
+
+  virtual void FindShortestSeparator(
+      string *start,
+      const StringPiece &limit) const
+  {
+    // Find length of common prefix
+    uint64_t min_length = std::min(start->size(), limit.size());
+    uint64_t diff_index = 0;
+    while ((diff_index < min_length) &&
+           ((*start)[diff_index] == limit[diff_index]))
+    {
+      diff_index++;
+    }
+
+    if (diff_index >= min_length)
+    {
+      // Do not shorten if one string is a prefix of the other
+    }
+    else
+    {
+      uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);
+      if (diff_byte < static_cast<uint8_t>(0xff) &&
+          diff_byte + 1 < static_cast<uint8_t>(limit[diff_index]))
+      {
+        (*start)[diff_index]++;
+        start->resize(diff_index + 1);
+        assert(Compare(*start, limit) < 0);
+      }
+    }
+  }
+
+  virtual void FindShortSuccessor(string *key) const
+  {
+    // Find first character that can be incremented
+    uint64_t n = key->size();
+    for (uint64_t i = 0; i < n; i++)
+    {
+      const uint8_t byte = (*key)[i];
+      if (byte != static_cast<uint8_t>(0xff))
+      {
+        (*key)[i] = byte + 1;
+        key->resize(i + 1);
+        return;
+      }
+    }
+    // *key is a run of 0xffs.  Leave it alone.
+  }
+};
+
+} // namespace
+
+static OnceType once = {};
+static const StringPieceComparator *bytewise;
+
+static void InitModule()
+{
+  bytewise = new BytewiseStringPieceComparatorImpl;
+}
+
+const StringPieceComparator *BytewiseStringPieceComparator()
+{
+  InitOnce(&once, InitModule);
+  return bytewise;
 }
 
 } // namespace util

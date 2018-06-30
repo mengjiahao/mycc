@@ -1,10 +1,9 @@
 
-#ifndef MYCC_UTIL_CACHE_UIIL_H_
-#define MYCC_UTIL_CACHE_UIIL_H_
+#ifndef MYCC_UTIL_CACHE_H_
+#define MYCC_UTIL_CACHE_H_
 
 #include <assert.h>
 #include <stdint.h>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -29,20 +28,23 @@ namespace util
 // they want something more sophisticated (like scan-resistance, a
 // custom eviction policy, variable cache sizing, etc.)
 
-class SimpleCache;
+class Cache;
 
-class SimpleCache
+// Create a new cache with a fixed size capacity.  This implementation
+// of Cache uses a least-recently-used eviction policy.
+Cache *NewLRUCache(uint64_t capacity);
+
+class Cache
 {
 public:
-  // Create a new cache with a fixed size capacity.  This implementation
-  // of Cache uses a least-recently-used eviction policy.
-  static SimpleCache *NewLRUCache(size_t capacity);
+  Cache() = default;
 
-  SimpleCache() {}
+  Cache(const Cache &) = delete;
+  Cache &operator=(const Cache &) = delete;
 
   // Destroys all existing entries by calling the "deleter"
   // function that was passed to the constructor.
-  virtual ~SimpleCache(){};
+  virtual ~Cache(){};
 
   // Opaque handle to an entry stored in the cache.
   struct Handle
@@ -58,10 +60,10 @@ public:
   //
   // When the inserted entry is no longer needed, the key and
   // value will be passed to "deleter".
-  virtual Handle *Insert(const StringPiece &key, void *value, size_t charge,
+  virtual Handle *Insert(const StringPiece &key, void *value, uint64_t charge,
                          void (*deleter)(const StringPiece &key, void *value)) = 0;
 
-  // If the cache has no mapping for "key", returns NULL.
+  // If the cache has no mapping for "key", returns nullptr.
   //
   // Else return a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
@@ -99,7 +101,7 @@ public:
 
   // Return an estimate of the combined charges of all elements stored in the
   // cache.
-  virtual size_t TotalCharge() const = 0;
+  virtual uint64_t TotalCharge() const = 0;
 
 private:
   void LRU_Remove(Handle *e);
@@ -108,12 +110,9 @@ private:
 
   struct Rep;
   Rep *rep_;
-
-  // No copying allowed
-  DISALLOW_COPY_AND_ASSIGN(SimpleCache);
 };
 
 } // namespace util
 } // namespace mycc
 
-#endif // MYCC_UTIL_CACHE_UIIL_H_
+#endif // MYCC_UTIL_CACHE_H_

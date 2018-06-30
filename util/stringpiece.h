@@ -199,6 +199,54 @@ inline bool operator>=(StringPiece x, StringPiece y)
   return x.compare(y) >= 0;
 }
 
+// A StringPieceComparator object provides a total order across StringPieces that are
+// used as keys in an sstable or a database.  A StringPieceComparator implementation
+// must be thread-safe since leveldb may invoke its methods concurrently
+// from multiple threads.
+class StringPieceComparator
+{
+public:
+  virtual ~StringPieceComparator() {};
+
+  // Three-way comparison.  Returns value:
+  //   < 0 iff "a" < "b",
+  //   == 0 iff "a" == "b",
+  //   > 0 iff "a" > "b"
+  virtual int32_t Compare(const StringPiece &a, const StringPiece &b) const = 0;
+
+  // The name of the StringPieceComparator.  Used to check for StringPieceComparator
+  // mismatches (i.e., a DB created with one StringPieceComparator is
+  // accessed using a different StringPieceComparator.
+  //
+  // The client of this package should switch to a new name whenever
+  // the StringPieceComparator implementation changes in a way that will cause
+  // the relative ordering of any two keys to change.
+  //
+  // Names starting with "leveldb." are reserved and should not be used
+  // by any clients of this package.
+  virtual const char *Name() const = 0;
+
+  // Advanced functions: these are used to reduce the space requirements
+  // for internal data structures like index blocks.
+
+  // If *start < limit, changes *start to a short string in [start,limit).
+  // Simple StringPieceComparator implementations may return with *start unchanged,
+  // i.e., an implementation of this method that does nothing is correct.
+  virtual void FindShortestSeparator(
+      string *start,
+      const StringPiece &limit) const = 0;
+
+  // Changes *key to a short string >= *key.
+  // Simple StringPieceComparator implementations may return with *key unchanged,
+  // i.e., an implementation of this method that does nothing is correct.
+  virtual void FindShortSuccessor(string *key) const = 0;
+};
+
+// Return a builtin StringPieceComparator that uses lexicographic byte-wise
+// ordering.  The result remains the property of this module and
+// must not be deleted.
+const StringPieceComparator *BytewiseStringPieceComparator();
+
 } // namespace util
 } // namespace mycc
 

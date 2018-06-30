@@ -103,6 +103,63 @@ public:
   }
 };
 
+/**
+ * @class RandomHelper
+ * @brief A helper class for creating random number.
+ */
+class RandomHelper
+{
+public:
+  template <typename T>
+  static T random_real(T min, T max)
+  {
+    std::uniform_real_distribution<T> dist(min, max);
+    auto &mt = RandomHelper::getEngine();
+    return dist(mt);
+  }
+
+  template <typename T>
+  static T random_int(T min, T max)
+  {
+    std::uniform_int_distribution<T> dist(min, max);
+    auto &mt = RandomHelper::getEngine();
+    return dist(mt);
+  }
+
+private:
+  static std::mt19937 &getEngine();
+};
+
+/**
+ * Returns a random float between -1 and 1.
+ * It can be seeded using std::srand(seed);
+ */
+inline float rand_minus1_1()
+{
+  // FIXME: using the new c++11 random engine generator
+  // without a proper way to set a seed is not useful.
+  // Resorting to the old random method since it can
+  // be seeded using std::srand()
+  return ((rand() / (float)RAND_MAX) * 2) - 1;
+
+  //    return cocos2d::random(-1.f, 1.f);
+};
+
+/**
+ * Returns a random float between 0 and 1.
+ * It can be seeded using std::srand(seed);
+ */
+inline float rand_0_1()
+{
+  // FIXME: using the new c++11 random engine generator
+  // without a proper way to set a seed is not useful.
+  // Resorting to the old random method since it can
+  // be seeded using std::srand()
+  return rand() / (float)RAND_MAX;
+
+  //    return cocos2d::random(0.f, 1.f);
+};
+
 // --------------------------------------------------------------------------
 // Functions in this header read from /dev/urandom in posix
 // systems and are not proper for performance critical situations.
@@ -120,17 +177,17 @@ uint64_t RandUint64();
 string GenerateGUID();
 
 // Returns true if the input string conforms to the GUID format.
-bool IsValidGUID(const string& guid);
+bool IsValidGUID(const string &guid);
 
 string RandomDataToGUIDString(const uint64_t bytes[2]);
 
 // Store in *dst a random string of length "len" and return a Slice that
 // references the generated data.
-extern StringPiece RandomString(Random* rnd, int32_t len, string* dst);
+extern StringPiece RandomString(Random *rnd, int32_t len, string *dst);
 
 // Return a random key with the specified length that may contain interesting
 // characters (e.g. \x00, \xff, etc.).
-extern string RandomKey(Random* rnd, int len);
+extern string RandomKey(Random *rnd, int len);
 
 } // namespace util
 } // namespace mycc
