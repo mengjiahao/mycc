@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <string>
-#include "macros_util.h"
 #include "stringpiece.h"
 #include "types_util.h"
 
@@ -345,6 +344,71 @@ template <>
 inline void WriteBigEndian<uint8_t>(char buf[], uint8_t val)
 {
   buf[0] = static_cast<char>(val);
+}
+
+uint16_t inline ReadLE16(const unsigned char *ptr)
+{
+  uint16_t x;
+  memcpy((char *)&x, ptr, 2);
+  return le16toh(x);
+}
+
+uint32_t inline ReadLE32(const unsigned char *ptr)
+{
+  uint32_t x;
+  memcpy((char *)&x, ptr, 4);
+  return le32toh(x);
+}
+
+uint64_t inline ReadLE64(const unsigned char *ptr)
+{
+  uint64_t x;
+  memcpy((char *)&x, ptr, 8);
+  return le64toh(x);
+}
+
+void inline WriteLE16(unsigned char *ptr, uint16_t x)
+{
+  uint16_t v = htole16(x);
+  memcpy(ptr, (char *)&v, 2);
+}
+
+void inline WriteLE32(unsigned char *ptr, uint32_t x)
+{
+  uint32_t v = htole32(x);
+  memcpy(ptr, (char *)&v, 4);
+}
+
+void inline WriteLE64(unsigned char *ptr, uint64_t x)
+{
+  uint64_t v = htole64(x);
+  memcpy(ptr, (char *)&v, 8);
+}
+
+uint32_t inline ReadBE32(const unsigned char *ptr)
+{
+  uint32_t x;
+  memcpy((char *)&x, ptr, 4);
+  return be32toh(x);
+}
+
+uint64_t inline ReadBE64(const unsigned char *ptr)
+{
+  uint64_t x;
+  memcpy((char *)&x, ptr, 8);
+  return be64toh(x);
+}
+
+void inline WriteBE32(unsigned char *ptr, uint32_t x)
+{
+  uint32_t v = htobe32(x);
+  memcpy(ptr, (char *)&v, 4);
+}
+
+void inline WriteBE64(unsigned char *ptr, uint64_t x)
+{
+  uint64_t v = htobe64(x);
+  memcpy(ptr, (char *)&v, 8);
 }
 
 // The maximum length of a varint in bytes for 64-bit.

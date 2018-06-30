@@ -457,6 +457,81 @@ bool StringSplitAndParseAsInts(StringPiece text, char delim,
 bool StringSplitAndParseAsInts(StringPiece text, char delim,
                                std::vector<int64_t> *result);
 
+/*!
+ * \brief A faster version of strtof
+ * TODO the current version does not support INF, NAN, and hex number
+ */
+float FastStrToF(const char *nptr, char **endptr);
+
+/**
+ * \brief A faster string to integer convertor
+ * TODO only support base <=10
+ */
+template <typename V>
+inline V FastStrToInt(const char *nptr, char **endptr, int base)
+{
+  const char *p = nptr;
+  // Skip leading white space, if any. Not necessary
+  while (isspace(*p))
+    ++p;
+
+  // Get sign if any
+  bool sign = true;
+  if (*p == '-')
+  {
+    sign = false;
+    ++p;
+  }
+  else if (*p == '+')
+  {
+    ++p;
+  }
+
+  V value;
+  for (value = 0; isdigit(*p); ++p)
+  {
+    value = value * base + (*p - '0');
+  }
+
+  if (endptr)
+    *endptr = (char *)p; // NOLINT(*)
+  return sign ? value : -value;
+}
+
+template <typename V>
+inline V FastStrToUint(const char *nptr, char **endptr, int base)
+{
+  const char *p = nptr;
+  // Skip leading white space, if any. Not necessary
+  while (isspace(*p))
+    ++p;
+
+  // Get sign if any
+  bool sign = true;
+  if (*p == '-')
+  {
+    sign = false;
+    ++p;
+  }
+  else if (*p == '+')
+  {
+    ++p;
+  }
+
+  // we are parsing unsigned, so no minus sign should be found
+  assert(sign == true);
+
+  V value;
+  for (value = 0; isdigit(*p); ++p)
+  {
+    value = value * base + (*p - '0');
+  }
+
+  if (endptr)
+    *endptr = (char *)p; // NOLINT(*)
+  return value;
+}
+
 } // namespace util
 } // namespace mycc
 

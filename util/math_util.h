@@ -47,9 +47,224 @@ namespace util
 #define MATH_RANDOM_0_1() ((float)rand() / RAND_MAX)                        // Returns a random float between 0 and 1.
 #define MATH_CLAMP(x, lo, hi) ((x < lo) ? lo : ((x > hi) ? hi : x))
 
+//------------------------------------------------------------------------------
+// Fast log()
+//------------------------------------------------------------------------------
+
+inline float fastlog2(float x)
+{
+  union {
+    float f;
+    uint32_t i;
+  } vx = {x};
+  union {
+    uint32_t i;
+    float f;
+  } mx = {(vx.i & 0x007FFFFF) | 0x3f000000};
+  float y = vx.i;
+  y *= 1.1920928955078125e-7f;
+
+  return y - 124.22551499f - 1.498030302f * mx.f - 1.72587999f / (0.3520887068f + mx.f);
+}
+
+inline float fastlog(float x)
+{
+  return 0.69314718f * fastlog2(x);
+}
+
+inline float fasterlog2(float x)
+{
+  union {
+    float f;
+    uint32_t i;
+  } vx = {x};
+  float y = vx.i;
+  y *= 1.1920928955078125e-7f;
+  return y - 126.94269504f;
+}
+
+inline float fasterlog(float x)
+{
+  union {
+    float f;
+    uint32_t i;
+  } vx = {x};
+  float y = vx.i;
+  y *= 8.2629582881927490e-8f;
+  return y - 87.989971088f;
+}
+
+//------------------------------------------------------------------------------
+// Fast exp()
+//------------------------------------------------------------------------------
+
+inline float fastpow2(float p)
+{
+  float offset = (p < 0) ? 1.0f : 0.0f;
+  float clipp = (p < -126) ? -126.0f : p;
+  int w = clipp;
+  float z = clipp - w + offset;
+  union {
+    uint32_t i;
+    float f;
+  } v = {(uint32_t)((1 << 23) * (clipp + 121.2740575f + 27.7280233f / (4.84252568f - z) - 1.49012907f * z))};
+
+  return v.f;
+}
+
+inline float fastexp(float p)
+{
+  return fastpow2(1.442695040f * p);
+}
+
+inline float fasterpow2(float p)
+{
+  float clipp = (p < -126) ? -126.0f : p;
+  union {
+    uint32_t i;
+    float f;
+  } v = {(uint32_t)((1 << 23) * (clipp + 126.94269504f))};
+
+  return v.f;
+}
+
+inline float fasterexp(float p)
+{
+  return fasterpow2(1.442695040f * p);
+}
+
+//------------------------------------------------------------------------------
+// Fast pow()
+//------------------------------------------------------------------------------
+
+inline float fastpow(float x, float p)
+{
+  return fastpow2(p * fastlog2(x));
+}
+
+inline float fasterpow(float x, float p)
+{
+  return fasterpow2(p * fasterlog2(x));
+}
+
+//------------------------------------------------------------------------------
+// Fast sigmoid()
+//------------------------------------------------------------------------------
+
+inline float fastsigmoid(float x)
+{
+  return 1.0f / (1.0f + fastexp(-x));
+}
+
+inline float fastersigmoid(float x)
+{
+  return 1.0f / (1.0f + fasterexp(-x));
+}
+
+//------------------------------------------------------------------------------
+// 1 / sqrt() Magic function !!
+//------------------------------------------------------------------------------
+inline float InvSqrt(float x)
+{
+  float xhalf = 0.5f * x;
+  int i = *reinterpret_cast<int *>(&x); // get bits for floating VALUE
+  i = 0x5f375a86 - (i >> 1);            // gives initial guess y0
+  x = *reinterpret_cast<float *>(&i);   // convert bits BACK to float
+  x = x * (1.5f - xhalf * x * x);       // Newton step, repeating increases accuracy
+  return x;
+}
+
 inline int32_t ToLog2(int32_t value)
 {
   return static_cast<int32_t>(::floor(::log2(value)));
+}
+
+// ------------------------------------------------------------------------
+// Implementation details follow
+// ------------------------------------------------------------------------
+
+#if defined(__GNUC__)
+
+// Return floor(log2(n)) for positive integer n.  Returns -1 iff n == 0.
+inline int32_t Log2Floor(uint32_t n) { return n == 0 ? -1 : 31 ^ __builtin_clz(n); }
+
+// Return floor(log2(n)) for positive integer n.  Returns -1 iff n == 0.
+inline int32_t Log2Floor64(uint64_t n)
+{
+  return n == 0 ? -1 : 63 ^ __builtin_clzll(n);
+}
+
+#else
+
+// Return floor(log2(n)) for positive integer n.  Returns -1 iff n == 0.
+inline int32_t Log2Floor(uint32_t n)
+{
+  if (n == 0)
+    return -1;
+  int32_t log = 0;
+  uint32_t value = n;
+  for (int32_t i = 4; i >= 0; --i)
+  {
+    int32_t shift = (1 << i);
+    uint32_t x = value >> shift;
+    if (x != 0)
+    {
+      value = x;
+      log += shift;
+    }
+  }
+  assert(value == 1);
+  return log;
+}
+
+// Return floor(log2(n)) for positive integer n.  Returns -1 iff n == 0.
+// Log2Floor64() is defined in terms of Log2Floor32()
+inline int32_t Log2Floor64(uint64_t n)
+{
+  const uint32_t topbits = static_cast<uint32_t>(n >> 32);
+  if (topbits == 0)
+  {
+    // Top bits are zero, so scan in bottom bits
+    return Log2Floor(static_cast<uint32_t>(n));
+  }
+  else
+  {
+    return 32 + Log2Floor(topbits);
+  }
+}
+
+#endif
+
+inline int32_t Log2Ceiling(uint32_t n)
+{
+  int32_t floor = Log2Floor(n);
+  if (n == (n & ~(n - 1))) // zero or a power of two
+    return floor;
+  else
+    return floor + 1;
+}
+
+inline int32_t Log2Ceiling64(uint64_t n)
+{
+  int32_t floor = Log2Floor64(n);
+  if (n == (n & ~(n - 1))) // zero or a power of two
+    return floor;
+  else
+    return floor + 1;
+}
+
+inline uint32_t NextPowerOfTwo(uint32_t value)
+{
+  int32_t exponent = Log2Ceiling(value);
+  //DCHECK_LT(exponent, std::numeric_limits<uint32_t>::digits);
+  return 1 << exponent;
+}
+
+inline uint64_t NextPowerOfTwo64(uint64_t value)
+{
+  int32_t exponent = Log2Ceiling(value);
+  //DCHECK_LT(exponent, std::numeric_limits<uint64_t>::digits);
+  return 1LL << exponent;
 }
 
 // The number of bits necessary to hold the given index.
@@ -144,7 +359,7 @@ T *RounddownPtr(T *p, size_t align)
 //===--------------------------------------------------------------------===//
 // Find the next power of two higher than the provided value
 //===--------------------------------------------------------------------===//
-inline uint32_t NextPowerOf2Uint32(uint32_t n)
+inline uint32_t NextPowerOf2uint32_t(uint32_t n)
 {
 #if defined __GNUC__ || defined __clang__
   assert(n > 0);
@@ -165,7 +380,7 @@ inline uint32_t NextPowerOf2Uint32(uint32_t n)
 //===--------------------------------------------------------------------===//
 // Find the next power of two higher than the provided value
 //===--------------------------------------------------------------------===//
-inline uint64_t NextPowerOf2Uint64(uint64_t n)
+inline uint64_t NextPowerOf2uint64_t(uint64_t n)
 {
 #if defined __GNUC__ || defined __clang__
   assert(n > 0);
@@ -231,9 +446,23 @@ inline uint8_t Count1Bits(uint8_t i)
   return count;
 }
 
+// Provides efficient bit operations.
+// More details can be found at:
+// http://graphics.stanford.edu/~seander/bithacks.html
+// Counts set bits from a 32 bit unsigned integer using Hamming weight.
+inline int32_t count1Bits(uint32_t value)
+{
+  int32_t count = 0;
+  value = value - ((value >> 1) & 0x55555555);
+  value = (value & 0x33333333) + ((value >> 2) & 0x33333333);
+  count = (((value + (value >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
+
+  return count;
+}
+
 // Return the smallest number n such that (x >> n) == 0
 // (or 64 if the highest bit in x is set.
-uint64_t Count1Bits(uint64_t i);
+uint64_t Count1Bits(uint64_t x);
 
 } // namespace util
 } // namespace mycc

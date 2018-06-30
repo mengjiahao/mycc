@@ -24,8 +24,8 @@ SO_LDFLAGS += -rdynamic $(DEPS_LDPATH) $(SO_DEPS_LDFLAGS) -lpthread -lrt -ldl \
 CXX = clang
 
 # Compiler opts
-GCC_OPTS = -fmax-errors=2
-CLANG_OPTS = -ferror-limit=2
+GCC_OPTS = -fmax-errors=1
+CLANG_OPTS = -ferror-limit=1
 
 # Notes on the flags:
 # 1. Added -fno-omit-frame-pointer: perf/tcmalloc-profiler use frame pointers by default
@@ -58,7 +58,7 @@ OBJS = $(ALL_OBJS)
 
 LIBS =
  
-BINS = bloom_test
+BINS = mytest
 
 # Commands
 
@@ -78,7 +78,7 @@ clean:
 .PRECIOUS: $(PROTO_SRCS)
 
 # Make
-bloom_test: $(OBJS)
+mytest: $(OBJS)
 	@echo "# Link $@"
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
