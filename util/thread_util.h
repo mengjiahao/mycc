@@ -9,7 +9,12 @@
 #include <syscall.h>
 #include <unistd.h>
 #include <functional>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <thread>
 #include "atomic_util.h"
+#include "blocking_queue.h"
 #include "locks_util.h"
 #include "types_util.h"
 
@@ -133,6 +138,133 @@ private:
   std::function<void()> user_proc_; // for c++11
 
   DISALLOW_COPY_AND_ASSIGN(PosixThread);
+};
+
+/**
+ * A simple wrapper for std::thread
+ */
+
+class StdThreadBase
+{
+public:
+  /**
+   * @brief Construct Function. Default thread pointer is null.
+   */
+  StdThreadBase() { thread_ = nullptr; }
+
+  virtual ~StdThreadBase() {}
+
+  /**
+   * @brief Creat a new thread and call *run()* function.
+   */
+  void start()
+  {
+    thread_.reset(new std::thread([this]() { this->run(); }));
+  }
+
+  /**
+   * @brief Detach the thread.
+   * It don't need to be waited until it finish.
+   */
+  void detach() { thread_->detach(); }
+
+  /**
+   * @brief Join the thread.
+   * It should be waited until it finish.
+   */
+  void join() { thread_->join(); }
+
+  /**
+   * @brief Define what to be done on this thread through override this
+   * function.
+   */
+  virtual void run() = 0;
+
+protected:
+  std::unique_ptr<std::thread> thread_;
+};
+
+/**
+ * ThreadWorker maintains a job queue. It executes the jobs in the job queue
+ * sequentianlly in a separate thread.
+ *
+ * Use addJob() to add a new job to the job queue.
+ */
+class ThreadWorker : protected StdThreadBase
+{
+public:
+  typedef std::function<void()> JobFunc;
+
+  /**
+   * @brief Construct Function. Default size of job queue is 0 and not stopping.
+   */
+  ThreadWorker() : stopping_(false), empty_(true) { start(); }
+
+  /**
+   * @brief Destruct Function.
+   * If it's running, wait until all job finish and then stop it.
+   */
+  ~ThreadWorker()
+  {
+    if (!stopping_)
+    {
+      wait();
+      stop();
+    }
+  }
+
+  /**
+   * @brief Finish current running job and quit the thread.
+   */
+  void stop()
+  {
+    stopping_ = true;
+    jobs_.enqueue([]() {});
+    join();
+  }
+
+  /**
+   * @brief Add a new job to the job queue.
+   */
+  void addJob(JobFunc func)
+  {
+    empty_ = false;
+    jobs_.enqueue(func);
+  }
+
+  /**
+   * @brief Wait until all jobs was done (the job queue was empty).
+   */
+  void wait()
+  {
+    finishCV_.wait([this] { return empty_; });
+  }
+
+protected:
+  /**
+   * @brief Execute jobs in the job queue sequentianlly,
+   * @note If finish all the jobs in the job queue,
+   * notifies all the waiting threads the job queue was empty.
+   */
+  virtual void run()
+  {
+    while (true)
+    {
+      JobFunc func = jobs_.dequeue();
+      if (stopping_)
+        break;
+      func();
+      if (jobs_.empty())
+      {
+        finishCV_.notify_all([this] { empty_ = true; });
+      }
+    }
+  }
+
+  SimpleQueue<JobFunc> jobs_;
+  bool stopping_;
+  LockedCondition finishCV_;
+  bool empty_;
 };
 
 } // namespace util

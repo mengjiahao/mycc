@@ -132,6 +132,20 @@
 #define NORETURN_PTR
 #endif
 
+// Annotate a function indicating the caller must examine the return value.
+// Use like:
+//   int foo() WARN_UNUSED_RESULT;
+// To explicitly ignore a result, see |ignore_result()| in "butil/basictypes.h".
+// FIXME(gejun): GCC 3.4 report "unused" variable incorrectly (actually used).
+#if defined(COMPILER_GCC) && __cplusplus >= 201103 && \
+    (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
+#define WARN_UNUSED_RESULT __attribute__((warn_unused_result))
+#define MUST_USE_RESULT __attribute__((warn_unused_result))
+#else
+#define WARN_UNUSED_RESULT
+#define MUST_USE_RESULT
+#endif
+
 // Annotate a function indicating it should not be inlined.
 // Use like:
 //   NOINLINE void DoStuff() { ... }
@@ -348,5 +362,27 @@ private:                                               \
   } while (eintr_wrapper_result == -1 && errno == EINTR); \
   eintr_wrapper_result;                                   \
 })
+
+// Cacheline related --------------------------------------
+
+#ifndef CACHE_LINE_SIZE
+#if defined(__s390__)
+#define CACHE_LINE_SIZE 256U
+#elif defined(__powerpc__) || defined(__aarch64__)
+#define CACHE_LINE_SIZE 128U
+#else
+#define CACHE_LINE_SIZE 64U
+#endif
+#endif // CACHE_LINE_SIZE
+
+#ifndef CACHE_LINE_ALIGNMENT
+#if defined(COMPILER_MSVC)
+#define CACHE_LINE_ALIGNMENT __declspec(align(CACHE_LINE_SIZE))
+#elif defined(COMPILER_GCC)
+#define CACHE_LINE_ALIGNMENT __attribute__((aligned(CACHE_LINE_SIZE)))
+#else
+#define CACHE_LINE_ALIGNMENT
+#endif
+#endif // CACHE_LINE_ALIGNMENT
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_

@@ -2,6 +2,8 @@
 #ifndef MYCC_UTIL_SINGLETON_H_
 #define MYCC_UTIL_SINGLETON_H_
 
+#include <pthread.h>
+#include <stdlib.h>
 #include <atomic>
 #include <mutex>
 #include "macros_util.h"
@@ -118,11 +120,11 @@ typename SingletonStaticBase<T>::Holder *SingletonStaticBase<T>::s_holder;
 // {
 // };
 //
-// typedef SingletonStaticBaseT<TestClass3> SingletonTestClass3;
+// typedef SingletonStaticT<TestClass3> SingletonTestClass3;
 // TestClass3* instance = SingletonTestClass3::Instance();
 //
 template <typename T>
-class SingletonStaticBaseT : public SingletonStaticBase<T>
+class SingletonStaticT : public SingletonStaticBase<T>
 {
 };
 
@@ -138,7 +140,7 @@ class SingletonStaticBaseT : public SingletonStaticBase<T>
 // MySingleton& instance = MySingleton::GetInstance();
 
 template <typename T>
-class SingletonMutexBase
+class SingletonLockT
 {
 public:
   static T &GetInstance()
@@ -161,10 +163,105 @@ private:
 };
 
 template <typename T>
-ScopedPtr<T> SingletonMutexBase<T>::m_instance;
+ScopedPtr<T> SingletonLockT<T>::m_instance;
 
 template <typename T>
-std::mutex SingletonMutexBase<T>::m_lock;
+std::mutex SingletonLockT<T>::m_lock;
+
+/////////////////// SingletonOnce ////////////////////////////
+
+template <typename T>
+class SingletonOnce
+{
+public:
+  static T &instance()
+  {
+    pthread_once(&ponce_, &SingletonOnce::init);
+    assert(value_ != NULL);
+    return *value_;
+  }
+
+private:
+  SingletonOnce();
+  ~SingletonOnce();
+
+  static void init()
+  {
+    value_ = new T();
+    ::atexit(destroy);
+    // if (!detail::has_no_destroy<T>::value)
+    // {
+    //   ::atexit(destroy);
+    // }
+  }
+
+  static void destroy()
+  {
+    typedef char T_must_be_complete_type[sizeof(T) == 0 ? -1 : 1];
+    T_must_be_complete_type dummy;
+    (void)dummy;
+
+    delete value_;
+    value_ = NULL;
+  }
+
+private:
+  static pthread_once_t ponce_;
+  static T *value_;
+
+  DISALLOW_COPY_AND_ASSIGN(SingletonOnce);
+};
+
+template <typename T>
+pthread_once_t SingletonOnce<T>::ponce_ = PTHREAD_ONCE_INIT;
+
+template <typename T>
+T *SingletonOnce<T>::value_ = NULL;
+
+/////////////////// SingletonThreadLocal /////////////////////
+
+template <typename T>
+class SingletonThreadLocal
+{
+public:
+  static T *get()
+  {
+    if (!value_)
+    {
+      value_ = new T();
+      helper_.set(value_);
+    }
+    return value_;
+  }
+
+private:
+  static void Deleter(void *value) { delete reinterpret_cast<T *>(value); }
+
+  class Helper
+  {
+  public:
+    Helper() { pthread_key_create(&key_, &SingletonThreadLocal::Deleter); }
+
+    ~Helper() { pthread_key_delete(key_); }
+
+    void set(T *value)
+    {
+      assert(pthread_getspecific(key_) == NULL);
+      pthread_setspecific(key_, value);
+    }
+
+    pthread_key_t key_;
+  };
+
+  static __thread T *value_;
+  static Helper helper_;
+};
+
+template <typename T>
+__thread T *SingletonThreadLocal<T>::value_ = NULL;
+
+template <typename T>
+typename SingletonThreadLocal<T>::Helper SingletonThreadLocal<T>::helper_;
 
 } // namespace util
 } // namespace mycc

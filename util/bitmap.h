@@ -2,12 +2,103 @@
 #ifndef MYCC_UTIL_BITMAP_H_
 #define MYCC_UTIL_BITMAP_H_
 
+#include <malloc.h>
+#include <string.h>
+#include "math_util.h"
 #include "types_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+static const int32_t NBITS_IN_BYTE = 8; /* number of bits in a byte */
+/* Bit map related macros. */
+#define easybit_setbit(a, i) (((unsigned char *)(a))[(i) / NBITS_IN_BYTE] |= 1 << ((i) % NBITS_IN_BYTE))
+#define easybit_clrbit(a, i) (((unsigned char *)(a))[(i) / NBITS_IN_BYTE] &= ~(1 << ((i) % NBITS_IN_BYTE)))
+#define easybit_isset(a, i) \
+  (((const unsigned char *)(a))[(i) / NBITS_IN_BYTE] & (1 << ((i) % NBITS_IN_BYTE)))
+#define easybit_isclr(a, i) \
+  ((((const unsigned char *)(a))[(i) / NBITS_IN_BYTE] & (1 << ((i) % NBITS_IN_BYTE))) == 0)
+
+// Note: use gcc
+
+// Create an array with at least |nbit| bits. The array is not cleared.
+inline uint64_t *bit_array_malloc(uint64_t nbit)
+{
+  if (!nbit)
+  {
+    return NULL;
+  }
+  return (uint64_t *)malloc((nbit + 63) / 64 * 8 /*different from /8*/);
+}
+
+// Set bit 0 ~ nbit-1 of |array| to be 0
+inline void bit_array_clear(uint64_t *array, uint64_t nbit)
+{
+  const uint64_t off = (nbit >> 6);
+  memset(array, 0, off * 8);
+  const uint64_t last = (off << 6);
+  if (last != nbit)
+  {
+    array[off] &= ~((((uint64_t)1) << (nbit - last)) - 1);
+  }
+}
+
+// Set i-th bit (from left, counting from 0) of |array| to be 1
+inline void bit_array_set(uint64_t *array, uint64_t i)
+{
+  const uint64_t off = (i >> 6);
+  array[off] |= (((uint64_t)1) << (i - (off << 6)));
+}
+
+// Set i-th bit (from left, counting from 0) of |array| to be 0
+inline void bit_array_unset(uint64_t *array, uint64_t i)
+{
+  const uint64_t off = (i >> 6);
+  array[off] &= ~(((uint64_t)1) << (i - (off << 6)));
+}
+
+// Get i-th bit (from left, counting from 0) of |array|
+inline uint64_t bit_array_get(const uint64_t *array, uint64_t i)
+{
+  const uint64_t off = (i >> 6);
+  return (array[off] & (((uint64_t)1) << (i - (off << 6))));
+}
+
+// Find index of first 1-bit from bit |begin| to |end| in |array|.
+// Returns |end| if all bits are 0.
+// This function is of O(nbit) complexity.
+inline uint64_t bit_array_first1(const uint64_t *array, uint64_t begin, uint64_t end)
+{
+  uint64_t off1 = (begin >> 6);
+  const uint64_t first = (off1 << 6);
+  if (first != begin)
+  {
+    const uint64_t v =
+        array[off1] & ~((((uint64_t)1) << (begin - first)) - 1);
+    if (v)
+    {
+      return MATH_MIN(first + __builtin_ctzl(v), end);
+    }
+    ++off1;
+  }
+
+  const uint64_t off2 = (end >> 6);
+  for (uint64_t i = off1; i < off2; ++i)
+  {
+    if (array[i])
+    {
+      return i * 64 + __builtin_ctzl(array[i]);
+    }
+  }
+  const uint64_t last = (off2 << 6);
+  if (last != end && array[off2])
+  {
+    return MATH_MIN(last + __builtin_ctzl(array[off2]), end);
+  }
+  return end;
+}
 
 class Bitmap
 {

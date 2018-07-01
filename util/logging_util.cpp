@@ -201,7 +201,7 @@ public:
         fflush(g_log_file);
       if (wflen)
         fflush(g_warning_file);
-      done_.signalAll();
+      done_.broadcast();
       if (stopped_)
       {
         break;

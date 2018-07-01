@@ -27,6 +27,23 @@ public:
   CSHA1 &Reset();
 };
 
+/** A hasher class for SHA-512. */
+class CSHA512
+{
+private:
+  uint64_t s[8];
+  unsigned char buf[128];
+  uint64_t bytes;
+
+public:
+  static const uint64_t OUTPUT_SIZE = 64;
+
+  CSHA512();
+  CSHA512 &Write(const unsigned char *data, uint64_t len);
+  void Finalize(unsigned char hash[OUTPUT_SIZE]);
+  CSHA512 &Reset();
+};
+
 } // namespace util
 } // namespace mycc
 

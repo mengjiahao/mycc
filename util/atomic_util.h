@@ -1179,10 +1179,10 @@ private:
   DISALLOW_COPY_AND_ASSIGN(AtomicInteger);
 };
 
-typedef AtomicInteger<int32_t> AtomicInt32;
-typedef AtomicInteger<int64_t> AtomicInt64;
-typedef AtomicInteger<uint32_t> AtomicUint32;
-typedef AtomicInteger<uint64_t> AtomicUint64;
+typedef AtomicInteger<int32_t> AtomicInteger32;
+typedef AtomicInteger<int64_t> AtomicInteger64;
+typedef AtomicInteger<uint32_t> AtomicUinteger32;
+typedef AtomicInteger<uint64_t> AtomicUinteger64;
 
 // A type that holds a pointer that can be read or written atomically
 // (i.e., without word-tearing.)

@@ -112,6 +112,9 @@ private:
 };
 
 // Background execution service.
+// The implementation of the ThreadPool type ensures that the Schedule method
+// runs the functions it is provided in FIFO order when the scheduling is done
+// by a single thread.
 class PosixFixedThreadPool
 {
 public:

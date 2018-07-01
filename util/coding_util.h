@@ -498,6 +498,11 @@ inline uint64_t DecodeFixed64(const char *ptr)
   }
 }
 
+// Maximum number of bytes occupied by a varint32.
+static const int32_t kMaxVarint32Bytes = 5;
+// The maximum length of a varint in bytes for 64-bit.
+static const int64_t kMaxVarint64Bytes = 10;
+
 // Lower-level versions of Encode... that write directly into a character buffer
 // REQUIRES: dst has enough space for the value being written
 extern void EncodeFixed16(char *dst, uint16_t value);

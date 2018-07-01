@@ -39,7 +39,7 @@ namespace util
 // obj->retain();
 // obj->release();   // This `release` is the pair of `retain` of previous line.
 
-#define CC_REF_LEAK_DETECTION 1
+#define DEBUG_REF_LEAK_DECTECTION 1
 
 static std::vector<Ref *> __refAllocationList;
 static std::mutex __refMutex;
@@ -69,14 +69,14 @@ static void untrackRef(Ref *ref)
 Ref::Ref()
     : _referenceCount(1) // when the Ref is created, the reference count of it is 1
 {
-#if CC_REF_LEAK_DETECTION
+#if DEBUG_REF_LEAK_DECTECTION
   trackRef(this);
 #endif
 }
 
 Ref::~Ref()
 {
-#if CC_REF_LEAK_DETECTION
+#if DEBUG_REF_LEAK_DECTECTION
   if (_referenceCount != 0)
     untrackRef(this);
 #endif
@@ -104,7 +104,7 @@ void Ref::release()
     }
 #endif
 
-#if CC_REF_LEAK_DETECTION
+#if DEBUG_REF_LEAK_DECTECTION
     untrackRef(this);
 #endif
     delete this;

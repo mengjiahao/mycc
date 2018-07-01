@@ -21,6 +21,9 @@ namespace mycc
 namespace util
 {
 
+// Provide thread_local keyword (for primitive types) before C++11
+// #define THREAD_LOCAL __thread
+
 template <typename T>
 class PthreadTss
 {

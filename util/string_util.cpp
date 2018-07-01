@@ -54,7 +54,7 @@ char *Append4(char *out, const StringPiece &x1, const StringPiece &x2,
   return out + x4.size();
 }
 
-static char *UIntToHexBufferInternal(uint64_t value, char *buffer, int64_t num_byte)
+char *UIntToHexBufferInternal(uint64_t value, char *buffer, int64_t num_byte)
 {
   static const char hexdigits[] = "0123456789abcdef";
   int64_t digit_byte = 2 * num_byte;
@@ -89,15 +89,43 @@ char SafeFirstChar(StringPiece str)
     return '\0';
   return str[0];
 }
+
 void SkipSpaces(StringPiece *str)
 {
   while (isspace(SafeFirstChar(*str)))
     str->remove_prefix(1);
 }
 
+bool ParsePrechecks(const string &str)
+{
+  if (str.empty()) // No empty string allowed
+    return false;
+  if (str.size() >= 1 && (::isspace(str[0]) || ::isspace(str[str.size() - 1]))) // No padding allowed
+    return false;
+  if (str.size() != strlen(str.c_str())) // No embedded NUL characters allowed
+    return false;
+  return true;
+}
+
 } // namespace
 
 // string ascii
+
+bool IsHexNumberString(const string &str)
+{
+  uint64_t starting_location = 0;
+  if (str.size() > 2 && *str.begin() == '0' && *(str.begin() + 1) == 'x')
+  {
+    starting_location = 2;
+  }
+  for (auto c : str.substr(starting_location))
+  {
+    if (!IsHexDigit(c))
+      return false;
+  }
+  // Return false for empty string or "0x".
+  return (str.size() > starting_location);
+}
 
 string DebugString(const string &src)
 {
@@ -123,6 +151,31 @@ string DebugString(const string &src)
   }
 
   return dst.substr(0, j);
+}
+
+std::vector<uint8_t> ParseHex(const char *psz)
+{
+  // convert hex dump to vector
+  std::vector<uint8_t> vch;
+  while (true)
+  {
+    while (isspace(*psz))
+      psz++;
+    signed char c = *psz++;
+    if (!IsHexDigit(c))
+    {
+      break;
+    }
+    uint8_t n = (c << 4);
+    c = *psz++;
+    if (!IsHexDigit(c))
+    {
+      break;
+    }
+    n |= c;
+    vch.push_back(n);
+  }
+  return vch;
 }
 
 string StringToHex(const char *str, uint64_t len)
@@ -342,14 +395,14 @@ uint32_t StringParseUint32(const string &value)
 
 uint64_t StringParseUint64(const string &value)
 {
-  size_t endchar;
+  uint64_t endchar;
   uint64_t num = std::stoull(value.c_str(), &endchar);
   return num;
 }
 
 int32_t StringParseInt32(const string &value)
 {
-  size_t endchar;
+  uint64_t endchar;
   int32_t num = std::stoi(value.c_str(), &endchar);
   return num;
 }
@@ -359,9 +412,92 @@ double StringParseDouble(const string &value)
   return std::stod(value);
 }
 
-size_t StringParseSizeT(const string &value)
+uint64_t StringParseSizeT(const string &value)
 {
-  return static_cast<size_t>(StringParseUint64(value));
+  return static_cast<uint64_t>(StringParseUint64(value));
+}
+
+bool StringParseInt32(const string &str, int32_t *out)
+{
+  if (!ParsePrechecks(str))
+    return false;
+  char *endp = nullptr;
+  errno = 0; // strtol will not set errno if valid
+  int32_t n = strtol(str.c_str(), &endp, 10);
+  if (out)
+    *out = (int32_t)n;
+  // Note that strtol returns a *long int*, so even if strtol doesn't report an over/underflow
+  // we still have to check that the returned value is within the range of an *int32_t*. On 64-bit
+  // platforms the size of these types may be different.
+  return endp && *endp == 0 && !errno &&
+         n >= std::numeric_limits<int32_t>::min() &&
+         n <= std::numeric_limits<int32_t>::max();
+}
+
+bool StringParseInt64(const string &str, int64_t *out)
+{
+  if (!ParsePrechecks(str))
+    return false;
+  char *endp = nullptr;
+  errno = 0; // strtoll will not set errno if valid
+  int64_t n = strtoll(str.c_str(), &endp, 10);
+  if (out)
+    *out = (int64_t)n;
+  // Note that strtoll returns a *int64_t*, so even if strtol doesn't report an over/underflow
+  // we still have to check that the returned value is within the range of an *int64_t*.
+  return endp && *endp == 0 && !errno &&
+         n >= std::numeric_limits<int64_t>::min() &&
+         n <= std::numeric_limits<int64_t>::max();
+}
+
+bool StringParseUInt32(const string &str, uint32_t *out)
+{
+  if (!ParsePrechecks(str))
+    return false;
+  if (str.size() >= 1 && str[0] == '-') // Reject negative values, unfortunately strtoul accepts these by default if they fit in the range
+    return false;
+  char *endp = nullptr;
+  errno = 0; // strtoul will not set errno if valid
+  uint64_t n = strtoul(str.c_str(), &endp, 10);
+  if (out)
+    *out = (uint32_t)n;
+  // Note that strtoul returns a *uint64_t*, so even if it doesn't report an over/underflow
+  // we still have to check that the returned value is within the range of an *uint32_t*. On 64-bit
+  // platforms the size of these types may be different.
+  return endp && *endp == 0 && !errno &&
+         n <= std::numeric_limits<uint32_t>::max();
+}
+
+bool StringParseUInt64(const string &str, uint64_t *out)
+{
+  if (!ParsePrechecks(str))
+    return false;
+  if (str.size() >= 1 && str[0] == '-') // Reject negative values, unfortunately strtoull accepts these by default if they fit in the range
+    return false;
+  char *endp = nullptr;
+  errno = 0; // strtoull will not set errno if valid
+  uint64_t n = strtoull(str.c_str(), &endp, 10);
+  if (out)
+    *out = (uint64_t)n;
+  // Note that strtoull returns a *uint64_t*, so even if it doesn't report an over/underflow
+  // we still have to check that the returned value is within the range of an *uint64_t*.
+  return endp && *endp == 0 && !errno &&
+         n <= std::numeric_limits<uint64_t>::max();
+}
+
+bool StringParseDouble(const string &str, double *out)
+{
+  if (!ParsePrechecks(str))
+    return false;
+  if (str.size() >= 2 && str[0] == '0' && str[1] == 'x') // No hexadecimal floats allowed
+    return false;
+  std::istringstream text(str);
+  text.imbue(std::locale::classic());
+  double result;
+  text >> result;
+  if (out)
+    *out = result;
+  return text.eof() && !text.fail();
 }
 
 bool VectorInt32ToString(const std::vector<int32_t> &vec, string *value)
@@ -381,10 +517,10 @@ bool VectorInt32ToString(const std::vector<int32_t> &vec, string *value)
 std::vector<int32_t> StringParseVectorInt32(const string &value)
 {
   std::vector<int32_t> result;
-  size_t start = 0;
+  uint64_t start = 0;
   while (start < value.size())
   {
-    size_t end = value.find(',', start);
+    uint64_t end = value.find(',', start);
     if (end == string::npos)
     {
       result.push_back(StringParseInt32(value.substr(start)));
@@ -591,7 +727,7 @@ void StringAppendNumberTo(string *str, uint64_t num)
 
 void StringAppendEscapedStringTo(string *str, const StringPiece &value)
 {
-  for (size_t i = 0; i < value.size(); i++)
+  for (uint64_t i = 0; i < value.size(); i++)
   {
     char c = value[i];
     if (c >= ' ' && c <= '~')
@@ -774,19 +910,6 @@ char *DoubleToString(double n, char *buffer)
   return buffer;
 }
 
-string RoundNumberToNDecimalString(double n, int32_t d)
-{
-  if (d < 0 || 9 < d)
-  {
-    return "(null)";
-  }
-  std::stringstream ss;
-  ss << std::fixed;
-  ss.precision(d);
-  ss << n;
-  return ss.str();
-}
-
 char *FloatToString(float n, char *buffer)
 {
   WriteFloatToBuffer(n, buffer);
@@ -827,6 +950,19 @@ string FloatToString(float value)
 {
   char buffer[kMaxFloatStringSize];
   return string(buffer, WriteFloatToBuffer(value, buffer));
+}
+
+string RoundNumberToNDecimalString(double n, int32_t d)
+{
+  if (d < 0 || 9 < d)
+  {
+    return "(null)";
+  }
+  std::stringstream ss;
+  ss << std::fixed;
+  ss.precision(d);
+  ss << n;
+  return ss.str();
 }
 
 // string human-readable
@@ -1210,7 +1346,7 @@ bool StringSplitIntoKeyValuePairs(const string &line,
   StringSplitChar(line, key_value_pair_delimiter, &pairs);
 
   bool success = true;
-  for (size_t i = 0; i < pairs.size(); ++i)
+  for (uint64_t i = 0; i < pairs.size(); ++i)
   {
     // Don't add empty pairs into the result.
     if (pairs[i].empty())
@@ -1374,6 +1510,24 @@ bool StringConsumeNonWhitespace(StringPiece *s, StringPiece *val)
     *val = StringPiece();
     return false;
   }
+}
+
+/*!
+ * \brief Split a string by delimiter
+ * \param s String to be splitted.
+ * \param delim The delimiter.
+ * \return a splitted vector of strings.
+ */
+std::vector<string> StringSplit(const string &s, char delim)
+{
+  string item;
+  std::istringstream is(s);
+  std::vector<string> ret;
+  while (std::getline(is, item, delim))
+  {
+    ret.push_back(item);
+  }
+  return ret;
 }
 
 std::vector<string> StringSplit(StringPiece text, StringPiece delims)

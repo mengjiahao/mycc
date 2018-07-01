@@ -30,15 +30,77 @@ inline void InitOnce(OnceType *once, void (*initializer)())
   std::call_once(*once, *initializer);
 }
 
-class mutex_lock : public std::unique_lock<std::mutex>
+// BASE_SCOPED_LOCK
+#if !defined(BASE_CXX11_ENABLED)
+#define BASE_SCOPED_LOCK(ref_of_lock)       \
+  std::lock_guard<BASE_TYPEOF(ref_of_lock)> \
+      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
+#else
+// c++11 deduces additional reference to the type.
+namespace internal
+{
+template <typename T>
+std::lock_guard<typename std::remove_reference<T>::type> get_lock_guard();
+} // namespace internal
+
+#define BASE_SCOPED_LOCK(ref_of_lock)                                       \
+  decltype(::mycc::util::internal::get_lock_guard<decltype(ref_of_lock)>()) \
+      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
+#endif // BASE_SCOPED_LOCK
+
+/**
+ * A wrapper for condition variable with mutex.
+ */
+class LockedCondition : public std::condition_variable
 {
 public:
-  mutex_lock(std::mutex &m) : std::unique_lock<std::mutex>(m) {}
-  mutex_lock(std::mutex &m, std::try_to_lock_t t)
-      : std::unique_lock<std::mutex>(m, t) {}
-  mutex_lock(mutex_lock &&ml) noexcept
-      : std::unique_lock<std::mutex>(std::move(ml)) {}
-  ~mutex_lock() {}
+  /**
+   * @brief execute op and notify one thread which was blocked.
+   * @param[in] op a thread can do something in op before notify.
+   */
+  template <class Op>
+  void notify_one(Op op)
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    op();
+    std::condition_variable::notify_one();
+  }
+
+  /**
+   * @brief execute op and notify all the threads which were blocked.
+   * @param[in] op a thread can do something in op before notify.
+   */
+  template <class Op>
+  void notify_all(Op op)
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    op();
+    std::condition_variable::notify_all();
+  }
+
+  /**
+   * @brief wait until pred return ture.
+   * @tparam Predicate c++ concepts, describes a function object
+   * that takes a single iterator argument
+   * that is dereferenced and used to
+   * return a value testable as a bool.
+   * @note pred shall not apply any non-constant function
+   * through the dereferenced iterator.
+   */
+  template <class Predicate>
+  void wait(Predicate pred)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    std::condition_variable::wait(lock, pred);
+  }
+
+  /**
+   * @brief get mutex.
+   */
+  std::mutex *mutex() { return &mutex_; }
+
+protected:
+  std::mutex mutex_;
 };
 
 /**
@@ -197,8 +259,7 @@ public:
   bool timedWaitRelative(int64_t time_ms);
   bool timedWaitRelative(const struct timespec &relative_time);
   void signal();
-  void signalAll();
-  void broadcast() { signalAll(); }
+  void broadcast();
 
 private:
   pthread_cond_t cv_;
@@ -519,7 +580,7 @@ public:
 
     if (counter_ == 0)
     {
-      cond_.signalAll();
+      cond_.broadcast();
     }
 
     return counter_ == 0u;
@@ -672,6 +733,105 @@ private:
   DISALLOW_COPY_AND_ASSIGN(Semaphore);
 };
 
+class CSemaphore
+{
+private:
+  std::condition_variable condition;
+  std::mutex mutex;
+  int32_t value;
+
+public:
+  explicit CSemaphore(int32_t init) : value(init) {}
+
+  void wait()
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    while (value < 1)
+    {
+      condition.wait(lock);
+    }
+    value--;
+  }
+
+  bool try_wait()
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    if (value < 1)
+      return false;
+    value--;
+    return true;
+  }
+
+  void post()
+  {
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      value++;
+    }
+    condition.notify_one();
+  }
+};
+
+/** RAII-style semaphore lock */
+class CSemaphoreGrant
+{
+private:
+  CSemaphore *sem;
+  bool fHaveGrant;
+
+public:
+  void Acquire()
+  {
+    if (fHaveGrant)
+      return;
+    sem->wait();
+    fHaveGrant = true;
+  }
+
+  void Release()
+  {
+    if (!fHaveGrant)
+      return;
+    sem->post();
+    fHaveGrant = false;
+  }
+
+  bool TryAcquire()
+  {
+    if (!fHaveGrant && sem->try_wait())
+      fHaveGrant = true;
+    return fHaveGrant;
+  }
+
+  void MoveTo(CSemaphoreGrant &grant)
+  {
+    grant.Release();
+    grant.sem = sem;
+    grant.fHaveGrant = fHaveGrant;
+    fHaveGrant = false;
+  }
+
+  CSemaphoreGrant() : sem(nullptr), fHaveGrant(false) {}
+
+  explicit CSemaphoreGrant(CSemaphore &sema, bool fTry = false) : sem(&sema), fHaveGrant(false)
+  {
+    if (fTry)
+      TryAcquire();
+    else
+      Acquire();
+  }
+
+  ~CSemaphoreGrant()
+  {
+    Release();
+  }
+
+  operator bool() const
+  {
+    return fHaveGrant;
+  }
+};
+
 class Notification
 {
 public:
@@ -681,12 +841,12 @@ public:
     // In case the notification is being used to synchronize its own deletion,
     // force any prior notifier to leave its critical section before the object
     // is destroyed.
-    mutex_lock l(mu_);
+    std::unique_lock<std::mutex> l(mu_);
   }
 
   void notify()
   {
-    mutex_lock l(mu_);
+    std::unique_lock<std::mutex> l(mu_);
     assert(!hasBeenNotified());
     notified_.store(true, std::memory_order_release);
     cv_.notify_all();
@@ -701,7 +861,7 @@ public:
   {
     if (!hasBeenNotified())
     {
-      mutex_lock l(mu_);
+      std::unique_lock<std::mutex> l(mu_);
       while (!hasBeenNotified())
       {
         cv_.wait(l);
@@ -717,7 +877,7 @@ private:
     bool notified = hasBeenNotified();
     if (!notified)
     {
-      mutex_lock l(mu_);
+      std::unique_lock<std::mutex> l(mu_);
       do
       {
         notified = hasBeenNotified();

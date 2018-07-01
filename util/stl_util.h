@@ -32,7 +32,7 @@ namespace util
 //   std::unordered_map<const char*, long, hash<const char*>, eqstr> vals;
 struct EqStr
 {
-  bool operator()(const char* s1, const char* s2) const
+  bool operator()(const char *s1, const char *s2) const
   {
     return strcmp(s1, s2) == 0;
   }
@@ -41,7 +41,7 @@ struct EqStr
 // for set, map
 struct LtStr
 {
-  bool operator()(const char* s1, const char* s2) const
+  bool operator()(const char *s1, const char *s2) const
   {
     return strcmp(s1, s2) < 0;
   }
@@ -457,6 +457,347 @@ bool STLIncludes(const Arg1 &a1, const Arg2 &a2)
   //DCHECK(STLIsSorted(a2));
   return std::includes(a1.begin(), a1.end(),
                        a2.begin(), a2.end());
+}
+
+// Helper methods to estimate memroy usage by std containers.
+
+template <class Key, class Value, class Hash>
+size_t STLApproximateMemoryUsage(
+    const std::unordered_map<Key, Value, Hash> &umap)
+{
+  typedef std::unordered_map<Key, Value, Hash> Map;
+  return sizeof(umap) +
+         // Size of all items plus a next pointer for each item.
+         (sizeof(typename Map::value_type) + sizeof(void *)) * umap.size() +
+         // Size of hash buckets.
+         umap.bucket_count() * sizeof(void *);
+}
+
+// Returns a pointer to the const value associated with the given key if it
+// exists, or NULL otherwise.
+template <class Collection>
+const typename Collection::value_type::second_type *STLFindOrNull(
+    const Collection &collection,
+    const typename Collection::value_type::first_type &key)
+{
+  typename Collection::const_iterator it = collection.find(key);
+  if (it == collection.end())
+  {
+    return 0;
+  }
+  return &it->second;
+}
+
+// Same as above but returns a pointer to the non-const value.
+template <class Collection>
+typename Collection::value_type::second_type *STLFindOrNull(
+    Collection &collection, // NOLINT
+    const typename Collection::value_type::first_type &key)
+{
+  typename Collection::iterator it = collection.find(key);
+  if (it == collection.end())
+  {
+    return 0;
+  }
+  return &it->second;
+}
+
+// Returns the pointer value associated with the given key. If none is found,
+// NULL is returned. The function is designed to be used with a map of keys to
+// pointers.
+//
+// This function does not distinguish between a missing key and a key mapped
+// to a NULL value.
+template <class Collection>
+typename Collection::value_type::second_type STLFindPtrOrNull(
+    const Collection &collection,
+    const typename Collection::value_type::first_type &key)
+{
+  typename Collection::const_iterator it = collection.find(key);
+  if (it == collection.end())
+  {
+    return typename Collection::value_type::second_type();
+  }
+  return it->second;
+}
+
+// Finds the value associated with the given key and copies it to *value (if not
+// NULL). Returns false if the key was not found, true otherwise.
+template <class Collection, class Key, class Value>
+bool STLFindCopy(const Collection &collection,
+                 const Key &key,
+                 Value *const value)
+{
+  typename Collection::const_iterator it = collection.find(key);
+  if (it == collection.end())
+  {
+    return false;
+  }
+  if (value)
+  {
+    *value = it->second;
+  }
+  return true;
+}
+
+// Returns true if and only if the given collection contains the given key-value
+// pair.
+template <class Collection, class Key, class Value>
+bool STLContainsKeyValuePair(const Collection &collection,
+                             const Key &key,
+                             const Value &value)
+{
+  typedef typename Collection::const_iterator const_iterator;
+  std::pair<const_iterator, const_iterator> range = collection.equal_range(key);
+  for (const_iterator it = range.first; it != range.second; ++it)
+  {
+    if (it->second == value)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Inserts the given key-value pair into the collection. Returns true if and
+// only if the key from the given pair didn't previously exist. Otherwise, the
+// value in the map is replaced with the value from the given pair.
+template <class Collection>
+bool STLInsertOrUpdate(Collection *const collection,
+                       const typename Collection::value_type &vt)
+{
+  std::pair<typename Collection::iterator, bool> ret = collection->insert(vt);
+  if (!ret.second)
+  {
+    // update
+    ret.first->second = vt.second;
+    return false;
+  }
+  return true;
+}
+
+// Same as above, except that the key and value are passed separately.
+template <class Collection>
+bool STLInsertOrUpdate(Collection *const collection,
+                       const typename Collection::value_type::first_type &key,
+                       const typename Collection::value_type::second_type &value)
+{
+  return STLInsertOrUpdate(collection,
+                           typename Collection::value_type(key, value));
+}
+
+// Inserts/updates all the key-value pairs from the range defined by the
+// iterators "first" and "last" into the given collection.
+template <class Collection, class InputIterator>
+void STLInsertOrUpdateMany(Collection *const collection,
+                           InputIterator first, InputIterator last)
+{
+  for (; first != last; ++first)
+  {
+    STLInsertOrUpdate(collection, *first);
+  }
+}
+
+// Looks up a given key and value pair in a collection and inserts the key-value
+// pair if it's not already present. Returns a reference to the value associated
+// with the key.
+template <class Collection>
+typename Collection::value_type::second_type &STLLookupOrInsert(
+    Collection *const collection, const typename Collection::value_type &vt)
+{
+  return collection->insert(vt).first->second;
+}
+
+// Same as above except the key-value are passed separately.
+template <class Collection>
+typename Collection::value_type::second_type &STLLookupOrInsert(
+    Collection *const collection,
+    const typename Collection::value_type::first_type &key,
+    const typename Collection::value_type::second_type &value)
+{
+  return STLLookupOrInsert(collection,
+                           typename Collection::value_type(key, value));
+}
+
+// Counts the number of equivalent elements in the given "sequence", and stores
+// the results in "count_map" with element as the key and count as the value.
+//
+// Example:
+//   vector<string> v = {"a", "b", "c", "a", "b"};
+//   map<string, int> m;
+//   AddTokenCounts(v, 1, &m);
+//   assert(m["a"] == 2);
+//   assert(m["b"] == 2);
+//   assert(m["c"] == 1);
+template <typename Sequence, typename Collection>
+void STLAddTokenCounts(
+    const Sequence &sequence,
+    const typename Collection::value_type::second_type &increment,
+    Collection *const count_map)
+{
+  for (typename Sequence::const_iterator it = sequence.begin();
+       it != sequence.end(); ++it)
+  {
+    typename Collection::value_type::second_type &value =
+        STLLookupOrInsert(count_map, *it,
+                          typename Collection::value_type::second_type());
+    value += increment;
+  }
+}
+
+// Returns a reference to the value associated with key. If not found, a value
+// is default constructed on the heap and added to the map.
+//
+// This function is useful for containers of the form map<Key, Value*>, where
+// inserting a new key, value pair involves constructing a new heap-allocated
+// Value, and storing a pointer to that in the collection.
+template <class Collection>
+typename Collection::value_type::second_type &
+STLLookupOrInsertNew(Collection *const collection,
+                     const typename Collection::value_type::first_type &key)
+{
+  typedef typename std::iterator_traits<
+      typename Collection::value_type::second_type>::value_type Element;
+  std::pair<typename Collection::iterator, bool> ret =
+      collection->insert(typename Collection::value_type(
+          key,
+          static_cast<typename Collection::value_type::second_type>(NULL)));
+  if (ret.second)
+  {
+    ret.first->second = new Element();
+  }
+  return ret.first->second;
+}
+
+// Same as above but constructs the value using the single-argument constructor
+// and the given "arg".
+template <class Collection, class Arg>
+typename Collection::value_type::second_type &
+STLLookupOrInsertNew(Collection *const collection,
+                     const typename Collection::value_type::first_type &key,
+                     const Arg &arg)
+{
+  typedef typename std::iterator_traits<
+      typename Collection::value_type::second_type>::value_type Element;
+  std::pair<typename Collection::iterator, bool> ret =
+      collection->insert(typename Collection::value_type(
+          key,
+          static_cast<typename Collection::value_type::second_type>(NULL)));
+  if (ret.second)
+  {
+    ret.first->second = new Element(arg);
+  }
+  return ret.first->second;
+}
+
+// Inserts all the keys from map_container into key_container, which must
+// support insert(MapContainer::key_type).
+//
+// Note: any initial contents of the key_container are not cleared.
+template <class MapContainer, class KeyContainer>
+void STLInsertKeysFromMap(const MapContainer &map_container,
+                          KeyContainer *key_container)
+{
+  if (key_container == nullptr)
+    return;
+  for (typename MapContainer::const_iterator it = map_container.begin();
+       it != map_container.end(); ++it)
+  {
+    key_container->insert(it->first);
+  }
+}
+
+// Appends all the keys from map_container into key_container, which must
+// support push_back(MapContainer::key_type).
+//
+// Note: any initial contents of the key_container are not cleared.
+template <class MapContainer, class KeyContainer>
+void STLAppendKeysFromMap(const MapContainer &map_container,
+                          KeyContainer *key_container)
+{
+  if (key_container == nullptr)
+    return;
+  for (typename MapContainer::const_iterator it = map_container.begin();
+       it != map_container.end(); ++it)
+  {
+    key_container->push_back(it->first);
+  }
+}
+
+// A more specialized overload of AppendKeysFromMap to optimize reallocations
+// for the common case in which we're appending keys to a vector and hence can
+// (and sometimes should) call reserve() first.
+//
+// (It would be possible to play SFINAE games to call reserve() for any
+// container that supports it, but this seems to get us 99% of what we need
+// without the complexity of a SFINAE-based solution.)
+template <class MapContainer, class KeyType>
+void STLAppendKeysFromMap(const MapContainer &map_container,
+                          std::vector<KeyType> *key_container)
+{
+  if (key_container == nullptr)
+    return;
+  // We now have the opportunity to call reserve(). Calling reserve() every
+  // time is a bad idea for some use cases: libstdc++'s implementation of
+  // vector<>::reserve() resizes the vector's backing store to exactly the
+  // given size (unless it's already at least that big). Because of this,
+  // the use case that involves appending a lot of small maps (total size
+  // N) one by one to a vector would be O(N^2). But never calling reserve()
+  // loses the opportunity to improve the use case of adding from a large
+  // map to an empty vector (this improves performance by up to 33%). A
+  // number of heuristics are possible; see the discussion in
+  // cl/34081696. Here we use the simplest one.
+  if (key_container->empty())
+  {
+    key_container->reserve(map_container.size());
+  }
+  for (typename MapContainer::const_iterator it = map_container.begin();
+       it != map_container.end(); ++it)
+  {
+    key_container->push_back(it->first);
+  }
+}
+
+// Inserts all the values from map_container into value_container, which must
+// support push_back(MapContainer::mapped_type).
+//
+// Note: any initial contents of the value_container are not cleared.
+template <class MapContainer, class ValueContainer>
+void STLAppendValuesFromMap(const MapContainer &map_container,
+                            ValueContainer *value_container)
+{
+  if (value_container == nullptr)
+    return;
+  for (typename MapContainer::const_iterator it = map_container.begin();
+       it != map_container.end(); ++it)
+  {
+    value_container->push_back(it->second);
+  }
+}
+
+// A more specialized overload of AppendValuesFromMap to optimize reallocations
+// for the common case in which we're appending values to a vector and hence
+// can (and sometimes should) call reserve() first.
+//
+// (It would be possible to play SFINAE games to call reserve() for any
+// container that supports it, but this seems to get us 99% of what we need
+// without the complexity of a SFINAE-based solution.)
+template <class MapContainer, class ValueType>
+void STLAppendValuesFromMap(const MapContainer &map_container,
+                            std::vector<ValueType> *value_container)
+{
+  if (value_container == nullptr)
+    return;
+  // See AppendKeysFromMap for why this is done.
+  if (value_container->empty())
+  {
+    value_container->reserve(map_container.size());
+  }
+  for (typename MapContainer::const_iterator it = map_container.begin();
+       it != map_container.end(); ++it)
+  {
+    value_container->push_back(it->second);
+  }
 }
 
 } // namespace util

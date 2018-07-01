@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <limits>
 #include <utility>
@@ -46,6 +47,181 @@ namespace util
 #define MATH_RANDOM_MINUS1_1() ((2.0f * ((float)rand() / RAND_MAX)) - 1.0f) // Returns a random float between -1 and 1.
 #define MATH_RANDOM_0_1() ((float)rand() / RAND_MAX)                        // Returns a random float between 0 and 1.
 #define MATH_CLAMP(x, lo, hi) ((x < lo) ? lo : ((x > hi) ? hi : x))
+
+inline float AbsFloat(const float aFloat)
+{
+  return fabs(aFloat);
+}
+
+inline double AbsDouble(const double aDouble)
+{
+  return fabs(aDouble);
+}
+
+template <typename T>
+inline bool AlmostEquals(T a, T b)
+{
+  return a == b;
+}
+
+template <>
+inline bool AlmostEquals(float a, float b)
+{
+  return fabs(a - b) < 32 * FLT_EPSILON;
+}
+
+template <>
+inline bool AlmostEquals(double a, double b)
+{
+  return fabs(a - b) < 32 * DBL_EPSILON;
+}
+
+#define DIV_ROUND_UP(x, y) (((x) + ((y)-1)) / (y))
+
+#define do_div(n, base) ({          \
+  uint32_t __base = (base);         \
+  uint32_t __rem;                   \
+  __rem = ((uint64_t)(n)) % __base; \
+  (n) = ((uint64_t)(n)) / __base;   \
+  __rem;                            \
+})
+
+inline uint64_t
+div64_u64_rem(uint64_t dividend, uint64_t divisor, uint64_t *remainder)
+{
+
+  *remainder = dividend % divisor;
+  return (dividend / divisor);
+}
+
+inline int64_t
+div64_s64(int64_t dividend, int64_t divisor)
+{
+
+  return (dividend / divisor);
+}
+
+inline uint64_t
+div64_u64(uint64_t dividend, uint64_t divisor)
+{
+
+  return (dividend / divisor);
+}
+
+inline uint64_t
+div_u64_rem(uint64_t dividend, uint32_t divisor, uint32_t *remainder)
+{
+
+  *remainder = dividend % divisor;
+  return (dividend / divisor);
+}
+
+inline int64_t
+div_s64(int64_t dividend, int32_t divisor)
+{
+
+  return (dividend / divisor);
+}
+
+inline uint64_t
+div_u64(uint64_t dividend, uint32_t divisor)
+{
+
+  return (dividend / divisor);
+}
+
+inline uint8_t
+CountLeadingZeroes32(uint32_t aValue)
+{
+  return __builtin_clz(aValue);
+}
+
+inline uint8_t
+CountTrailingZeroes32(uint32_t aValue)
+{
+  return __builtin_ctz(aValue);
+}
+
+inline uint8_t
+CountPopulation32(uint32_t aValue)
+{
+  return __builtin_popcount(aValue);
+}
+
+inline uint8_t
+CountPopulation64(uint64_t aValue)
+{
+  return __builtin_popcountll(aValue);
+}
+
+inline uint8_t
+CountLeadingZeroes64(uint64_t aValue)
+{
+  return __builtin_clzll(aValue);
+}
+
+inline uint8_t
+CountTrailingZeroes64(uint64_t aValue)
+{
+  return __builtin_ctzll(aValue);
+}
+
+/**
+ * Compute the log of the least power of 2 greater than or equal to |aValue|.
+ *
+ * CeilingLog2(0..1) is 0;
+ * CeilingLog2(2) is 1;
+ * CeilingLog2(3..4) is 2;
+ * CeilingLog2(5..8) is 3;
+ * CeilingLog2(9..16) is 4; and so on.
+ */
+inline uint8_t Fast32CeilingLog2(const uint32_t aValue)
+{
+  // Check for <= 1 to avoid the == 0 undefined case.
+  return aValue <= 1 ? 0u : 32u - CountLeadingZeroes32(aValue - 1);
+}
+
+inline uint8_t Fast64CeilingLog2(const uint64_t aValue)
+{
+  // Check for <= 1 to avoid the == 0 undefined case.
+  return aValue <= 1 ? 0u : 64u - CountLeadingZeroes64(aValue - 1);
+}
+
+/**
+ * Compute the log of the greatest power of 2 less than or equal to |aValue|.
+ *
+ * FloorLog2(0..1) is 0;
+ * FloorLog2(2..3) is 1;
+ * FloorLog2(4..7) is 2;
+ * FloorLog2(8..15) is 3; and so on.
+ */
+inline uint8_t Fast32FloorLog2(const uint32_t aValue)
+{
+  return 31u - CountLeadingZeroes32(aValue | 1);
+}
+
+inline uint8_t Fast64FloorLog2(const uint64_t aValue)
+{
+  return 63u - CountLeadingZeroes64(aValue | 1);
+}
+
+/**
+ * Rotates the bits of the given value left by the amount of the shift width.
+ */
+template <typename T>
+inline T RotateLeft(const T aValue, uint8_t aShift)
+{
+  return (aValue << aShift) | (aValue >> (sizeof(T) * CHAR_BIT - aShift));
+}
+
+/**
+ * Rotates the bits of the given value right by the amount of the shift width.
+ */
+template <typename T>
+inline T RotateRight(const T aValue, uint8_t aShift)
+{
+  return (aValue >> aShift) | (aValue << (sizeof(T) * CHAR_BIT - aShift));
+}
 
 //------------------------------------------------------------------------------
 // Fast log()
@@ -233,7 +409,7 @@ inline int32_t Log2Floor64(uint64_t n)
   }
 }
 
-#endif
+#endif // Log2Floor
 
 inline int32_t Log2Ceiling(uint32_t n)
 {
@@ -296,11 +472,26 @@ inline uint64_t CountLeadingZeroes(uint64_t i)
 #endif
 }
 
-inline bool IsPowerOf2(uint64_t i)
+/**
+ * Returns true if |x| is a power of two.
+ * Zero is not an integer power of two. (-Inf is not an integer)
+ */
+template <typename T>
+inline bool IsPowerOfTwo(T x)
 {
-  if (i < 2)
-    return false;
-  return (i & (i - 1)) == 0;
+  return x && (x & (x - 1)) == 0;
+}
+
+template <typename T>
+inline T Clamp(const T aValue, const T aMin, const T aMax)
+{
+  assert(aMin <= aMax);
+
+  if (aValue <= aMin)
+    return aMin;
+  if (aValue >= aMax)
+    return aMax;
+  return aValue;
 }
 
 inline uint64_t UpperUint(const uint64_t i, const uint64_t fac)
@@ -399,43 +590,6 @@ inline uint64_t NextPowerOf2uint64_t(uint64_t n)
 #endif
 }
 
-template <typename T>
-inline bool AlmostEquals(T a, T b)
-{
-  return a == b;
-}
-
-template <>
-inline bool AlmostEquals(float a, float b)
-{
-  return fabs(a - b) < 32 * FLT_EPSILON;
-}
-
-template <>
-inline bool AlmostEquals(double a, double b)
-{
-  return fabs(a - b) < 32 * DBL_EPSILON;
-}
-
-inline uint64_t Div(uint64_t dividend, uint64_t divisor, uint64_t *remainder)
-{
-
-  *remainder = dividend % divisor;
-  return (dividend / divisor);
-}
-
-/**
- * calculate the non-negative remainder of a/b
- * @param[in] a
- * @param[in] b, should be positive
- * @return the non-negative remainder of a / b
- */
-inline int32_t Mod(int32_t a, int32_t b)
-{
-  int32_t r = a % b;
-  return r >= 0 ? r : r + b;
-}
-
 inline uint8_t Count1Bits(uint8_t i)
 {
   // #number of 1 bits in 0x0 to 0xF.
@@ -463,6 +617,29 @@ inline int32_t count1Bits(uint32_t value)
 // Return the smallest number n such that (x >> n) == 0
 // (or 64 if the highest bit in x is set.
 uint64_t Count1Bits(uint64_t x);
+
+// Greatest Common Divisor
+template <typename IntegerType>
+inline IntegerType EuclidGCD(IntegerType aA, IntegerType aB)
+{
+  // Euclid's algorithm; O(N) in the worst case.  (There are better
+  // ways, but we don't need them for the current use of this algo.)
+  assert(aA > IntegerType(0));
+  assert(aB > IntegerType(0));
+
+  while (aA != aB)
+  {
+    if (aA > aB)
+    {
+      aA = aA - aB;
+    }
+    else
+    {
+      aB = aB - aA;
+    }
+  }
+  return aA;
+}
 
 } // namespace util
 } // namespace mycc

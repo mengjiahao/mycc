@@ -1,6 +1,7 @@
 #ifndef MYCC_UTIL_BLOCKING_QUEUE_UTIL_H_
 #define MYCC_UTIL_BLOCKING_QUEUE_UTIL_H_
 
+#include <malloc.h>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -8,7 +9,9 @@
 #include <mutex>
 #include <queue>
 #include <type_traits>
+#include <utility>
 #include <vector>
+#include "atomic_util.h"
 #include "locks_util.h"
 #include "types_util.h"
 
@@ -16,6 +19,397 @@ namespace mycc
 {
 namespace util
 {
+
+// This queue reduces the chance to allocate memory for deque
+template <typename T, int N>
+class SmallQueue
+{
+public:
+  SmallQueue() : _begin(0), _size(0), _full(NULL) {}
+
+  void push(const T &val)
+  {
+    if (_full != NULL && !_full->empty())
+    {
+      _full->push_back(val);
+    }
+    else if (_size < N)
+    {
+      int64_t tail = _begin + _size;
+      if (tail >= N)
+      {
+        tail -= N;
+      }
+      _c[tail] = val;
+      ++_size;
+    }
+    else
+    {
+      if (_full == NULL)
+      {
+        _full = new std::deque<T>;
+      }
+      _full->push_back(val);
+    }
+  }
+  bool pop(T *val)
+  {
+    if (_size > 0)
+    {
+      *val = _c[_begin];
+      ++_begin;
+      if (_begin >= N)
+      {
+        _begin -= N;
+      }
+      --_size;
+      return true;
+    }
+    else if (_full && !_full->empty())
+    {
+      *val = _full->front();
+      _full->pop_front();
+      return true;
+    }
+    return false;
+  }
+  bool empty() const
+  {
+    return _size == 0 && (_full == NULL || _full->empty());
+  }
+
+  uint64_t size() const
+  {
+    return _size + (_full ? _full->size() : 0);
+  }
+
+  void clear()
+  {
+    _size = 0;
+    _begin = 0;
+    if (_full)
+    {
+      _full->clear();
+    }
+  }
+
+  ~SmallQueue()
+  {
+    delete _full;
+    _full = NULL;
+  }
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SmallQueue);
+
+  int64_t _begin;
+  int64_t _size;
+  T _c[N];
+  std::deque<T> *_full;
+};
+
+// [Create a on-stack small queue]
+//   char storage[64];
+//   butil::BoundedQueue<int> q(storage, sizeof(storage), butil::NOT_OWN_STORAGE);
+//   q.push(1);
+//   q.push(2);
+//   ...
+
+// [Initialize a class-member queue]
+//   class Foo {
+//     ...
+//     BoundQueue<int> _queue;
+//   };
+//   int Foo::init() {
+//     BoundedQueue<int> tmp(capacity);
+//     if (!tmp.initialized()) {
+//       LOG(ERROR) << "Fail to create _queue";
+//       return -1;
+//     }
+//     tmp.swap(_queue);
+//   }
+
+template <typename T>
+class BoundedQueue
+{
+public:
+  enum StorageOwnership
+  {
+    OWNS_STORAGE,
+    NOT_OWN_STORAGE
+  };
+
+  // You have to pass the memory for storing items at creation.
+  // The queue contains at most memsize/sizeof(T) items.
+  BoundedQueue(void *mem, uint64_t memsize, StorageOwnership ownership)
+      : _count(0), _cap(memsize / sizeof(T)), _start(0), _ownership(ownership), _items(mem)
+  {
+    assert(_items != nullptr);
+  };
+
+  // Construct a queue with the given capacity.
+  // The malloc() may fail sliently, call initialized() to test validity
+  // of the queue.
+  explicit BoundedQueue(uint64_t capacity)
+      : _count(0), _cap(capacity), _start(0), _ownership(OWNS_STORAGE), _items(malloc(capacity * sizeof(T)))
+  {
+    assert(_items != nullptr);
+  };
+
+  BoundedQueue()
+      : _count(0), _cap(0), _start(0), _ownership(NOT_OWN_STORAGE), _items(NULL){};
+
+  ~BoundedQueue()
+  {
+    clear();
+    if (_ownership == OWNS_STORAGE)
+    {
+      free(_items);
+      _items = NULL;
+    }
+  }
+
+  // Push |item| into bottom side of this queue.
+  // Returns true on success, false if queue is full.
+  bool push(const T &item)
+  {
+    if (_count < _cap)
+    {
+      new ((T *)_items + _mod(_start + _count, _cap)) T(item);
+      ++_count;
+      return true;
+    }
+    return false;
+  }
+
+  // Push |item| into bottom side of this queue. If the queue is full,
+  // pop topmost item first.
+  void elim_push(const T &item)
+  {
+    if (_count < _cap)
+    {
+      new ((T *)_items + _mod(_start + _count, _cap)) T(item);
+      ++_count;
+    }
+    else
+    {
+      ((T *)_items)[_start] = item;
+      _start = _mod(_start + 1, _cap);
+    }
+  }
+
+  // Push a default-constructed item into bottom side of this queue
+  // Returns address of the item inside this queue
+  T *push()
+  {
+    if (_count < _cap)
+    {
+      return new ((T *)_items + _mod(_start + _count++, _cap)) T();
+    }
+    return NULL;
+  }
+
+  // Push |item| into top side of this queue
+  // Returns true on success, false if queue is full.
+  bool push_top(const T &item)
+  {
+    if (_count < _cap)
+    {
+      _start = _start ? (_start - 1) : (_cap - 1);
+      ++_count;
+      new ((T *)_items + _start) T(item);
+      return true;
+    }
+    return false;
+  }
+
+  // Push a default-constructed item into top side of this queue
+  // Returns address of the item inside this queue
+  T *push_top()
+  {
+    if (_count < _cap)
+    {
+      _start = _start ? (_start - 1) : (_cap - 1);
+      ++_count;
+      return new ((T *)_items + _start) T();
+    }
+    return NULL;
+  }
+
+  // Pop top-most item from this queue
+  // Returns true on success, false if queue is empty
+  bool pop()
+  {
+    if (_count)
+    {
+      --_count;
+      ((T *)_items + _start)->~T();
+      _start = _mod(_start + 1, _cap);
+      return true;
+    }
+    return false;
+  }
+
+  // Pop top-most item from this queue and copy into |item|.
+  // Returns true on success, false if queue is empty
+  bool pop(T *item)
+  {
+    if (_count)
+    {
+      --_count;
+      *item = ((T *)_items)[_start];
+      ((T *)_items)[_start].~T();
+      _start = _mod(_start + 1, _cap);
+      return true;
+    }
+    return false;
+  }
+
+  // Pop bottom-most item from this queue
+  // Returns true on success, false if queue is empty
+  bool pop_bottom()
+  {
+    if (_count)
+    {
+      --_count;
+      ((T *)_items + _start + _count)->~T();
+      return true;
+    }
+    return false;
+  }
+
+  // Pop bottom-most item from this queue and copy into |item|.
+  // Returns true on success, false if queue is empty
+  bool pop_bottom(T *item)
+  {
+    if (_count)
+    {
+      --_count;
+      *item = ((T *)_items)[_start + _count];
+      ((T *)_items)[_start + _count].~T();
+      return true;
+    }
+    return false;
+  }
+
+  // Pop all items
+  void clear()
+  {
+    for (uint32_t i = 0; i < _count; ++i)
+    {
+      ((T *)_items + _mod(_start + i, _cap))->~T();
+    }
+    _count = 0;
+    _start = 0;
+  }
+
+  // Get address of top-most item, NULL if queue is empty
+  T *top()
+  {
+    return _count ? ((T *)_items + _start) : NULL;
+  }
+  const T *top() const
+  {
+    return _count ? ((const T *)_items + _start) : NULL;
+  }
+
+  // Randomly access item from top side.
+  // top(0) == top(), top(size()-1) == bottom()
+  // Returns NULL if |index| is out of range.
+  T *top(uint64_t index)
+  {
+    if (index < _count)
+    {
+      return (T *)_items + _mod(_start + index, _cap);
+    }
+    return NULL; // including _count == 0
+  }
+  const T *top(uint64_t index) const
+  {
+    if (index < _count)
+    {
+      return (const T *)_items + _mod(_start + index, _cap);
+    }
+    return NULL; // including _count == 0
+  }
+
+  // Get address of bottom-most item, NULL if queue is empty
+  T *bottom()
+  {
+    return _count ? ((T *)_items + _mod(_start + _count - 1, _cap)) : NULL;
+  }
+  const T *bottom() const
+  {
+    return _count ? ((const T *)_items + _mod(_start + _count - 1, _cap)) : NULL;
+  }
+
+  // Randomly access item from bottom side.
+  // bottom(0) == bottom(), bottom(size()-1) == top()
+  // Returns NULL if |index| is out of range.
+  T *bottom(uint64_t index)
+  {
+    if (index < _count)
+    {
+      return (T *)_items + _mod(_start + _count - index - 1, _cap);
+    }
+    return NULL; // including _count == 0
+  }
+  const T *bottom(uint64_t index) const
+  {
+    if (index < _count)
+    {
+      return (const T *)_items + _mod(_start + _count - index - 1, _cap);
+    }
+    return NULL; // including _count == 0
+  }
+
+  bool empty() const { return !_count; }
+  bool full() const { return _cap == _count; }
+
+  // Number of items
+  uint64_t size() const { return _count; }
+
+  // Maximum number of items that can be in this queue
+  uint64_t capacity() const { return _cap; }
+
+  // Maximum value of capacity()
+  uint64_t max_capacity() const { return (1UL << (sizeof(_cap) * 8)) - 1; }
+
+  // True if the queue was constructed successfully.
+  bool initialized() const { return _items != NULL; }
+
+  // Swap internal fields with another queue.
+  void swap(BoundedQueue &rhs)
+  {
+    std::swap(_count, rhs._count);
+    std::swap(_cap, rhs._cap);
+    std::swap(_start, rhs._start);
+    std::swap(_ownership, rhs._ownership);
+    std::swap(_items, rhs._items);
+  }
+
+private:
+  // Since the space is possibly not owned, we disable copying.
+  DISALLOW_COPY_AND_ASSIGN(BoundedQueue);
+
+  // This is faster than % in this queue because most |off| are smaller
+  // than |cap|. This is probably not true in other place, be careful
+  // before you use this trick.
+  static uint32_t _mod(uint32_t off, uint32_t cap)
+  {
+    while (off >= cap)
+    {
+      off -= cap;
+    }
+    return off;
+  }
+
+  uint32_t _count;
+  uint32_t _cap;
+  uint32_t _start;
+  StorageOwnership _ownership;
+  void *_items;
+};
 
 template <class T>
 class QueueRing
@@ -357,6 +751,607 @@ uint64_t ConcurrentBlockingQueue<T, type>::Size()
     return priority_queue_.size();
   }
 }
+
+/**
+ * A thread-safe queue that automatically grows but never shrinks.
+ * Dequeue a empty queue will block current thread. Enqueue an element
+ * will wake up another thread that blocked by dequeue method.
+ *
+ * For example.
+ * @code{.cpp}
+ *
+ * paddle::SimpleQueue<int32_t> q;
+ * END_OF_JOB=-1
+ * void thread1() {
+ *   while (true) {
+ *     auto job = q.dequeue();
+ *     if (job == END_OF_JOB) {
+ *       break;
+ *     }
+ *     processJob(job);
+ *   }
+ * }
+ *
+ * void thread2() {
+ *   while (true) {
+ *      auto job = getJob();
+ *      q.enqueue(job);
+ *      if (job == END_OF_JOB) {
+ *        break;
+ *      }
+ *   }
+ * }
+ *
+ * @endcode
+ */
+template <class T>
+class SimpleQueue
+{
+public:
+  /**
+   * @brief Construct Function. Default capacity of SimpleQueue is zero.
+   */
+  SimpleQueue() : numElements_(0) {}
+
+  ~SimpleQueue() {}
+
+  /**
+   * @brief enqueue an element into SimpleQueue.
+   * @param[in] el The enqueue element.
+   * @note This method is thread-safe, and will wake up another blocked thread.
+   */
+  void enqueue(const T &el)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    elements_.emplace_back(el);
+    numElements_++;
+
+    queueCV_.notify_all();
+  }
+
+  /**
+   * @brief enqueue an element into SimpleQueue.
+   * @param[in] el The enqueue element. rvalue reference .
+   * @note This method is thread-safe, and will wake up another blocked thread.
+   */
+  void enqueue(T &&el)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    elements_.emplace_back(std::move(el));
+    numElements_++;
+
+    queueCV_.notify_all();
+  }
+
+  /**
+   * Dequeue from a queue and return a element.
+   * @note this method will be blocked until not empty.
+   */
+  T dequeue()
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    queueCV_.wait(lock, [this]() { return numElements_ != 0; });
+    T el;
+
+    using std::swap;
+    // Becuase of the previous statement, the right swap() can be found
+    // via argument-dependent lookup (ADL).
+    swap(elements_.front(), el);
+
+    elements_.pop_front();
+    numElements_--;
+    if (numElements_ == 0)
+    {
+      queueCV_.notify_all();
+    }
+    return el;
+  }
+
+  /**
+   * Return size of queue.
+   *
+   * @note This method is not thread safe. Obviously this number
+   * can change by the time you actually look at it.
+   */
+  inline int32_t size() const { return numElements_; }
+
+  /**
+   * @brief is empty or not.
+   * @return true if empty.
+   * @note This method is not thread safe.
+   */
+  inline bool empty() const { return numElements_ == 0; }
+
+  /**
+   * @brief wait util queue is empty
+   */
+  void waitEmpty()
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    queueCV_.wait(lock, [this]() { return numElements_ == 0; });
+  }
+
+  /**
+   * @brief wait queue is not empty at most for some seconds.
+   * @param seconds wait time limit.
+   * @return true if queue is not empty. false if timeout.
+   */
+  bool waitNotEmptyFor(int32_t seconds)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    return queueCV_.wait_for(lock, std::chrono::seconds(seconds), [this] {
+      return numElements_ != 0;
+    });
+  }
+
+private:
+  std::deque<T> elements_;
+  int32_t numElements_;
+  std::mutex queueLock_;
+  std::condition_variable queueCV_;
+};
+
+/*
+ * A thread-safe circular queue that
+ * automatically blocking calling thread if capacity reached.
+ *
+ * For example.
+ * @code{.cpp}
+ *
+ * paddle::BlockingQueue<int> q(capacity);
+ * END_OF_JOB=-1
+ * void thread1() {
+ *   while (true) {
+ *     auto job = q.dequeue();
+ *     if (job == END_OF_JOB) {
+ *       break;
+ *     }
+ *     processJob(job);
+ *   }
+ * }
+ *
+ * void thread2() {
+ *   while (true) {
+ *      auto job = getJob();
+ *      q.enqueue(job); //Block until q.size() < capacity .
+ *      if (job == END_OF_JOB) {
+ *        break;
+ *      }
+ *   }
+ * }
+ */
+template <typename T>
+class SimpleBlockingQueue
+{
+public:
+  /**
+   * @brief Construct Function.
+   * @param[in] capacity the max numer of elements the queue can have.
+   */
+  explicit SimpleBlockingQueue(uint64_t capacity) : capacity_(capacity) {}
+
+  /**
+   * @brief enqueue an element into SimpleQueue.
+   * @param[in] x The enqueue element, pass by reference .
+   * @note This method is thread-safe, and will wake up another thread
+   * who was blocked because of the queue is empty.
+   * @note If it's size() >= capacity before enqueue,
+   * this method will block and wait until size() < capacity.
+   */
+  void enqueue(const T &x)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    notFull_.wait(lock, [&] { return queue_.size() < capacity_; });
+    queue_.push_back(x);
+    notEmpty_.notify_one();
+  }
+
+  /**
+   * Dequeue from a queue and return a element.
+   * @note this method will be blocked until not empty.
+   * @note this method will wake up another thread who was blocked because
+   * of the queue is full.
+   */
+  T dequeue()
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    notEmpty_.wait(lock, [&] { return !queue_.empty(); });
+
+    T front(queue_.front());
+    queue_.pop_front();
+    notFull_.notify_one();
+    return front;
+  }
+
+  /**
+   * Return size of queue.
+   *
+   * @note This method is thread safe.
+   * The size of the queue won't change until the method return.
+   */
+  uint64_t size()
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return queue_.size();
+  }
+
+  /**
+   * @brief is empty or not.
+   * @return true if empty.
+   * @note This method is thread safe.
+   */
+  uint64_t empty()
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return queue_.empty();
+  }
+
+private:
+  std::mutex mutex_;
+  std::condition_variable notEmpty_;
+  std::condition_variable notFull_;
+  std::deque<T> queue_;
+  uint64_t capacity_;
+};
+
+template <typename T>
+class BlockingQueue
+{
+public:
+  typedef T ValueType;
+  typedef std::deque<T> UnderlyContainerType;
+
+  BlockingQueue(uint64_t max_elements = static_cast<uint64_t>(-1))
+      : m_max_elements(max_elements),
+        m_cond_not_empty(&m_mutex), m_cond_not_full(&m_mutex)
+  {
+    assert(m_max_elements > 0);
+  }
+
+  /// @brief push element in to front of queue
+  /// @param value to be pushed
+  /// @note if queue is full, block and wait for non-full
+  void PushFront(const T &value)
+  {
+    {
+      MutexLock locker(m_mutex);
+      while (UnlockedIsFull())
+      {
+        m_cond_not_full.wait();
+      }
+      m_queue.push_front(value);
+    }
+    m_cond_not_empty.signal();
+  }
+
+  /// @brief try push element in to front of queue
+  /// @param value to be pushed
+  /// @note if queue is full, return false
+  bool TryPushFront(const T &value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      if (UnlockedIsFull())
+        return false;
+      m_queue.push_front(value);
+    }
+    m_cond_not_empty.signal();
+    return true;
+  }
+
+  /// @brief push element in to back of queue
+  /// @param value to be pushed
+  /// @note if queue is full, block and wait for non-full
+  void PushBack(const T &value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      while (UnlockedIsFull())
+      {
+        m_cond_not_full.wait();
+      }
+      m_queue.push_back(value);
+    }
+    m_cond_not_empty.signal();
+  }
+
+  /// @brief Try push element in to back of queue
+  /// @param value to be pushed
+  /// @note if queue is full, return false
+  bool TryPushBack(const T &value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      if (UnlockedIsFull())
+        return false;
+      m_queue.push_back(value);
+    }
+    m_cond_not_empty.signal();
+    return true;
+  }
+
+  /// @brief popup from front of queue.
+  /// @param value to hold the result
+  /// @note if queue is empty, block and wait for non-empty
+  void PopFront(T *value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      while (m_queue.empty())
+      {
+        m_cond_not_empty.wait();
+      }
+      *value = m_queue.front();
+      m_queue.pop_front();
+    }
+    m_cond_not_full.signal();
+  }
+
+  /// @brief Try popup from front of queue.
+  /// @param value to hold the result
+  /// @note if queue is empty, return false
+  bool TryPopFront(T *value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      if (m_queue.empty())
+        return false;
+      *value = m_queue.front();
+      m_queue.pop_front();
+    }
+    m_cond_not_full.signal();
+    return true;
+  }
+
+  /// @brief popup from back of queue
+  /// @param value to hold the result
+  /// @note if queue is empty, block and wait for non-empty
+  void PopBack(T *value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      while (m_queue.empty())
+      {
+        m_cond_not_empty.wait();
+      }
+      *value = m_queue.back();
+      m_queue.pop_back();
+    }
+    m_cond_not_full.signal();
+  }
+
+  /// @brief Try popup from back of queue
+  /// @param value to hold the result
+  /// @note if queue is empty, return false
+  bool TryPopBack(T *value)
+  {
+    {
+      MutexLock locker(&m_mutex);
+      if (m_queue.empty())
+        return false;
+      *value = m_queue.back();
+      m_queue.pop_back();
+    }
+    m_cond_not_full.signal();
+    return true;
+  }
+
+  /// @brief push front with time out
+  /// @param value to be pushed
+  /// @param timeout_in_ms timeout, in milliseconds
+  /// @return whether pushed
+  bool TimedPushFront(const T &value, int timeout_in_ms)
+  {
+    bool success = false;
+    {
+      MutexLock locker(&m_mutex);
+
+      if (UnlockedIsFull())
+        m_cond_not_full.timedWait(&m_mutex, timeout_in_ms);
+
+      if (!UnlockedIsFull())
+      {
+        m_queue.push_front(value);
+        success = true;
+      }
+    }
+
+    if (success)
+      m_cond_not_empty.signal();
+
+    return success;
+  }
+
+  /// @brief push back with time out
+  /// @param value to be pushed
+  /// @param timeout_in_ms timeout, in milliseconds
+  /// @return whether pushed
+  bool TimedPushBack(const T &value, int timeout_in_ms)
+  {
+    bool success = false;
+    {
+      MutexLock locker(&m_mutex);
+      if (UnlockedIsFull())
+        m_cond_not_full.timedWait(&m_mutex, timeout_in_ms);
+
+      if (!UnlockedIsFull())
+      {
+        m_queue.push_back(value);
+        success = true;
+      }
+    }
+    if (success)
+      m_cond_not_empty.signal();
+    return success;
+  }
+
+  /// @brief pop front with time out
+  /// @param value to hold the result
+  /// @param timeout_in_ms timeout, in milliseconds
+  /// @return whether poped
+  bool TimedPopFront(T *value, int timeout_in_ms)
+  {
+    bool success = false;
+    {
+      MutexLock locker(&m_mutex);
+
+      if (m_queue.empty())
+        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+
+      if (!m_queue.empty())
+      {
+        *value = m_queue.front();
+        m_queue.pop_front();
+        success = true;
+      }
+    }
+
+    if (success)
+      m_cond_not_full.signal();
+
+    return success;
+  }
+
+  /// @brief pop back with time out
+  /// @param value to hold the result
+  /// @param timeout_in_ms timeout, in milliseconds
+  /// @return whether poped
+  bool TimedPopBack(T *value, int timeout_in_ms)
+  {
+    bool success = false;
+    {
+      MutexLock locker(&m_mutex);
+
+      if (m_queue.empty())
+        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+
+      if (!m_queue.empty())
+      {
+        *value = m_queue.back();
+        m_queue.pop_back();
+        success = true;
+      }
+    }
+
+    if (success)
+      m_cond_not_full.signal();
+
+    return success;
+  }
+
+  /// @brief pop all from the queue and guarantee the output queue contains at
+  /// least one element.
+  /// @param values to hold the results, it would be cleared firstly by the
+  /// function.
+  /// @note if queue is empty, block and wait for non-empty.
+  void PopAll(UnderlyContainerType *values)
+  {
+    values->clear();
+
+    {
+      MutexLock locker(&m_mutex);
+      while (m_queue.empty())
+        m_cond_not_empty.wait();
+      values->swap(m_queue);
+    }
+
+    m_cond_not_full.broadcast();
+  }
+
+  /// @brief Try pop all from the queue and guarantee the output queue
+  /// contains at least one element.
+  /// @param values to hold the results, it would be cleared firstly by the
+  /// function.
+  /// @note if queue is empty, return false
+  bool TryPopAll(UnderlyContainerType *values)
+  {
+    values->clear();
+
+    {
+      MutexLock locker(&m_mutex);
+      if (m_queue.empty())
+        return false;
+      values->swap(m_queue);
+    }
+    m_cond_not_full.broadcast();
+    return true;
+  }
+
+  /// @brief pop all from the queue with time out.
+  /// @param values to hold the results, it would be cleared firstly by the
+  /// function.
+  /// @param timeout_in_ms timeout, in milliseconds.
+  /// @return whether poped.
+  bool TimedPopAll(UnderlyContainerType *values, int timeout_in_ms)
+  {
+    bool success = false;
+    values->clear();
+
+    {
+      MutexLock locker(&m_mutex);
+      if (m_queue.empty())
+        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+
+      if (!m_queue.empty())
+      {
+        values->swap(m_queue);
+        m_cond_not_full.broadcast();
+        success = true;
+      }
+    }
+
+    if (success)
+      m_cond_not_full.signal();
+
+    return success;
+  }
+
+  /// @brief number of elements in the queue.
+  /// @return number of elements in the queue.
+  uint64_t Size()
+  {
+    MutexLock locker(&m_mutex);
+    return m_queue.size();
+  }
+
+  /// @brief whether the queue is empty
+  /// @return whether empty
+  bool IsEmpty()
+  {
+    MutexLock locker(&m_mutex);
+    return m_queue.empty();
+  }
+
+  /// @brief whether the queue is full
+  /// @return whether full
+  bool IsFull()
+  {
+    MutexLock locker(&m_mutex);
+    return UnlockedIsFull();
+  }
+
+  /// @brief clear the queue
+  void Clear()
+  {
+    MutexLock locker(&m_mutex);
+    m_queue.clear();
+    m_cond_not_full.broadcast();
+  }
+
+private:
+  bool UnlockedIsFull() const
+  {
+    return m_queue.size() >= m_max_elements;
+  }
+
+private:
+  uint64_t m_max_elements;
+  UnderlyContainerType m_queue;
+
+  Mutex m_mutex;
+  CondVar m_cond_not_empty;
+  CondVar m_cond_not_full;
+};
 
 } // namespace util
 } // namespace mycc

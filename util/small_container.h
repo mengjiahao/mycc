@@ -1,14 +1,16 @@
 
-#ifndef MYCC_UTIL_AUTOVECTOR_H_
-#define MYCC_UTIL_AUTOVECTOR_H_
+#ifndef MYCC_UTIL_SMALL_CONTAINER_H_
+#define MYCC_UTIL_SMALL_CONTAINER_H_
 
 #include <assert.h>
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <stdexcept>
 #include <vector>
+#include "types_util.h"
 
 namespace mycc
 {
@@ -27,23 +29,23 @@ namespace util
     };
  */
 
-template <typename Value, size_t Max>
+template <typename Value, uint64_t Max>
 class ArrayMap
 {
   std::array<Value, Max> _a{};
 
 public:
-  ArrayMap(std::initializer_list<std::pair<size_t, Value>> i)
+  ArrayMap(std::initializer_list<std::pair<uint64_t, Value>> i)
   {
     for (auto kv : i)
     {
       _a[kv.first] = kv.second;
     }
   }
-  Value &operator[](size_t key) { return _a[key]; }
-  const Value &operator[](size_t key) const { return _a[key]; }
+  Value &operator[](uint64_t key) { return _a[key]; }
+  const Value &operator[](uint64_t key) const { return _a[key]; }
 
-  Value &at(size_t key)
+  Value &at(uint64_t key)
   {
     if (key >= Max)
     {
@@ -73,7 +75,7 @@ public:
 //     operations.
 //
 // Naming style of public methods almost follows that of the STL's.
-template <class T, size_t kSize = 8>
+template <class T, uint64_t kSize = 8>
 class autovector
 {
 public:
@@ -99,7 +101,7 @@ public:
     typedef typename TAutoVector::difference_type difference_type;
     typedef std::random_access_iterator_tag iterator_category;
 
-    iterator_impl(TAutoVector *vect, size_t index)
+    iterator_impl(TAutoVector *vect, uint64_t index)
         : vect_(vect), index_(index){};
     iterator_impl(const iterator_impl &) = default;
     ~iterator_impl() {}
@@ -224,7 +226,7 @@ public:
 
   private:
     TAutoVector *vect_ = nullptr;
-    size_t index_ = 0;
+    uint64_t index_ = 0;
   };
 
   typedef iterator_impl<autovector, value_type> iterator;
@@ -407,7 +409,7 @@ private:
   std::vector<T> vect_;
 };
 
-template <class T, size_t kSize>
+template <class T, uint64_t kSize>
 autovector<T, kSize> &autovector<T, kSize>::assign(const autovector &other)
 {
   // copy the internal vector
@@ -420,7 +422,240 @@ autovector<T, kSize> &autovector<T, kSize>::assign(const autovector &other)
   return *this;
 }
 
+// This is similar to std::unordered_map, except that it tries to avoid
+// allocating or deallocating memory as much as possible. With
+// std::unordered_map, an allocation/deallocation is made for every insertion
+// or deletion because of the requirement that iterators remain valid even
+// with insertions or deletions. This means that the hash chains will be
+// implemented as linked lists.
+//
+// This implementation uses autovector as hash chains insteads.
+//
+template <typename K, typename V, uint64_t size = 128>
+class SmallHashMap
+{
+  std::array<autovector<std::pair<K, V>, 1>, size> table_;
+
+public:
+  bool Contains(K key)
+  {
+    auto &bucket = table_[key % size];
+    auto it = std::find_if(
+        bucket.begin(), bucket.end(),
+        [key](const std::pair<K, V> &p) { return p.first == key; });
+    return it != bucket.end();
+  }
+
+  void Insert(K key, V value)
+  {
+    auto &bucket = table_[key % size];
+    bucket.push_back({key, value});
+  }
+
+  void Delete(K key)
+  {
+    auto &bucket = table_[key % size];
+    auto it = std::find_if(
+        bucket.begin(), bucket.end(),
+        [key](const std::pair<K, V> &p) { return p.first == key; });
+    if (it != bucket.end())
+    {
+      auto last = bucket.end() - 1;
+      if (it != last)
+      {
+        *it = *last;
+      }
+      bucket.pop_back();
+    }
+  }
+
+  V &Get(K key)
+  {
+    auto &bucket = table_[key % size];
+    auto it = std::find_if(
+        bucket.begin(), bucket.end(),
+        [key](const std::pair<K, V> &p) { return p.first == key; });
+    return it->second;
+  }
+};
+
+// Binary heap implementation optimized for use in multi-way merge sort.
+// Comparison to std::priority_queue:
+// - In libstdc++, std::priority_queue::pop() usually performs just over logN
+//   comparisons but never fewer.
+// - std::priority_queue does not have a replace-top operation, requiring a
+//   pop+push.  If the replacement element is the new top, this requires
+//   around 2logN comparisons.
+// - This heap's pop() uses a "schoolbook" downheap which requires up to ~2logN
+//   comparisons.
+// - This heap provides a replace_top() operation which requires [1, 2logN]
+//   comparisons.  When the replacement element is also the new top, this
+//   takes just 1 or 2 comparisons.
+//
+// The last property can yield an order-of-magnitude performance improvement
+// when merge-sorting real-world non-random data.  If the merge operation is
+// likely to take chunks of elements from the same input stream, only 1
+// comparison per element is needed.  In RocksDB-land, this happens when
+// compacting a database where keys are not randomly distributed across L0
+// files but nearby keys are likely to be in the same L0 file.
+//
+// The container uses the same counterintuitive ordering as
+// std::priority_queue: the comparison operator is expected to provide the
+// less-than relation, but top() will return the maximum.
+
+template <typename T, typename Compare = std::less<T>>
+class BinaryHeap
+{
+public:
+  BinaryHeap() {}
+  explicit BinaryHeap(Compare cmp) : cmp_(std::move(cmp)) {}
+
+  void push(const T &value)
+  {
+    data_.push_back(value);
+    upheap(data_.size() - 1);
+  }
+
+  void push(T &&value)
+  {
+    data_.push_back(std::move(value));
+    upheap(data_.size() - 1);
+  }
+
+  const T &top() const
+  {
+    assert(!empty());
+    return data_.front();
+  }
+
+  void replace_top(const T &value)
+  {
+    assert(!empty());
+    data_.front() = value;
+    downheap(get_root());
+  }
+
+  void replace_top(T &&value)
+  {
+    assert(!empty());
+    data_.front() = std::move(value);
+    downheap(get_root());
+  }
+
+  void pop()
+  {
+    assert(!empty());
+    data_.front() = std::move(data_.back());
+    data_.pop_back();
+    if (!empty())
+    {
+      downheap(get_root());
+    }
+    else
+    {
+      reset_root_cmp_cache();
+    }
+  }
+
+  void swap(BinaryHeap &other)
+  {
+    std::swap(cmp_, other.cmp_);
+    data_.swap(other.data_);
+    std::swap(root_cmp_cache_, other.root_cmp_cache_);
+  }
+
+  void clear()
+  {
+    data_.clear();
+    reset_root_cmp_cache();
+  }
+
+  bool empty() const
+  {
+    return data_.empty();
+  }
+
+  void reset_root_cmp_cache() { root_cmp_cache_ = port::kMaxSizet; }
+
+private:
+  static inline uint64_t get_root() { return 0; }
+  static inline uint64_t get_parent(uint64_t index) { return (index - 1) / 2; }
+  static inline uint64_t get_left(uint64_t index) { return 2 * index + 1; }
+  static inline uint64_t get_right(uint64_t index) { return 2 * index + 2; }
+
+  void upheap(uint64_t index)
+  {
+    T v = std::move(data_[index]);
+    while (index > get_root())
+    {
+      const uint64_t parent = get_parent(index);
+      if (!cmp_(data_[parent], v))
+      {
+        break;
+      }
+      data_[index] = std::move(data_[parent]);
+      index = parent;
+    }
+    data_[index] = std::move(v);
+    reset_root_cmp_cache();
+  }
+
+  void downheap(uint64_t index)
+  {
+    T v = std::move(data_[index]);
+
+    uint64_t picked_child = port::kMaxSizet;
+    while (1)
+    {
+      const uint64_t left_child = get_left(index);
+      if (get_left(index) >= data_.size())
+      {
+        break;
+      }
+      const uint64_t right_child = left_child + 1;
+      assert(right_child == get_right(index));
+      picked_child = left_child;
+      if (index == 0 && root_cmp_cache_ < data_.size())
+      {
+        picked_child = root_cmp_cache_;
+      }
+      else if (right_child < data_.size() &&
+               cmp_(data_[left_child], data_[right_child]))
+      {
+        picked_child = right_child;
+      }
+      if (!cmp_(v, data_[picked_child]))
+      {
+        break;
+      }
+      data_[index] = std::move(data_[picked_child]);
+      index = picked_child;
+    }
+
+    if (index == 0)
+    {
+      // We did not change anything in the tree except for the value
+      // of the root node, left and right child did not change, we can
+      // cache that `picked_child` is the smallest child
+      // so next time we compare againist it directly
+      root_cmp_cache_ = picked_child;
+    }
+    else
+    {
+      // the tree changed, reset cache
+      reset_root_cmp_cache();
+    }
+
+    data_[index] = std::move(v);
+  }
+
+  Compare cmp_;
+  autovector<T> data_;
+  // Used to reduce number of cmp_ calls in downheap()
+  uint64_t root_cmp_cache_ = (uint64_t)kMaxSizet;
+};
+
 } // namespace util
 } // namespace mycc
 
-#endif // MYCC_UTIL_AUTOVECTOR_H_
+#endif // MYCC_UTIL_SMALL_CONTAINER_H_

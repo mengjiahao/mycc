@@ -1,4 +1,3 @@
-
 #ifndef MYCC_UTIL_REGISTRY_UTIL_H_
 #define MYCC_UTIL_REGISTRY_UTIL_H_
 

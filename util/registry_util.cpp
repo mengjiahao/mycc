@@ -2,13 +2,7 @@
 #include "registry_util.h"
 #include <stdio.h>
 #include <functional>
-
-namespace mycc
-{
-namespace util
-{
-}
-} // namespace mycc
+#include "testharness.h"
 
 namespace tree
 {

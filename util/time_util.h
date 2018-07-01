@@ -396,6 +396,16 @@ private:
 
 ////////////////////// c++11 chrno /////////////////////////////
 
+/*!
+ * \brief return time in seconds
+ */
+inline double NowChronoSecs(void)
+{
+  return std::chrono::duration<double>(
+             std::chrono::high_resolution_clock::now().time_since_epoch())
+      .count();
+}
+
 /**
  * @class ChronoDuration
  * @brief the default Duration is of precision nanoseconds (1e-9 seconds).
@@ -647,12 +657,12 @@ private:
  * This is a minimal class around a std::chrono::high_resolution_clock that
  * serves as a utility class for testing code.
  */
-class ChronoSimperTimer
+class ChronoSimpleTimer
 {
 public:
   typedef std::chrono::high_resolution_clock clock;
   typedef std::chrono::nanoseconds ns;
-  ChronoSimperTimer() { start(); }
+  ChronoSimpleTimer() { start(); }
   /**
    * @brief Starts a timer.
    */
@@ -676,7 +686,7 @@ public:
 
 protected:
   std::chrono::time_point<clock> start_time_;
-  DISALLOW_COPY_AND_ASSIGN(ChronoSimperTimer);
+  DISALLOW_COPY_AND_ASSIGN(ChronoSimpleTimer);
 };
 
 } // namespace util

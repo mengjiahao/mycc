@@ -7,6 +7,7 @@
 #include <limits.h> // So we can set the bounds of our types.
 #include <stddef.h> // For size_t.
 #include <stdint.h> // For intptr_t.
+#include <string.h>
 #include <sys/types.h>
 #include <limits>
 #include <string>
@@ -93,7 +94,50 @@ namespace port
 
 constexpr bool kLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 
+// Prefetching support
+//
+// Defined behavior on some of the uarchs:
+// PREFETCH_HINT_T0:
+//   prefetch to all levels of the hierarchy (except on p4: prefetch to L2)
+// PREFETCH_HINT_NTA:
+//   p4: fetch to L2, but limit to 1 way (out of the 8 ways)
+//   core: skip L2, go directly to L1
+//   k8 rev E and later: skip L2, can go to either of the 2-ways in L1
+enum PrefetchHint
+{
+  PREFETCH_HINT_T0 = 3, // More temporal locality
+  PREFETCH_HINT_T1 = 2,
+  PREFETCH_HINT_T2 = 1, // Less temporal locality
+  PREFETCH_HINT_NTA = 0 // No temporal locality
+};
+template <PrefetchHint hint>
+void prefetch(const void *x);
+
+// ---------------------------------------------------------------------------
+// Inline implementation
+// ---------------------------------------------------------------------------
+template <PrefetchHint hint>
+inline void prefetch(const void *x)
+{
+// Check of COMPILER_GCC macro below is kept only for backward-compatibility
+// reasons. COMPILER_GCC3 is the macro that actually enables prefetch.
+#if defined(__llvm__) || defined(COMPILER_GCC) || defined(COMPILER_GCC3)
+  __builtin_prefetch(x, 0, hint);
+#else
+  // You get no effect.  Feel free to add more sections above.
+  static_assert(false, "prefetch unimplemented");
+#endif
+}
+
 } // namespace port
+
+// Delete the typed-T object whose address is `arg'. This is a common function
+// to thread_atexit.
+template <typename T>
+void delete_object(void *arg)
+{
+  delete static_cast<T *>(arg);
+}
 
 template <typename T>
 inline void CheckedDelete(T *p)
@@ -109,6 +153,47 @@ inline void CheckedArrayDelete(T *p)
   typedef char type_must_be_complete[sizeof(T) ? 1 : -1];
   (void)sizeof(type_must_be_complete);
   delete[] p;
+}
+
+// The type-based aliasing rule allows the compiler to assume that pointers of
+// different types (for some definition of different) never alias each other.
+// Thus the following code does not work:
+//
+// float f = foo();
+// int fbits = *(int*)(&f);
+//
+// The compiler 'knows' that the int pointer can't refer to f since the types
+// don't match, so the compiler may cache f in a register, leaving random data
+// in fbits.  Using C++ style casts makes no difference, however a pointer to
+// char data is assumed to alias any other pointer.  This is the 'memcpy
+// exception'.
+//
+// Bit_cast uses the memcpy exception to move the bits from a variable of one
+// type of a variable of another type.  Of course the end result is likely to
+// be implementation dependent.  Most compilers (gcc-4.2 and MSVC 2005)
+// will completely optimize BitCast away.
+//
+// There is an additional use for BitCast.
+// Recent gccs will warn when they see casts that may result in breakage due to
+// the type-based aliasing rule.  If you have checked that there is no breakage
+// you can use BitCast to cast one pointer type to another.  This confuses gcc
+// enough that it can no longer see that you have cast one pointer type to
+// another thus avoiding the warning.
+template <class Dest, class Source>
+inline Dest BitCast(const Source &source)
+{
+  static_assert(sizeof(Dest) == sizeof(Source),
+                "BitCast's source and destination types must be the same size");
+
+  Dest dest;
+  ::memmove(&dest, &source, sizeof(dest));
+  return dest;
+}
+
+template <class Dest, class Source>
+inline Dest BitCast(Source *source)
+{
+  return BitCast<Dest>(reinterpret_cast<uintptr_t>(source));
 }
 
 } // namespace mycc

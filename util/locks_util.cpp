@@ -268,9 +268,9 @@ void CondVar::signal()
   PthreadCall("signal cv", pthread_cond_signal(&cv_));
 }
 
-void CondVar::signalAll()
+void CondVar::broadcast()
 {
-  PthreadCall("signalAll cv", pthread_cond_broadcast(&cv_));
+  PthreadCall("broadcast cv", pthread_cond_broadcast(&cv_));
 }
 
 RWMutex::RWMutex()
@@ -458,7 +458,7 @@ void CountDownLatch::countDown()
   --count_;
   if (count_ == 0)
   {
-    condition_.signalAll();
+    condition_.broadcast();
   }
 }
 

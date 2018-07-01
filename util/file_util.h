@@ -1,6 +1,7 @@
 #ifndef MYCC_UTIL_FILE_UTIL_H_
 #define MYCC_UTIL_FILE_UTIL_H_
 
+#include <unistd.h>
 #include "types_util.h"
 
 namespace mycc
@@ -75,6 +76,66 @@ int make_dir_p(const string &path);
 
 bool GetFileContent(const string &file_name, string *content);
 bool CopyFileContent(const string &from, const string &to);
+
+// RAII file descriptor.
+//
+// Example:
+//    FdGuard fd1(open(...));
+//    if (fd1 < 0) {
+//        printf("Fail to open\n");
+//        return -1;
+//    }
+//    if (another-error-happened) {
+//        printf("Fail to do sth\n");
+//        return -1;   // *** closing fd1 automatically ***
+//    }
+class FdGuard
+{
+public:
+  FdGuard() : _fd(-1) {}
+  explicit FdGuard(int fd) : _fd(fd) {}
+
+  ~FdGuard()
+  {
+    if (_fd >= 0)
+    {
+      ::close(_fd);
+      _fd = -1;
+    }
+  }
+
+  // Close current fd and replace with another fd
+  void reset(int fd)
+  {
+    if (_fd >= 0)
+    {
+      ::close(_fd);
+      _fd = -1;
+    }
+    _fd = fd;
+  }
+
+  // Set internal fd to -1 and return the value before set.
+  int release()
+  {
+    const int prev_fd = _fd;
+    _fd = -1;
+    return prev_fd;
+  }
+
+  int getfd() const
+  {
+    return _fd;
+  }
+
+  operator int() const { return _fd; }
+
+private:
+  // Copying this makes no sense.
+  DISALLOW_COPY_AND_ASSIGN(FdGuard);
+
+  int _fd;
+};
 
 // Example:
 //   FileWatcher fw;

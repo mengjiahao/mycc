@@ -530,11 +530,15 @@ PosixFixedThreadPool *PosixFixedThreadPool::NewFixedThreadPool(int32_t num_threa
 PosixFixedThreadPool::~PosixFixedThreadPool()
 {
   MutexLock ml(&mu_);
+  // Wait until all scheduled work has finished and then destroy the
+  // set of threads.
+  // Wakeup all waiters.
   shutting_down_ = true;
-  bg_cv_.signalAll();
+  bg_cv_.broadcast();
+  // wait for num_pool_threads_
   while (num_pool_threads_ != 0)
   {
-    bg_cv_.wait(); // wait for num_pool_threads_
+    bg_cv_.wait(); 
   }
   assert(bgthreads_.size() == 0);
   bgthreads_.clear();
@@ -572,7 +576,7 @@ void PosixFixedThreadPool::schedule(void (*function)(void *), void *arg, const s
   // If the queue is currently empty, the background threads
   // may be waiting.
   if (queue_.empty())
-    bg_cv_.signalAll();
+    bg_cv_.broadcast();
 
   // Add to priority queue
   BGItem work;
@@ -607,7 +611,7 @@ void PosixFixedThreadPool::BGThread()
           bgthreads_.erase(it);
         }
         --num_pool_threads_;
-        bg_cv_.signalAll();
+        bg_cv_.broadcast();
         return;
       }
 
@@ -626,7 +630,7 @@ void PosixFixedThreadPool::resume()
 {
   MutexLock ml(&mu_);
   paused_ = false;
-  bg_cv_.signalAll();
+  bg_cv_.broadcast();
 }
 
 void PosixFixedThreadPool::pause()
@@ -668,7 +672,7 @@ bool SimpleThreadPool::stop(bool wait)
   {
     MutexLock lock(&mutex_);
     stop_ = true;
-    work_cv_.signalAll();
+    work_cv_.broadcast();
   }
   for (uint32_t i = 0; i < tids_.size(); i++)
   {

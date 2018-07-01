@@ -72,6 +72,8 @@ inline bool IsNaN(double value)
   return !(value > value) && !(value <= value);
 }
 
+bool IsHexNumberString(const string &str);
+
 inline char ToHexAscii(uint8_t v)
 {
   if (v <= 9)
@@ -110,6 +112,7 @@ inline char *StringAsArray(string *str)
 }
 
 string DebugString(const string &src);
+std::vector<uint8_t> ParseHex(const char *psz);
 string StringToHex(const char *str, uint64_t len);
 
 void StringToUpper(string *str);
@@ -165,7 +168,7 @@ string StringFormat(const char *format, ...);
 //     Int64, UInt64, Int, Uint:        22 bytes
 //     Time:                            30 bytes
 // Use kFastToBufferSize rather than hardcoding constants.
-static const int kFastToBufferSize = 32;
+static const uint64_t kFastToBufferSize = 32;
 
 // ----------------------------------------------------------------------
 // FastInt32ToBufferLeft()
@@ -195,6 +198,12 @@ uint64_t StringParseUint64(const string &value);
 int32_t StringParseInt32(const string &value);
 double StringParseDouble(const string &value);
 size_t StringParseSizeT(const string &value);
+
+bool StringParseInt32(const string &str, int32_t *out);
+bool StringParseInt64(const string &str, int64_t *out);
+bool StringParseUInt32(const string &str, uint32_t *out);
+bool StringParseUInt64(const string &str, uint64_t *out);
+bool StringParseDouble(const string &str, double *out);
 
 bool VectorInt32ToString(const std::vector<int32_t> &vec, string *value);
 std::vector<int32_t> StringParseVectorInt32(const string &value);
@@ -248,10 +257,10 @@ bool StringConsumeDecimalNumber(StringPiece *in, uint64_t *val);
 /// ---------------------------------------------------------------
 /// @brief converting numbers  to buffer, buffer size should be big enough
 /// ---------------------------------------------------------------
-const int kMaxIntegerStringSize = 32;
-const int kMaxDoubleStringSize = 32;
-const int kMaxFloatStringSize = 24;
-const int kMaxIntStringSize = kMaxIntegerStringSize;
+const uint64_t kMaxIntegerStringSize = 32;
+const uint64_t kMaxDoubleStringSize = 32;
+const uint64_t kMaxFloatStringSize = 24;
+const uint64_t kMaxIntStringSize = kMaxIntegerStringSize;
 
 /// @brief write number to buffer as string
 /// @return end of result
@@ -398,6 +407,7 @@ bool StringConsumePrefix(StringPiece *s, StringPiece expected);
 // Otherwise, return false.
 bool StringConsumeSuffix(StringPiece *s, StringPiece expected);
 
+std::vector<string> StringSplit(const string &s, char delim);
 std::vector<string> StringSplit(StringPiece text, StringPiece delims);
 
 inline std::vector<string> StringSplitChar(StringPiece text, char delim)
@@ -468,7 +478,7 @@ float FastStrToF(const char *nptr, char **endptr);
  * TODO only support base <=10
  */
 template <typename V>
-inline V FastStrToInt(const char *nptr, char **endptr, int base)
+inline V FastStrToInt(const char *nptr, char **endptr, uint64_t base)
 {
   const char *p = nptr;
   // Skip leading white space, if any. Not necessary
@@ -499,7 +509,7 @@ inline V FastStrToInt(const char *nptr, char **endptr, int base)
 }
 
 template <typename V>
-inline V FastStrToUint(const char *nptr, char **endptr, int base)
+inline V FastStrToUint(const char *nptr, char **endptr, uint64_t base)
 {
   const char *p = nptr;
   // Skip leading white space, if any. Not necessary
@@ -531,6 +541,145 @@ inline V FastStrToUint(const char *nptr, char **endptr, int base)
     *endptr = (char *)p; // NOLINT(*)
   return value;
 }
+
+inline uint64_t StrLength(const char *string)
+{
+  uint64_t length = strlen(string);
+  return (length);
+}
+
+// Helper class for building result strings in a character buffer. The
+// purpose of the class is to use safe operations that checks the
+// buffer bounds on all operations in debug mode.
+
+// This is a simplified version of V8's SimpleVector class.
+template <typename T>
+class SimpleVector
+{ 
+public:
+  SimpleVector() : start_(NULL), length_(0) {}
+  SimpleVector(T *data, uint64_t len) : start_(data), length_(len)
+  {
+    ASSERT(len == 0 || (len > 0 && data != NULL));
+  }
+
+  // Returns a vector using the same backing storage as this one,
+  // spanning from and including 'from', to but not including 'to'.
+  SimpleVector<T> SubVector(uint64_t from, uint64_t to)
+  {
+    ASSERT(to <= length_);
+    ASSERT(from < to);
+    ASSERT(0 <= from);
+    return SimpleVector<T>(start() + from, to - from);
+  }
+
+  // Returns the length of the vector.
+  uint64_t length() const { return length_; }
+
+  // Returns whether or not the vector is empty.
+  bool is_empty() const { return length_ == 0; }
+
+  // Returns the pointer to the start of the data in the vector.
+  T *start() const { return start_; }
+
+  // Access individual vector elements - checks bounds in debug mode.
+  T &operator[](uint64_t index) const
+  {
+    ASSERT(0 <= index && index < length_);
+    return start_[index];
+  }
+
+  T &first() { return start_[0]; }
+
+  T &last() { return start_[length_ - 1]; }
+
+private:
+  T *start_;
+  uint64_t length_;
+};
+
+class StringBuilder
+{
+public:
+  StringBuilder(char *buffer, uint64_t buffer_size)
+      : buffer_(buffer, buffer_size), position_(0) {}
+
+  ~StringBuilder()
+  {
+    if (!is_finalized())
+      Finalize();
+  }
+
+  uint64_t size() const { return buffer_.length(); }
+
+  // Get the current position in the builder.
+  uint64_t position() const
+  {
+    ASSERT(!is_finalized());
+    return position_;
+  }
+
+  // Reset the position.
+  void Reset() { position_ = 0; }
+
+  // Add a single character to the builder. It is not allowed to add
+  // 0-characters; use the Finalize() method to terminate the string
+  // instead.
+  void AddCharacter(char c)
+  {
+    ASSERT(c != '\0');
+    ASSERT(!is_finalized() && position_ < buffer_.length());
+    buffer_[position_++] = c;
+  }
+
+  // Add an entire string to the builder. Uses strlen() internally to
+  // compute the length of the input string.
+  void AddString(const char *s)
+  {
+    AddSubstring(s, StrLength(s));
+  }
+
+  // Add the first 'n' characters of the given string 's' to the
+  // builder. The input string must have enough characters.
+  void AddSubstring(const char *s, uint64_t n)
+  {
+    ASSERT(!is_finalized() && position_ + n < buffer_.length());
+    ASSERT(static_cast<size_t>(n) <= strlen(s));
+    memmove(&buffer_[position_], s, n * sizeof(char));
+    position_ += n;
+  }
+
+  // Add character padding to the builder. If count is non-positive,
+  // nothing is added to the builder.
+  void AddPadding(char c, uint64_t count)
+  {
+    for (uint64_t i = 0; i < count; i++)
+    {
+      AddCharacter(c);
+    }
+  }
+
+  // Finalize the string by 0-terminating it and returning the buffer.
+  char *Finalize()
+  {
+    ASSERT(!is_finalized() && position_ < buffer_.length());
+    buffer_[position_] = '\0';
+    // Make sure nobody managed to add a 0-character to the
+    // buffer while building the string.
+    ASSERT(strlen(buffer_.start()) == static_cast<size_t>(position_));
+    position_ = -1;
+    ASSERT(is_finalized());
+    return buffer_.start();
+  }
+
+private:
+  SimpleVector<char> buffer_;
+  int64_t position_;
+
+  bool is_finalized() const { return position_ < 0; }
+
+  DISALLOW_COPY_AND_ASSIGN(StringBuilder);
+};
 
 } // namespace util
 } // namespace mycc

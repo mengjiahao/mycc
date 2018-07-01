@@ -6,12 +6,28 @@
 #include <assert.h>
 #include <functional>
 #include <unordered_map>
+#include "atomic_util.h"
 #include "types_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+//
+// A base class for reference counted classes.  Otherwise, known as a cheap
+// knock-off of WebKit's RefCounted<T> class.  To use this guy just extend your
+// class from it like so:
+//
+//   class MyFoo : public RefCounted<MyFoo> {
+//    ...
+//    private:
+//     friend class RefCounted<MyFoo>;
+//     ~MyFoo();
+//   };
+//
+// You should always make your destructor private, to avoid any code deleting
+// the object accidently while there are references to it.
 
 class RefCounted
 {
@@ -49,23 +65,6 @@ private:
   DISALLOW_COPY_AND_ASSIGN(RefCounted);
 };
 
-// Helper class to unref an object when out-of-scope.
-class ScopedUnref
-{
-public:
-  explicit ScopedUnref(RefCounted *o) : obj_(o) {}
-  ~ScopedUnref()
-  {
-    if (obj_)
-      obj_->Unref();
-  }
-
-private:
-  RefCounted *obj_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedUnref);
-};
-
 // Inlined routines, since these are performance critical
 inline RefCounted::RefCounted() : ref_(1) {}
 
@@ -98,6 +97,159 @@ inline bool RefCounted::Unref() const
 inline bool RefCounted::RefCountIsOne() const
 {
   return (ref_.load(std::memory_order_acquire) == 1);
+}
+
+// Helper class to unref an object when out-of-scope.
+class ScopedUnref
+{
+public:
+  explicit ScopedUnref(RefCounted *o) : obj_(o) {}
+  ~ScopedUnref()
+  {
+    if (obj_)
+      obj_->Unref();
+  }
+
+private:
+  RefCounted *obj_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedUnref);
+};
+
+//
+// A smart pointer class for reference counted objects.  Use this class instead
+// of calling AddRef and Release manually on a reference counted object to
+// avoid common memory leaks caused by forgetting to Release an object
+// reference.  Sample usage:
+//
+//   class MyFoo : public RefCounted<MyFoo> {
+//    ...
+//   };
+//
+//   void some_function() {
+//     ScopedRefCountedPtr<MyFoo> foo = new MyFoo();
+//     foo->Method(param);
+//     // |foo| is released when this function returns
+//   }
+//
+//   void some_other_function() {
+//     ScopedRefCountedPtr<MyFoo> foo = new MyFoo();
+//     ...
+//     foo = NULL;  // explicitly releases |foo|
+//     ...
+//     if (foo)
+//       foo->Method(param);
+//   }
+//
+// The above examples show how ScopedRefCountedPtr<T> acts like a pointer to T.
+// Given two ScopedRefCountedPtr<T> classes, it is also possible to exchange
+// references between the two objects, like so:
+//
+//   {
+//     ScopedRefCountedPtr<MyFoo> a = new MyFoo();
+//     ScopedRefCountedPtr<MyFoo> b;
+//
+//     b.swap(a);
+//     // now, |b| references the MyFoo object, and |a| references NULL.
+//   }
+//
+// To make both |a| and |b| in the above example reference the same MyFoo
+// object, simply use the assignment operator:
+//
+//   {
+//     ScopedRefCountedPtr<MyFoo> a = new MyFoo();
+//     ScopedRefCountedPtr<MyFoo> b;
+//
+//     b = a;
+//     // now, |a| and |b| each own a reference to the same MyFoo object.
+//   }
+//
+template <class T>
+class ScopedRefCountedPtr {
+ public:
+  typedef T element_type;
+
+  ScopedRefCountedPtr() : ptr_(NULL) {
+  }
+
+  ScopedRefCountedPtr(T* p) : ptr_(p) {
+    if (ptr_)
+      ptr_->AddRef();
+  }
+
+  ScopedRefCountedPtr(const ScopedRefCountedPtr<T>& r) : ptr_(r.ptr_) {
+    if (ptr_)
+      ptr_->AddRef();
+  }
+
+  template <typename U>
+  ScopedRefCountedPtr(const ScopedRefCountedPtr<U>& r) : ptr_(r.get()) {
+    if (ptr_)
+      ptr_->AddRef();
+  }
+
+  ~ScopedRefCountedPtr() {
+    if (ptr_)
+      ptr_->Unref();
+  }
+
+  T* get() const { return ptr_; }
+
+  // Allow ScopedRefCountedPtr<C> to be used in boolean expression
+  // and comparison operations. 
+  operator T*() const { return ptr_; }
+
+  T* operator->() const {
+    assert(ptr_ != NULL);
+    return ptr_;
+  }
+
+  ScopedRefCountedPtr<T>& operator=(T* p) {
+    // AddRef first so that self assignment should work
+    if (p)
+      p->AddRef();
+    T* old_ptr = ptr_;
+    ptr_ = p;
+    if (old_ptr)
+      old_ptr->Unref();
+    return *this;
+  }
+
+  ScopedRefCountedPtr<T>& operator=(const ScopedRefCountedPtr<T>& r) {
+    return *this = r.ptr_;
+  }
+
+  template <typename U>
+  ScopedRefCountedPtr<T>& operator=(const ScopedRefCountedPtr<U>& r) {
+    return *this = r.get();
+  }
+
+  void swap(T** pp) {
+    T* p = ptr_;
+    ptr_ = *pp;
+    *pp = p;
+  }
+
+  void swap(ScopedRefCountedPtr<T>& r) {
+    swap(&r.ptr_);
+  }
+
+  // Release ownership of ptr_, keeping its reference counter unchanged.
+  T* release() WARN_UNUSED_RESULT {
+      T* saved_ptr = NULL;
+      swap(&saved_ptr);
+      return saved_ptr;
+  }
+
+ protected:
+  T* ptr_;
+};
+
+// Handy utility for creating a ScopedRefCountedPtr<T> out of a T* explicitly without
+// having to retype all the template arguments
+template <typename T>
+ScopedRefCountedPtr<T> MakeScopedRefCountedPtr(T* t) {
+  return ScopedRefCountedPtr<T>(t);
 }
 
 ////////////////////// Ref //////////////////////////////////////
