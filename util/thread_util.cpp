@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <time.h>
 #include "math_util.h"
+#include "time_util.h"
 
 namespace mycc
 {
@@ -209,6 +209,101 @@ bool PosixThread::detach()
     return PthreadCall("pthread_detach", pthread_detach(tid_));
   }
   return true;
+}
+
+////////////////////////// BGThread //////////////////////////////
+
+void BGThread::Schedule(void (*function)(void *), void *arg)
+{
+  MutexLock l(&mu_);
+  while (queue_.size() >= full_ && !should_stop())
+  {
+    wsignal_.wait();
+  }
+  if (!should_stop())
+  {
+    queue_.push(BGItem(function, arg));
+    rsignal_.signal();
+  }
+}
+
+void BGThread::QueueSize(uint64_t *pri_size, uint64_t *qu_size)
+{
+  MutexLock l(&mu_);
+  *pri_size = timer_queue_.size();
+  *qu_size = queue_.size();
+}
+
+void BGThread::QueueClear()
+{
+  MutexLock l(&mu_);
+  std::queue<BGItem>().swap(queue_);
+  std::priority_queue<TimerItem>().swap(timer_queue_);
+}
+
+void *BGThread::ThreadMain()
+{
+  while (!should_stop())
+  {
+    mu_.lock();
+    while (queue_.empty() && timer_queue_.empty() && !should_stop())
+    {
+      rsignal_.wait();
+    }
+    if (should_stop())
+    {
+      mu_.unlock();
+      break;
+    }
+
+    if (!timer_queue_.empty())
+    {
+      uint64_t unow = NowSystimeMicros();
+      TimerItem timer_item = timer_queue_.top();
+      if (unow / 1000 >= timer_item.exec_time / 1000)
+      {
+        void (*function)(void *) = timer_item.function;
+        void *arg = timer_item.arg;
+        timer_queue_.pop();
+        mu_.unlock();
+        (*function)(arg);
+        continue;
+      }
+      else if (queue_.empty() && !should_stop())
+      {
+        rsignal_.timedWait((timer_item.exec_time - unow) / 1000);
+        mu_.unlock();
+        continue;
+      }
+    }
+
+    if (!queue_.empty())
+    {
+      void (*function)(void *) = queue_.front().function;
+      void *arg = queue_.front().arg;
+      queue_.pop();
+      wsignal_.signal();
+      mu_.unlock();
+      (*function)(arg);
+    }
+  }
+  return NULL;
+}
+
+/*
+ * timeout is in millisecond
+ */
+void BGThread::DelaySchedule(
+    uint64_t timeout_ms, void (*function)(void *), void *arg)
+{
+  uint64_t unow = NowSystimeMicros();
+  uint64_t exec_time;
+  exec_time = unow + timeout_ms * 1000;
+
+  mu_.lock();
+  timer_queue_.push(TimerItem(exec_time, function, arg));
+  rsignal_.signal();
+  mu_.unlock();
 }
 
 } // namespace util

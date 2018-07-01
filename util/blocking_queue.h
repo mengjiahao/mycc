@@ -1140,14 +1140,14 @@ public:
   /// @param value to be pushed
   /// @param timeout_in_ms timeout, in milliseconds
   /// @return whether pushed
-  bool TimedPushFront(const T &value, int timeout_in_ms)
+  bool TimedPushFront(const T &value, int64_t timeout_in_ms)
   {
     bool success = false;
     {
       MutexLock locker(&m_mutex);
 
       if (UnlockedIsFull())
-        m_cond_not_full.timedWait(&m_mutex, timeout_in_ms);
+        m_cond_not_full.timedWait(timeout_in_ms);
 
       if (!UnlockedIsFull())
       {
@@ -1166,13 +1166,13 @@ public:
   /// @param value to be pushed
   /// @param timeout_in_ms timeout, in milliseconds
   /// @return whether pushed
-  bool TimedPushBack(const T &value, int timeout_in_ms)
+  bool TimedPushBack(const T &value, int64_t timeout_in_ms)
   {
     bool success = false;
     {
       MutexLock locker(&m_mutex);
       if (UnlockedIsFull())
-        m_cond_not_full.timedWait(&m_mutex, timeout_in_ms);
+        m_cond_not_full.timedWait(timeout_in_ms);
 
       if (!UnlockedIsFull())
       {
@@ -1189,14 +1189,14 @@ public:
   /// @param value to hold the result
   /// @param timeout_in_ms timeout, in milliseconds
   /// @return whether poped
-  bool TimedPopFront(T *value, int timeout_in_ms)
+  bool TimedPopFront(T *value, int64_t timeout_in_ms)
   {
     bool success = false;
     {
       MutexLock locker(&m_mutex);
 
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+        m_cond_not_empty.timedWait(timeout_in_ms);
 
       if (!m_queue.empty())
       {
@@ -1216,14 +1216,14 @@ public:
   /// @param value to hold the result
   /// @param timeout_in_ms timeout, in milliseconds
   /// @return whether poped
-  bool TimedPopBack(T *value, int timeout_in_ms)
+  bool TimedPopBack(T *value, int64_t timeout_in_ms)
   {
     bool success = false;
     {
       MutexLock locker(&m_mutex);
 
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+        m_cond_not_empty.timedWait(timeout_in_ms);
 
       if (!m_queue.empty())
       {
@@ -1282,7 +1282,7 @@ public:
   /// function.
   /// @param timeout_in_ms timeout, in milliseconds.
   /// @return whether poped.
-  bool TimedPopAll(UnderlyContainerType *values, int timeout_in_ms)
+  bool TimedPopAll(UnderlyContainerType *values, int64_t timeout_in_ms)
   {
     bool success = false;
     values->clear();
@@ -1290,7 +1290,7 @@ public:
     {
       MutexLock locker(&m_mutex);
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(&m_mutex, timeout_in_ms);
+        m_cond_not_empty.timedWait(timeout_in_ms);
 
       if (!m_queue.empty())
       {

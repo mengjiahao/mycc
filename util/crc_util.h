@@ -1,6 +1,6 @@
 
-#ifndef MYCC_UTIL_CRC32_UTIL_H_
-#define MYCC_UTIL_CRC32_UTIL_H_
+#ifndef MYCC_UTIL_CRC_UTIL_H_
+#define MYCC_UTIL_CRC_UTIL_H_
 
 #include "types_util.h"
 
@@ -36,4 +36,4 @@ inline uint32_t Crc32Unmask(uint32_t masked_crc) {
 } // namespace util
 } // namespace mycc
 
-#endif // MYCC_UTIL_CRC32_UTIL_H_
+#endif // MYCC_UTIL_CRC_UTIL_H_

@@ -418,7 +418,7 @@ void CondLock::wait()
   PthreadCall("condlock wait", pthread_cond_wait(&cond_, &mutex_));
 }
 
-bool CondLock::timedWait(uint64_t time_ms)
+bool CondLock::timedWait(int64_t time_ms)
 {
   struct timespec ts;
   MakeTimeoutMs(&ts, time_ms);

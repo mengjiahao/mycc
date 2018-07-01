@@ -17,7 +17,7 @@ struct BinaryTree : public Tree
 {
   virtual void Print()
   {
-    printf("I am binary tree\n");
+    PRINT_INFO("%s\n", "I am binary tree");
   }
 };
 
@@ -25,7 +25,7 @@ struct AVLTree : public Tree
 {
   virtual void Print()
   {
-    printf("I am AVL tree\n");
+    PRINT_INFO("%s\n", "I am AVL tree\n");
   }
 };
 

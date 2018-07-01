@@ -19,8 +19,11 @@ namespace util
 
 #define STR_ERRORNO() (errno == 0 ? "None" : strerror(errno))
 
+string CurrentTestTimeString();
+
 #define PANIC(fmt, ...)                                                           \
-  fprintf(stderr, "PANIC [%s:%d](%s) errno: %d %s, " fmt,                         \
+  fprintf(stderr, "PANIC |%s|[%s:%d](%s) errno: %d %s, " fmt,                     \
+          ::mycc::util::CurrentTestTimeString().c_str(),                          \
           __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
   fflush(stderr);                                                                 \
   abort()
@@ -34,22 +37,26 @@ namespace util
 /// Print error utils
 
 #define PRINT_INFO(fmt, ...)                                \
-  fprintf(stderr, "INFO [%s:%d](%s) " fmt,                  \
+  fprintf(stderr, "INFO |%s|[%s:%d](%s) " fmt,              \
+          ::mycc::util::CurrentTestTimeString().c_str(),    \
           __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__); \
   fflush(stderr)
 
 #define PRINT_WARN(fmt, ...)                                                      \
-  fprintf(stderr, "WARN [%s:%d](%s) errno: %d %s, " fmt,                          \
+  fprintf(stderr, "WARN |%s|[%s:%d](%s) errno: %d %s, " fmt,                      \
+          ::mycc::util::CurrentTestTimeString().c_str(),                          \
           __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
   fflush(stderr)
 
 #define PRINT_ERROR(fmt, ...)                                                     \
-  fprintf(stderr, "ERROR [%s:%d](%s) errno: %d %s, " fmt,                         \
+  fprintf(stderr, "ERROR |%s|[%s:%d](%s) errno: %d %s, " fmt,                     \
+          ::mycc::util::CurrentTestTimeString().c_str(),                          \
           __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
   fflush(stderr)
 
 #define PRINT_FATAL(fmt, ...)                                                     \
-  fprintf(stderr, "FATAL [%s:%d](%s) errno: %d %s, " fmt,                         \
+  fprintf(stderr, "FATAL |%s|[%s:%d](%s) errno: %d %s, " fmt,                     \
+          ::mycc::util::CurrentTestTimeString().c_str(),                          \
           __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
   fflush(stderr)                                                                  \
       abort()
@@ -57,13 +64,15 @@ namespace util
 #define PRINT_TRACE(fmt, ...)                                                       \
   if (ENABLE_DEBUG)                                                                 \
   {                                                                                 \
-    fprintf(stderr, "TRACE [%s:%d](%s) errno: %d %s, " fmt,                         \
+    fprintf(stderr, "TRACE |%s|[%s:%d](%s) errno: %d %s, " fmt,                     \
+            ::mycc::util::CurrentTestTimeString().c_str(),                          \
             __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
     fflush(stderr)                                                                  \
   }
 
 #define PRINT_ASSERT(fmt, ...)                                                    \
-  fprintf(stderr, "ASSERT [%s:%d](%s) errno: %d %s, " fmt,                        \
+  fprintf(stderr, "ASSERT |%s|[%s:%d](%s) errno: %d %s, " fmt,                    \
+          ::mycc::util::CurrentTestTimeString().c_str(),                          \
           __FILE__, __LINE__, __FUNCTION__, errno, STR_ERRORNO(), ##__VA_ARGS__); \
   fflush(stderr)
 

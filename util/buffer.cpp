@@ -108,7 +108,7 @@ Status InputBuffer::ReadNBytes(int64_t bytes_to_read, char *result,
     }
     // Do not go over the buffer boundary.
     const int64_t bytes_to_copy =
-        MATH_MIN(limit_ - pos_, bytes_to_read - *bytes_read);
+        MATH_MIN((int64_t)(limit_ - pos_), (int64_t)(bytes_to_read - *bytes_read));
     // Copies buffered data into the destination.
     memcpy(result + *bytes_read, pos_, bytes_to_copy);
     pos_ += bytes_to_copy;

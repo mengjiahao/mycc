@@ -556,7 +556,7 @@ public:
   void lock();
   void unlock();
   void wait();
-  bool timedWait(uint64_t time_ms);
+  bool timedWait(int64_t time_ms);
   void signal();
   void broadcast();
 

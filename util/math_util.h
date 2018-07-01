@@ -343,7 +343,7 @@ inline float fastersigmoid(float x)
 inline float InvSqrt(float x)
 {
   float xhalf = 0.5f * x;
-  int i = *reinterpret_cast<int *>(&x); // get bits for floating VALUE
+  int32_t i = *reinterpret_cast<int32_t *>(&x); // get bits for floating VALUE
   i = 0x5f375a86 - (i >> 1);            // gives initial guess y0
   x = *reinterpret_cast<float *>(&i);   // convert bits BACK to float
   x = x * (1.5f - xhalf * x * x);       // Newton step, repeating increases accuracy

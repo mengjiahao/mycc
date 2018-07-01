@@ -69,6 +69,10 @@ public:
   {
     return uniform(1 << uniform(max_log + 1));
   }
+
+  // Returns a Random instance for use by the current thread without
+  // additional locking
+  static Random* GetTLSInstance();
 };
 
 // A simple 64bit random number generator based on std::mt19937_64

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <memory>
+#include <queue>
 #include <thread>
 #include "atomic_util.h"
 #include "blocking_queue.h"
@@ -138,6 +139,174 @@ private:
   std::function<void()> user_proc_; // for c++11
 
   DISALLOW_COPY_AND_ASSIGN(PosixThread);
+};
+
+// ThreadBase class
+
+class ThreadBase
+{
+public:
+  ThreadBase()
+      : should_stop_(false),
+        running_(false),
+        thread_id_(0)
+  {
+  }
+
+  virtual ~ThreadBase(){};
+
+  virtual int StartThread()
+  {
+    MutexLock l(&running_mu_);
+    should_stop_ = false;
+    if (!running_)
+    {
+      running_ = true;
+      return pthread_create(&thread_id_, nullptr, RunThread, (void *)this);
+    }
+    return 0;
+  }
+
+  virtual int StopThread()
+  {
+    MutexLock l(&running_mu_);
+    should_stop_ = true;
+    if (running_)
+    {
+      running_ = false;
+      return pthread_join(thread_id_, nullptr);
+    }
+    return 0;
+  }
+
+  int JoinThread()
+  {
+    return pthread_join(thread_id_, nullptr);
+  }
+
+  bool should_stop()
+  {
+    return should_stop_.load();
+  }
+
+  void set_should_stop()
+  {
+    should_stop_.store(true);
+  }
+
+  bool is_running()
+  {
+    return running_;
+  }
+
+  pthread_t thread_id() const
+  {
+    return thread_id_;
+  }
+
+  string thread_name() const
+  {
+    return thread_name_;
+  }
+
+  void set_thread_name(const string &name)
+  {
+    thread_name_ = name;
+  }
+
+protected:
+  std::atomic<bool> should_stop_;
+
+  virtual void *ThreadMain() = 0;
+
+private:
+  static void *RunThread(void *arg)
+  {
+    ThreadBase *thread = reinterpret_cast<ThreadBase *>(arg);
+    if (!(thread->thread_name().empty()))
+    {
+      //SetThreadName(pthread_self(), thread->thread_name());
+    }
+    thread->ThreadMain();
+    return nullptr;
+  }
+
+  Mutex running_mu_;
+  bool running_;
+  pthread_t thread_id_;
+  string thread_name_;
+
+  DISALLOW_COPY_AND_ASSIGN(ThreadBase);
+};
+
+class BGThread : public ThreadBase
+{
+public:
+  struct TimerItem
+  {
+    uint64_t exec_time;
+    void (*function)(void *);
+    void *arg;
+
+    TimerItem(uint64_t _exec_time, void (*_function)(void *), void *_arg)
+        : exec_time(_exec_time),
+          function(_function),
+          arg(_arg) {}
+
+    bool operator<(const TimerItem &item) const
+    {
+      return exec_time > item.exec_time;
+    }
+  };
+
+  explicit BGThread(uint64_t full = 100000)
+      : ThreadBase::ThreadBase(),
+        full_(full),
+        mu_(),
+        rsignal_(&mu_),
+        wsignal_(&mu_)
+  {
+  }
+
+  virtual ~BGThread()
+  {
+    StopThread();
+  }
+
+  virtual int StopThread() override
+  {
+    should_stop_ = true;
+    rsignal_.signal();
+    wsignal_.signal();
+    return ThreadBase::StopThread();
+  }
+
+  void Schedule(void (*function)(void *), void *arg);
+
+  void DelaySchedule(uint64_t timeout_ms, void (*function)(void *), void *arg);
+
+  void QueueSize(uint64_t *pri_size, uint64_t *qu_size);
+  void QueueClear();
+
+protected:
+  virtual void *ThreadMain() override;
+
+private:
+  struct BGItem
+  {
+    void (*function)(void *);
+    void *arg;
+    BGItem(void (*_function)(void *), void *_arg)
+        : function(_function), arg(_arg) {}
+  };
+
+  std::queue<BGItem> queue_;
+  std::priority_queue<TimerItem> timer_queue_;
+
+  uint64_t full_;
+  Mutex mu_;
+  CondVar rsignal_;
+  CondVar wsignal_;
 };
 
 /**

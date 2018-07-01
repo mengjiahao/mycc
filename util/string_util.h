@@ -628,7 +628,7 @@ public:
   void AddCharacter(char c)
   {
     ASSERT(c != '\0');
-    ASSERT(!is_finalized() && position_ < buffer_.length());
+    ASSERT(!is_finalized() && position_ < (int64_t)(buffer_.length()));
     buffer_[position_++] = c;
   }
 
@@ -662,7 +662,7 @@ public:
   // Finalize the string by 0-terminating it and returning the buffer.
   char *Finalize()
   {
-    ASSERT(!is_finalized() && position_ < buffer_.length());
+    ASSERT(!is_finalized() && position_ < (int64_t)(buffer_.length()));
     buffer_[position_] = '\0';
     // Make sure nobody managed to add a 0-character to the
     // buffer while building the string.

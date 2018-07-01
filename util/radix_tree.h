@@ -41,9 +41,9 @@ struct radix_tree_root
 #define RADIX_TREE(name, mask) \
   struct radix_tree_root name = RADIX_TREE_INIT(mask)
 
-void *radix_tree_lookup(struct radix_tree_root *, uint32_t);
-void *radix_tree_delete(struct radix_tree_root *, uint32_t);
-int32_t radix_tree_insert(struct radix_tree_root *, uint32_t, void *);
+void *radix_tree_lookup(struct radix_tree_root *, int32_t);
+void *radix_tree_delete(struct radix_tree_root *, int32_t);
+int32_t radix_tree_insert(struct radix_tree_root *, int32_t, void *);
 
 } // namespace util
 } // namespace mycc

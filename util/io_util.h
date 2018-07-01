@@ -30,7 +30,7 @@ private:
   string filename_;
   FILE *file_;
   int fd_;
-  bool use_direct_io_ ATTRIBUTE_UNUSED;
+  bool use_direct_io_;
   uint64_t logical_sector_size_;
 
 public:

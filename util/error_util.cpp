@@ -1,10 +1,16 @@
 
 #include "error_util.h"
+#include "time_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+string CurrentTestTimeString()
+{
+  return CurrentSystimeString();
+}
 
 Exception::Exception(const string &buffer)
     : _buffer(buffer), _code(0)

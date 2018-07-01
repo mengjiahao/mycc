@@ -17,13 +17,13 @@ radix_max(struct radix_tree_root *root)
 }
 
 static inline int32_t
-radix_pos(long id, int32_t height)
+radix_pos(int32_t id, int32_t height)
 {
   return (id >> (RADIX_TREE_MAP_SHIFT * height)) & RADIX_TREE_MAP_MASK;
 }
 
 void *
-radix_tree_lookup(struct radix_tree_root *root, uint32_t index)
+radix_tree_lookup(struct radix_tree_root *root, int32_t index)
 {
   struct radix_tree_node *node;
   void *item;
@@ -44,7 +44,7 @@ out:
 }
 
 void *
-radix_tree_delete(struct radix_tree_root *root, uint32_t index)
+radix_tree_delete(struct radix_tree_root *root, int32_t index)
 {
   struct radix_tree_node *stack[RADIX_TREE_MAX_HEIGHT];
   struct radix_tree_node *node;
@@ -89,7 +89,7 @@ out:
   return (item);
 }
 
-int32_t radix_tree_insert(struct radix_tree_root *root, uint32_t index, void *item)
+int32_t radix_tree_insert(struct radix_tree_root *root, int32_t index, void *item)
 {
   struct radix_tree_node *node;
   struct radix_tree_node *temp[RADIX_TREE_MAX_HEIGHT - 1];
