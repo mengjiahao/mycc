@@ -17,6 +17,9 @@ namespace util
 
 const string kNullptrString = "nullptr";
 
+#define DIG2CHR(dig) (((dig) <= 0x09) ? ('0' + (dig)) : ('a' + (dig)-0x0a))
+#define CHR2DIG(chr) (((chr) >= '0' && (chr) <= '9') ? ((chr) - '0') : (((chr) >= 'a' && (chr) <= 'f') ? ((chr) - 'a' + 0x0a) : ((chr) - 'A' + 0x0a)))
+
 namespace
 { // anonymous namespace
 
@@ -111,22 +114,6 @@ bool ParsePrechecks(const string &str)
 
 // string ascii
 
-bool IsHexNumberString(const string &str)
-{
-  uint64_t starting_location = 0;
-  if (str.size() > 2 && *str.begin() == '0' && *(str.begin() + 1) == 'x')
-  {
-    starting_location = 2;
-  }
-  for (auto c : str.substr(starting_location))
-  {
-    if (!IsHexDigit(c))
-      return false;
-  }
-  // Return false for empty string or "0x".
-  return (str.size() > starting_location);
-}
-
 string DebugString(const string &src)
 {
   uint64_t src_len = src.size();
@@ -151,6 +138,123 @@ string DebugString(const string &src)
   }
 
   return dst.substr(0, j);
+}
+
+string Bin2HexStr(const char *data, uint64_t len)
+{
+  if (len <= 0)
+    return "";
+
+  static char hexmap[] = {
+      '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+  string result(len * 2, ' ');
+  for (uint64_t i = 0; i < len; ++i)
+  {
+    result[2 * i] = hexmap[(data[i] & 0xF0) >> 4];
+    result[2 * i + 1] = hexmap[data[i] & 0x0F];
+  }
+  return result;
+}
+
+bool Hex2binStr(const string &src, char *data, uint64_t &len)
+{
+  uint64_t str_len = src.size();
+  if (str_len % 2 != 0 || str_len >= (2 * len))
+    return false;
+
+  char c, b;
+  bool first = true;
+  for (uint64_t i = 0; i < str_len; i += 2)
+  {
+    c = src[i];
+    if ((c > 47) && (c < 58))
+      c -= 48;
+    else if ((c > 64) && (c < 71))
+      c -= (65 - 10);
+    else if ((c > 96) && (c < 103))
+      c -= (97 - 10);
+    else
+      continue;
+
+    if (first)
+      b = c << 4;
+    else
+      data[i / 2] = static_cast<uint8_t>(b + c);
+
+    first = !first;
+  }
+  return true;
+}
+
+void Str2Hex(const char *str, unsigned char *hex, uint64_t len)
+{
+  uint64_t i = 0;
+  for (; i < len; i++)
+  {
+    hex[i] = ((CHR2DIG(str[i * 2]) << 4) & 0xf0) + CHR2DIG(str[i * 2 + 1]);
+  }
+}
+
+void Hex2Str(unsigned char *data, uint64_t len, char *str)
+{
+  uint64_t i = 0;
+  for (; i < len; i++)
+  {
+    str[i * 2] = DIG2CHR((data[i] >> 4) & 0x0f);
+    str[i * 2 + 1] = DIG2CHR((data[i]) & 0x0f);
+  }
+  str[len * 2] = '\0';
+}
+
+void Str2Upper(const char *src, char *dest)
+{
+  while (*src)
+  {
+    if (*src >= 'a' && *src <= 'z')
+    {
+      *dest++ = *src - 32;
+    }
+    else
+    {
+      *dest++ = *src;
+    }
+    ++src;
+  }
+  *dest = '\0';
+}
+
+void Str2Lower(const char *src, char *dest)
+{
+  while (*src)
+  {
+    if (*src >= 'A' && *src <= 'Z')
+    {
+      *dest++ = *src + 32;
+    }
+    else
+    {
+      *dest++ = *src;
+    }
+    ++src;
+  }
+  *dest = '\0';
+}
+
+bool IsHexNumberString(const string &str)
+{
+  uint64_t starting_location = 0;
+  if (str.size() > 2 && *str.begin() == '0' && *(str.begin() + 1) == 'x')
+  {
+    starting_location = 2;
+  }
+  for (auto c : str.substr(starting_location))
+  {
+    if (!IsHexDigit(c))
+      return false;
+  }
+  // Return false for empty string or "0x".
+  return (str.size() > starting_location);
 }
 
 std::vector<uint8_t> ParseHex(const char *psz)
@@ -832,19 +936,19 @@ char *UInt64ToHexString(uint64_t value, char *buffer)
 string UInt16ToHexString(uint16_t value)
 {
   char buffer[2 * sizeof(value) + 1];
-  return std::string(buffer, WriteHexUInt16ToBuffer(value, buffer));
+  return string(buffer, WriteHexUInt16ToBuffer(value, buffer));
 }
 
 string UInt32ToHexString(uint32_t value)
 {
   char buffer[2 * sizeof(value) + 1];
-  return std::string(buffer, WriteHexUInt32ToBuffer(value, buffer));
+  return string(buffer, WriteHexUInt32ToBuffer(value, buffer));
 }
 
 string UInt64ToHexString(uint64_t value)
 {
   char buffer[2 * sizeof(value) + 1];
-  return std::string(buffer, WriteHexUInt64ToBuffer(value, buffer));
+  return string(buffer, WriteHexUInt64ToBuffer(value, buffer));
 }
 
 // -----------------------------------------------------------------
@@ -1389,7 +1493,7 @@ string StringReplace(const string &str, const string &src,
 string StringConcat(const std::vector<string> &elems, char delim)
 {
   string result;
-  std::vector<std::string>::const_iterator it = elems.begin();
+  std::vector<string>::const_iterator it = elems.begin();
   while (it != elems.end())
   {
     result.append(*it);
@@ -1445,7 +1549,7 @@ bool StringConsumePrefix(StringPiece *s, StringPiece expected)
   return false;
 }
 
-bool StringeConsumeSuffix(StringPiece *s, StringPiece expected)
+bool StringConsumeSuffix(StringPiece *s, StringPiece expected)
 {
   if (s->ends_with(expected))
   {
@@ -1510,6 +1614,16 @@ bool StringConsumeNonWhitespace(StringPiece *s, StringPiece *val)
     *val = StringPiece();
     return false;
   }
+}
+
+string StringRemoveCharset(const string &src, const char *charset)
+{
+  string result(src);
+  for (uint64_t i = 0; i < strlen(charset); i++)
+  {
+    result.erase(std::remove(result.begin(), result.end(), charset[i]), result.end());
+  }
+  return result;
 }
 
 /*!

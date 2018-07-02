@@ -72,8 +72,6 @@ inline bool IsNaN(double value)
   return !(value > value) && !(value <= value);
 }
 
-bool IsHexNumberString(const string &str);
-
 inline char ToHexAscii(uint8_t v)
 {
   if (v <= 9)
@@ -112,6 +110,15 @@ inline char *StringAsArray(string *str)
 }
 
 string DebugString(const string &src);
+
+string Bin2HexStr(const char *data, uint64_t len);
+bool Hex2binStr(const string &src, char *data, uint64_t &len);
+void Str2Hex(const char *str, unsigned char *hex, uint64_t len);
+void Hex2Str(unsigned char *data, uint64_t len, char *str);
+void Str2Upper(const char *src, char *dest);
+void Str2Lower(const char *src, char *dest);
+
+bool IsHexNumberString(const string &str);
 std::vector<uint8_t> ParseHex(const char *psz);
 string StringToHex(const char *str, uint64_t len);
 
@@ -407,6 +414,8 @@ bool StringConsumePrefix(StringPiece *s, StringPiece expected);
 // Otherwise, return false.
 bool StringConsumeSuffix(StringPiece *s, StringPiece expected);
 
+string StringRemoveCharset(const string &src, const char *charset);
+
 std::vector<string> StringSplit(const string &s, char delim);
 std::vector<string> StringSplit(StringPiece text, StringPiece delims);
 
@@ -555,7 +564,7 @@ inline uint64_t StrLength(const char *string)
 // This is a simplified version of V8's SimpleVector class.
 template <typename T>
 class SimpleVector
-{ 
+{
 public:
   SimpleVector() : start_(NULL), length_(0) {}
   SimpleVector(T *data, uint64_t len) : start_(data), length_(len)
