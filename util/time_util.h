@@ -9,7 +9,11 @@
 #include <unistd.h>
 #include <atomic>
 #include <chrono>
+#include <functional>
+#include <list>
+#include <memory>
 #include <type_traits>
+#include <unordered_map>
 #include "error_util.h"
 #include "types_util.h"
 
@@ -349,6 +353,7 @@ int64_t NowMonotonicNanos();
 int64_t NowMonotonicMicros();
 int64_t NowMonotonicSecs();
 int64_t NowSystimeMicros();
+int64_t NowSystimeMillis();
 int64_t NowSystimeSecs();
 
 string CurrentSystimeString();
@@ -687,6 +692,52 @@ public:
 protected:
   std::chrono::time_point<clock> start_time_;
   DISALLOW_COPY_AND_ASSIGN(ChronoSimpleTimer);
+};
+
+// start O(1gn)，timeout O(1)，stop O(1gn)
+class SequenceTimer : public Timer
+{
+public:
+  typedef std::function<int32_t()> TimeoutCallback;
+
+  SequenceTimer();
+  virtual ~SequenceTimer() {};
+
+  virtual int64_t StartTimer(uint32_t timeout_ms, const TimeoutCallback &cb);
+  virtual int32_t StopTimer(int64_t timer_id);
+  virtual int32_t Update();
+  virtual const char *GetLastError() const
+  {
+    return m_last_error;
+  }
+  virtual int64_t GetTimerNum()
+  {
+    return m_id_2_timer.size();
+  }
+
+private:
+  struct TimerItem
+  {
+    TimerItem()
+    {
+      stoped = false;
+      id = -1;
+      timeout = 0;
+    }
+
+    bool stoped;
+    int64_t id;
+    int64_t timeout;
+    TimeoutCallback cb;
+  };
+
+private:
+  int64_t m_timer_seqid;
+  // map<timeout_ms, list<TimerItem> >
+  std::unordered_map<uint32_t, std::list<std::shared_ptr<TimerItem>>> m_timers;
+  // map<timer_seqid, TimerItem>
+  std::unordered_map<int64_t, std::shared_ptr<TimerItem>> m_id_2_timer;
+  char m_last_error[256];
 };
 
 } // namespace util

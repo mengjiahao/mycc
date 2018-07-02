@@ -2,6 +2,7 @@
 #ifndef MYCC_UTIL_SHM_UTIL_H_
 #define MYCC_UTIL_SHM_UTIL_H_
 
+#include <unistd.h>
 #include <sys/shm.h>
 #include "types_util.h"
 
@@ -10,8 +11,43 @@ namespace mycc
 namespace util
 {
 
+class TCShm
+{
+public:
+  TCShm(bool bOwner = false)
+      : _shmSize(0), _shmKey(0), _pshm(NULL), _shemID(-1),
+        _bOwner(bOwner), _bCreate(true) {}
+
+  TCShm(uint64_t iShmSize, key_t iKey, bool bOwner = false);
+  ~TCShm();
+
+  void init(uint64_t iShmSize, key_t iKey, bool bOwner = false);
+  // created or connect shm, created shm need to be inited
+  bool iscreate() { return _bCreate; }
+  // shm base
+  void *getPointer() { return _pshm; }
+  // shm key
+  key_t getkey() { return _shmKey; }
+  // shm id
+  int getid() { return _shemID; }
+  // shm size
+  uint64_t size() { return _shmSize; }
+  // detach shm in current process
+  int detach();
+  // totally delete shm
+  int del();
+
+protected:
+  uint64_t _shmSize;
+  key_t _shmKey;
+  void *_pshm;
+  int _shemID;
+  bool _bOwner; // when _bOwner=true, need to detach when dtor
+  bool _bCreate;
+};
+
 // Use shm as bitmap
-class ShmBitmapManager
+class TCShmBitmapManager
 {
 public:
   enum
@@ -33,8 +69,8 @@ public:
     BITMAP_CLR = 2
   };
 
-  ~ShmBitmapManager(void);
-  static ShmBitmapManager *instance(void);
+  ~TCShmBitmapManager(void);
+  static TCShmBitmapManager *instance(void);
 
   int open(key_t key = 0, uint32_t max_uin = 0);
   int close(void);
@@ -52,7 +88,7 @@ private:
 
 private:
   void *shm_addr_; // bit map 共享内存映射地址
-  static ShmBitmapManager *instance_;
+  static TCShmBitmapManager *instance_;
   uint32_t max_uin_;
 };
 

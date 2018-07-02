@@ -36,6 +36,39 @@ std::mt19937 &RandomHelper::getEngine()
   return engine;
 }
 
+TrueRandom::TrueRandom()
+    : m_fd(-1)
+{
+  m_fd = open("/dev/urandom", O_RDONLY, 0);
+  if (m_fd < 0)
+  {
+    abort();
+  }
+}
+
+TrueRandom::~TrueRandom()
+{
+  close(m_fd);
+  m_fd = -1;
+}
+
+bool TrueRandom::nextBytes(void *buffer, uint64_t size)
+{
+  return read(m_fd, buffer, size) == static_cast<int32_t>(size);
+}
+
+uint32_t TrueRandom::nextUInt32()
+{
+  uint32_t random = -1;
+  nextBytes(&random, sizeof(random));
+  return random;
+}
+
+uint32_t TrueRandom::nextUInt32(uint32_t max_random)
+{
+  return nextUInt32() % max_random;
+}
+
 // We keep the file descriptor for /dev/urandom around so we don't need to
 // reopen it (which is expensive), and since we may not even be able to reopen
 // it if we are later put in a sandbox. This class wraps the file descriptor so

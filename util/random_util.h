@@ -72,7 +72,7 @@ public:
 
   // Returns a Random instance for use by the current thread without
   // additional locking
-  static Random* GetTLSInstance();
+  static Random *GetTLSInstance();
 };
 
 // A simple 64bit random number generator based on std::mt19937_64
@@ -162,6 +162,21 @@ inline float rand_0_1()
   return rand() / (float)RAND_MAX;
 
   //    return cocos2d::random(0.f, 1.f);
+};
+
+class TrueRandom
+{
+public:
+  TrueRandom();
+  ~TrueRandom();
+
+  uint32_t nextUInt32();
+  uint32_t nextUInt32(uint32_t max_random);
+  bool nextBytes(void *buffer, uint64_t size);
+
+private:
+  int32_t m_fd;
+  DISALLOW_COPY_AND_ASSIGN(TrueRandom);
 };
 
 // --------------------------------------------------------------------------

@@ -181,6 +181,9 @@ bool PosixThread::startForLaunch()
   return true;
 }
 
+// Note: if pthread_join when other thread is pthread_detach,
+// pthread_join may not return.
+// if pthread_join when other thread is not started, may crash.
 bool PosixThread::join()
 {
   if (amSelf())
