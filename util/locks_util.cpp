@@ -532,5 +532,168 @@ void Semaphore::post() { sem_post(&m->sem); }
 struct sembuf g_sem_lock = {0, -1, SEM_UNDO};
 struct sembuf g_sem_unlock = {0, 1, SEM_UNDO | IPC_NOWAIT};
 
+TCSemMutex::TCSemMutex() : _semID(-1), _semKey(-1)
+{
+}
+
+TCSemMutex::TCSemMutex(key_t iKey)
+{
+  init(iKey);
+}
+
+void TCSemMutex::init(key_t iKey)
+{
+#if defined(__GNU_LIBRARY__) && !defined(_SEM_SEMUN_UNDEFINED)
+/* union semun is defined by including <sys/sem.h> */
+#else
+  /* according to X/OPEN we have to define it ourselves */
+  union semun {
+    int val;               /* value for SETVAL */
+    struct semid_ds *buf;  /* buffer for IPC_STAT, IPC_SET */
+    unsigned short *array; /* array for GETALL, SETALL */
+                           /* Linux specific part: */
+    struct seminfo *__buf; /* buffer for IPC_INFO */
+  };
+#endif
+
+  int iSemID;
+  union semun arg;
+  u_short array[2] = {0, 0};
+
+  // 2 sem
+  if ((iSemID = semget(iKey, 2, IPC_CREAT | IPC_EXCL | 0666)) != -1)
+  {
+    arg.array = &array[0];
+    if (semctl(iSemID, 0, SETALL, arg) == -1)
+    {
+      //throw TC_SemMutex_Exception("[TCSemMutex::init] semctl error:" + string(strerror(errno)));
+      return;
+    }
+  }
+  else
+  {
+    if (errno != EEXIST)
+    {
+      //throw TC_SemMutex_Exception("[TCSemMutex::init] sem has exist error:" + string(strerror(errno)));
+      return;
+    }
+
+    if ((iSemID = semget(iKey, 2, 0666)) == -1)
+    {
+      //throw TC_SemMutex_Exception("[TCSemMutex::init] connect sem error:" + string(strerror(errno)));
+      return;
+    }
+  }
+
+  _semKey = iKey;
+  _semID = iSemID;
+}
+
+int TCSemMutex::rlock() const
+{
+  // wait fisrt sem util 0, second sem (semval+1)
+  struct sembuf sops[2] = {{0, 0, SEM_UNDO}, {1, 1, SEM_UNDO}};
+  uint64_t nsops = 2;
+  int ret = -1;
+
+  do
+  {
+    ret = semop(_semID, &sops[0], nsops);
+  } while ((ret == -1) && (errno == EINTR));
+
+  return ret;
+  //return semop( _semID, &sops[0], nsops);
+}
+
+int TCSemMutex::unrlock() const
+{
+  // wait second sem (semval>=1)
+  struct sembuf sops[1] = {{1, -1, SEM_UNDO}};
+  uint64_t nsops = 1;
+  int ret = -1;
+
+  do
+  {
+    ret = semop(_semID, &sops[0], nsops);
+  } while ((ret == -1) && (errno == EINTR));
+
+  return ret;
+  //return semop( _semID, &sops[0], nsops);
+}
+
+bool TCSemMutex::tryrlock() const
+{
+  struct sembuf sops[2] = {{0, 0, SEM_UNDO | IPC_NOWAIT}, {1, 1, SEM_UNDO | IPC_NOWAIT}};
+  uint64_t nsops = 2;
+
+  int iRet = semop(_semID, &sops[0], nsops);
+  if (iRet == -1)
+  {
+    if (errno == EAGAIN)
+    {
+      return false;
+    }
+    else
+    {
+      //throw TC_SemMutex_Exception("[TCSemMutex::tryrlock] semop error : " + string(strerror(errno)));
+      return false;
+    }
+  }
+  return true;
+}
+
+int TCSemMutex::wlock() const
+{
+  // wait first and second sem to 0, release first sem (semval+1)
+  struct sembuf sops[3] = {{0, 0, SEM_UNDO}, {1, 0, SEM_UNDO}, {0, 1, SEM_UNDO}};
+  uint64_t nsops = 3;
+  int ret = -1;
+
+  do
+  {
+    ret = semop(_semID, &sops[0], nsops);
+  } while ((ret == -1) && (errno == EINTR));
+
+  return ret;
+  //return semop( _semID, &sops[0], nsops);
+}
+
+int TCSemMutex::unwlock() const
+{
+  // wait first sem (semval >=1)
+  struct sembuf sops[1] = {{0, -1, SEM_UNDO}};
+  uint64_t nsops = 1;
+  int ret = -1;
+
+  do
+  {
+    ret = semop(_semID, &sops[0], nsops);
+  } while ((ret == -1) && (errno == EINTR));
+
+  return ret;
+  //return semop( _semID, &sops[0], nsops);
+}
+
+bool TCSemMutex::trywlock() const
+{
+  struct sembuf sops[3] = {{0, 0, SEM_UNDO | IPC_NOWAIT}, {1, 0, SEM_UNDO | IPC_NOWAIT}, {0, 1, SEM_UNDO | IPC_NOWAIT}};
+  uint64_t nsops = 3;
+
+  int iRet = semop(_semID, &sops[0], nsops);
+  if (iRet == -1)
+  {
+    if (errno == EAGAIN)
+    {
+      return false;
+    }
+    else
+    {
+      //throw TC_SemMutex_Exception("[TCSemMutex::trywlock] semop error : " + string(strerror(errno)));
+      return false;
+    }
+  }
+  return true;
+}
+
 } // namespace util
 } // namespace mycc

@@ -1053,6 +1053,31 @@ private:
   int m_semid;
 };
 
+class TCSemMutex
+{
+public:
+  TCSemMutex();
+  TCSemMutex(key_t iKey);
+  void init(key_t iKey);
+  // shm key
+  key_t getkey() const { return _semKey; }
+  // shm id
+  int getid() const { return _semID; }
+  int rlock() const;
+  int unrlock() const;
+  bool tryrlock() const;
+  int wlock() const;
+  int unwlock() const;
+  bool trywlock() const;
+  int lock() const { return wlock(); };
+  int unlock() const { return unwlock(); };
+  bool trylock() const { return trywlock(); };
+
+protected:
+  int _semID;
+  key_t _semKey;
+};
+
 } // namespace util
 } // namespace mycc
 

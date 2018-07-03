@@ -1,6 +1,7 @@
 #ifndef MYCC_UTIL_FILE_UTIL_H_
 #define MYCC_UTIL_FILE_UTIL_H_
 
+#include <sys/mman.h>
 #include <unistd.h>
 #include "types_util.h"
 
@@ -38,34 +39,34 @@ bool pipe2_cloexec(int pipefd[2]);
  * These retry on EINTR, and on error return -errno instead of returning
  * -1 and setting errno).
  */
-ssize_t safe_read(int fd, void *buf, size_t count);
-ssize_t safe_write(int fd, const void *buf, size_t count);
-ssize_t safe_pread(int fd, void *buf, size_t count, off_t offset);
-ssize_t safe_pwrite(int fd, const void *buf, size_t count, off_t offset);
+ssize_t safe_read(int fd, void *buf, uint64_t count);
+ssize_t safe_write(int fd, const void *buf, uint64_t count);
+ssize_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset);
+ssize_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset);
 
 /*
  * Similar to the above (non-exact version) and below (exact version).
  * See splice(2) for parameter descriptions.
  */
-ssize_t safe_splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out,
-                    size_t len, unsigned int flags);
-ssize_t safe_splice_exact(int fd_in, off_t *off_in, int fd_out,
-                          off_t *off_out, size_t len, unsigned int flags);
+ssize_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
+                    uint64_t len, unsigned int flags);
+ssize_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
+                          int64_t *off_out, uint64_t len, unsigned int flags);
 
 /*
  * Same as the above functions, but return -EDOM unless exactly the requested
  * number of bytes can be read.
  */
-ssize_t safe_read_exact(int fd, void *buf, size_t count);
-ssize_t safe_pread_exact(int fd, void *buf, size_t count, off_t offset);
+ssize_t safe_read_exact(int fd, void *buf, uint64_t count);
+ssize_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset);
 
 /*
  * Safe functions to read and write an entire file.
  */
 int safe_write_file(const char *base, const char *file,
-                    const char *val, size_t vallen);
+                    const char *val, uint64_t vallen);
 int safe_read_file(const char *base, const char *file,
-                   char *val, size_t vallen);
+                   char *val, uint64_t vallen);
 
 int make_dir(const string &path);
 
@@ -134,6 +135,88 @@ private:
   // Copying this makes no sense.
   DISALLOW_COPY_AND_ASSIGN(FdGuard);
 
+  int _fd;
+};
+
+class TCMmap
+{
+public:
+  // if bOwner, need munmap
+  TCMmap(bool bOwner = true);
+  ~TCMmap();
+  // if fd is -1, flags is MAP_ANONYMOUS
+  // prot: PROT_READ, PROT_WRITE, PROT_EXEC, PROT_NONE
+  // flags: MAP_SHARED, MAP_PRIVATE, MAP_FIXED
+  void mmap(uint64_t length, int prot, int flags, int fd, int64_t offset = 0);
+  // PROT_READ|PROT_WRITE, MAP_SHARED
+  // size = length + 1, there is a hole
+  void mmap(const char *file, uint64_t length);
+  void munmap();
+  void msync(bool bSync = false);
+  void *getPointer() const { return _pAddr; }
+  uint64_t getSize() const { return _iLength; }
+  // created or already exist
+  bool iscreate() const { return _bCreate; }
+  void setOwner(bool bOwner) { _bOwner = bOwner; }
+
+protected:
+  bool _bOwner;
+  void *_pAddr;
+  uint64_t _iLength;
+  bool _bCreate;
+};
+
+class TCFifo
+{
+public:
+  enum ENUM_RW_SET
+  {
+    EM_WRITE = 1,
+    EM_READ = 2
+  };
+
+public:
+  TCFifo(bool bOwener = true);
+  ~TCFifo();
+
+public:
+  int open(const string &sPath, ENUM_RW_SET enRW, mode_t mode = 0777);
+  void close();
+  int fd() const { return _fd; }
+  // 0< means read byte, =0 means end, <0 means error
+  int read(char *szBuff, const uint64_t sizeMax);
+  int write(const char *szBuff, const uint64_t sizeBuffLen);
+
+private:
+  string _sPathName;
+  bool _bOwner;
+  ENUM_RW_SET _enRW;
+  int _fd;
+};
+
+// process mutex
+class TCFileMutex
+{
+public:
+  TCFileMutex();
+  virtual ~TCFileMutex();
+  void init(const string &filename);
+  int rlock();
+  int unrlock();
+  bool tryrlock();
+  int wlock();
+  int unwlock();
+  bool trywlock();
+  int lock() { return wlock(); };
+  int unlock();
+  bool trylock() { return trywlock(); };
+
+protected:
+  // F_RDLCK, F_WRLCK, F_UNLCK
+  int lock(int fd, int cmd, int type, int64_t offset, int whence, int64_t len);
+  bool hasLock(int fd, int type, int64_t offset, int whence, int64_t len);
+
+private:
   int _fd;
 };
 
@@ -226,7 +309,7 @@ public:
 
   // Save binary data |buf| (|count| bytes) to file, overwriting existing file.
   // Returns 0 when successful, -1 otherwise.
-  int save_bin(const void *buf, size_t count);
+  int save_bin(const void *buf, uint64_t count);
 
   // Get name of the temporary file.
   const char *fname() const { return _fname; }

@@ -1,5 +1,6 @@
 
 #include "file_util.h"
+#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>  // IPPROTO_TCP
 #include <netinet/tcp.h> // TCP_NODELAY
@@ -8,8 +9,9 @@
 #include <stdio.h>  // snprintf, vdprintf
 #include <stdlib.h> // mkstemp
 #include <string.h> // strlen
-#include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/socket.h> // setsockopt
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h> // close
 #include <fstream>
@@ -104,9 +106,9 @@ bool pipe2_cloexec(int pipefd[2])
   return (0 == ret);
 }
 
-ssize_t safe_read(int fd, void *buf, size_t count)
+ssize_t safe_read(int fd, void *buf, uint64_t count)
 {
-  size_t cnt = 0;
+  uint64_t cnt = 0;
 
   while (cnt < count)
   {
@@ -128,17 +130,17 @@ ssize_t safe_read(int fd, void *buf, size_t count)
   return cnt;
 }
 
-ssize_t safe_read_exact(int fd, void *buf, size_t count)
+ssize_t safe_read_exact(int fd, void *buf, uint64_t count)
 {
   ssize_t ret = safe_read(fd, buf, count);
   if (ret < 0)
     return ret;
-  if ((size_t)ret != count)
+  if ((uint64_t)ret != count)
     return -EDOM;
   return 0;
 }
 
-ssize_t safe_write(int fd, const void *buf, size_t count)
+ssize_t safe_write(int fd, const void *buf, uint64_t count)
 {
   while (count > 0)
   {
@@ -155,9 +157,9 @@ ssize_t safe_write(int fd, const void *buf, size_t count)
   return 0;
 }
 
-ssize_t safe_pread(int fd, void *buf, size_t count, off_t offset)
+ssize_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset)
 {
-  size_t cnt = 0;
+  uint64_t cnt = 0;
   char *b = (char *)buf;
 
   while (cnt < count)
@@ -180,17 +182,17 @@ ssize_t safe_pread(int fd, void *buf, size_t count, off_t offset)
   return cnt;
 }
 
-ssize_t safe_pread_exact(int fd, void *buf, size_t count, off_t offset)
+ssize_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset)
 {
   ssize_t ret = safe_pread(fd, buf, count, offset);
   if (ret < 0)
     return ret;
-  if ((size_t)ret != count)
+  if ((uint64_t)ret != count)
     return -EDOM;
   return 0;
 }
 
-ssize_t safe_pwrite(int fd, const void *buf, size_t count, off_t offset)
+ssize_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset)
 {
   while (count > 0)
   {
@@ -208,10 +210,10 @@ ssize_t safe_pwrite(int fd, const void *buf, size_t count, off_t offset)
   return 0;
 }
 
-ssize_t safe_splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out,
-                    size_t len, unsigned int flags)
+ssize_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
+                    uint64_t len, unsigned int flags)
 {
-  size_t cnt = 0;
+  uint64_t cnt = 0;
 
   while (cnt < len)
   {
@@ -234,19 +236,19 @@ ssize_t safe_splice(int fd_in, off_t *off_in, int fd_out, off_t *off_out,
   return cnt;
 }
 
-ssize_t safe_splice_exact(int fd_in, off_t *off_in, int fd_out,
-                          off_t *off_out, size_t len, unsigned int flags)
+ssize_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
+                          int64_t *off_out, uint64_t len, unsigned int flags)
 {
   ssize_t ret = safe_splice(fd_in, off_in, fd_out, off_out, len, flags);
   if (ret < 0)
     return ret;
-  if ((size_t)ret != len)
+  if ((uint64_t)ret != len)
     return -EDOM;
   return 0;
 }
 
 int safe_write_file(const char *base, const char *file,
-                    const char *val, size_t vallen)
+                    const char *val, uint64_t vallen)
 {
   int ret;
   char fn[PATH_MAX];
@@ -306,7 +308,7 @@ int safe_write_file(const char *base, const char *file,
 }
 
 int safe_read_file(const char *base, const char *file,
-                   char *val, size_t vallen)
+                   char *val, uint64_t vallen)
 {
   char fn[PATH_MAX];
   int fd, len;
@@ -328,7 +330,7 @@ int safe_read_file(const char *base, const char *file,
   return len;
 }
 
-int make_dir(const std::string &path)
+int make_dir(const string &path)
 {
   if (path.empty())
   {
@@ -409,6 +411,282 @@ bool CopyFileContent(const string &from, const string &to)
   }
 
   dst << src.rdbuf();
+  return true;
+}
+
+TCMmap::TCMmap(bool bOwner)
+    : _bOwner(bOwner), _pAddr(NULL), _iLength(0), _bCreate(false)
+{
+}
+
+TCMmap::~TCMmap()
+{
+  if (_bOwner)
+  {
+    munmap();
+  }
+}
+
+void TCMmap::mmap(uint64_t length, int prot, int flags, int fd, int64_t offset)
+{
+  if (_bOwner)
+  {
+    munmap();
+  }
+  _pAddr = ::mmap(NULL, length, prot, flags, fd, offset);
+  if (_pAddr == (void *)-1)
+  {
+    _pAddr = NULL;
+    //throw TC_Mmap_Exception("[TCMmap::mmap] mmap error", errno);
+    return;
+  }
+  _iLength = length;
+  _bCreate = false;
+}
+
+void TCMmap::mmap(const char *file, uint64_t length)
+{
+  assert(length > 0);
+  if (_bOwner)
+  {
+    munmap();
+  }
+
+  int fd = open(file, O_CREAT | O_EXCL | O_RDWR, 0666);
+  if (fd == -1)
+  {
+    if (errno != EEXIST)
+    {
+      //throw TC_Mmap_Exception("[TCMmap::mmap] fopen file '" + string(file) + "' error", errno);
+      return;
+    }
+    else
+    {
+      fd = open(file, O_CREAT | O_RDWR, 0666);
+      if (fd == -1)
+      {
+        //throw TC_Mmap_Exception("[TCMmap::mmap] fopen file '" + string(file) + "' error", errno);
+        return;
+      }
+      _bCreate = false;
+    }
+  }
+  else
+  {
+    _bCreate = true;
+  }
+
+  lseek(fd, length - 1, SEEK_SET);
+  write(fd, "\0", 1);
+
+  _pAddr = ::mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (_pAddr == (void *)-1)
+  {
+    _pAddr = NULL;
+    close(fd);
+    //throw TC_Mmap_Exception("[TCMmap::mmap] mmap file '" + string(file) + "' error", errno);
+    return;
+  }
+  _iLength = length;
+  if (fd != -1)
+  {
+    close(fd);
+  }
+}
+
+void TCMmap::munmap()
+{
+  if (_pAddr == NULL)
+  {
+    return;
+  }
+
+  int ret = ::munmap(_pAddr, _iLength);
+  if (ret == -1)
+  {
+    //throw TC_Mmap_Exception("[TCMmap::munmap] munmap error", errno);
+    return;
+  }
+
+  _pAddr = NULL;
+  _iLength = 0;
+  _bCreate = false;
+}
+
+void TCMmap::msync(bool bSync)
+{
+  int ret = 0;
+  if (bSync)
+  {
+    ret = ::msync(_pAddr, _iLength, MS_SYNC | MS_INVALIDATE);
+  }
+  else
+  {
+    ret = ::msync(_pAddr, _iLength, MS_ASYNC | MS_INVALIDATE);
+  }
+  if (ret != 0)
+  {
+    //throw TC_Mmap_Exception("[TCMmap::msync] msync error", errno);
+    return;
+  }
+}
+
+TCFifo::TCFifo(bool bOwner) : _bOwner(bOwner), _enRW(EM_READ), _fd(-1)
+{
+}
+
+TCFifo::~TCFifo()
+{
+  if (_bOwner)
+    close();
+}
+
+void TCFifo::close()
+{
+  if (_fd >= 0)
+    ::close(_fd);
+
+  _fd = -1;
+}
+
+int TCFifo::open(const string &sPathName, ENUM_RW_SET enRW, mode_t mode)
+{
+  _enRW = enRW;
+  _sPathName = sPathName;
+
+  if (_enRW != EM_READ && _enRW != EM_WRITE)
+  {
+    return -1;
+  }
+
+  if (::mkfifo(_sPathName.c_str(), mode) == -1 && errno != EEXIST)
+  {
+    return -1;
+  }
+
+  if (_enRW == EM_READ && (_fd = ::open(_sPathName.c_str(), O_NONBLOCK | O_RDONLY, 0664)) < 0)
+  {
+    return -1;
+  }
+
+  if (_enRW == EM_WRITE && (_fd = ::open(_sPathName.c_str(), O_NONBLOCK | O_WRONLY, 0664)) < 0)
+  {
+    return -1;
+  }
+
+  return 0;
+}
+
+int TCFifo::read(char *szBuff, const uint64_t sizeMax)
+{
+  return ::read(_fd, szBuff, sizeMax);
+}
+
+int TCFifo::write(const char *szBuff, const uint64_t sizeBuffLen)
+{
+  if (sizeBuffLen == 0)
+    return 0;
+
+  return ::write(_fd, szBuff, sizeBuffLen);
+}
+
+TCFileMutex::TCFileMutex()
+{
+  _fd = -1;
+}
+
+TCFileMutex::~TCFileMutex()
+{
+  unlock();
+}
+
+void TCFileMutex::init(const string &filename)
+{
+  if (filename.empty())
+  {
+    //throw TC_FileMutex_Exception("[TCFileMutex::init] filename is empty");
+    return;
+  }
+
+  if (_fd > 0)
+  {
+    close(_fd);
+  }
+  _fd = open(filename.c_str(), O_RDWR | O_CREAT, 0660);
+  if (_fd < 0)
+  {
+    //throw TC_FileMutex_Exception("[TCFileMutex::init] open '" + filename + "' error", errno);
+    return;
+  }
+}
+
+int TCFileMutex::rlock()
+{
+  assert(_fd > 0);
+
+  return lock(_fd, F_SETLKW, F_RDLCK, 0, 0, 0);
+}
+
+int TCFileMutex::unrlock()
+{
+  return unlock();
+}
+
+bool TCFileMutex::tryrlock()
+{
+  return hasLock(_fd, F_RDLCK, 0, 0, 0);
+}
+
+int TCFileMutex::wlock()
+{
+  assert(_fd > 0);
+
+  return lock(_fd, F_SETLKW, F_WRLCK, 0, 0, 0);
+}
+
+int TCFileMutex::unwlock()
+{
+  return unlock();
+}
+
+bool TCFileMutex::trywlock()
+{
+  return hasLock(_fd, F_WRLCK, 0, 0, 0);
+}
+
+int TCFileMutex::unlock()
+{
+  return lock(_fd, F_SETLK, F_UNLCK, 0, 0, 0);
+}
+
+int TCFileMutex::lock(int fd, int cmd, int type, int64_t offset, int whence, int64_t len)
+{
+  struct flock lock;
+  lock.l_type = type;
+  lock.l_start = offset;
+  lock.l_whence = whence;
+  lock.l_len = len;
+
+  return fcntl(fd, cmd, &lock);
+}
+
+bool TCFileMutex::hasLock(int fd, int type, int64_t offset, int whence, int64_t len)
+{
+  struct flock lock;
+  lock.l_type = type;
+  lock.l_start = offset;
+  lock.l_whence = whence;
+  lock.l_len = len;
+
+  if (fcntl(fd, F_GETLK, &lock) == -1)
+  {
+    //throw TC_FileMutex_Exception("[TCFileMutex::hasLock] fcntl error", errno);
+    return false;
+  }
+  if (lock.l_type == F_UNLCK)
+  {
+    return false;
+  }
   return true;
 }
 

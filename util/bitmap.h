@@ -4,6 +4,7 @@
 
 #include <malloc.h>
 #include <string.h>
+#include <vector>
 #include "math_util.h"
 #include "types_util.h"
 
@@ -99,6 +100,82 @@ inline uint64_t bit_array_first1(const uint64_t *array, uint64_t begin, uint64_t
   }
   return end;
 }
+
+class DynamicBitset
+{
+public:
+  DynamicBitset() {}
+
+  explicit DynamicBitset(uint64_t n) : set_(n, false) {}
+
+  DynamicBitset(const DynamicBitset &bs) : set_(bs.set_) {}
+
+  ~DynamicBitset() {}
+
+  void reset()
+  {
+    for (uint64_t i = 0; i < set_.size(); ++i)
+    {
+      set_[i] = false;
+    }
+  }
+
+  void set(uint64_t pos, bool val = true)
+  {
+    if (pos < set_.size())
+    {
+      set_[pos] = val;
+    }
+  }
+
+  bool test(uint64_t pos) const
+  {
+    return pos < set_.size() ? set_[pos] : false;
+  }
+
+  bool all() const
+  {
+    for (uint64_t i = 0; i < set_.size(); ++i)
+    {
+      if (!set_[i])
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool any() const
+  {
+    for (uint64_t i = 0; i < set_.size(); ++i)
+    {
+      if (set_[i])
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // reserve original bit flag
+  void resize(uint64_t new_size)
+  {
+    uint64_t old_size = set_.size();
+    set_.resize(new_size);
+    for (uint64_t i = old_size; i < set_.size(); ++i)
+    {
+      set_[i] = false;
+    }
+  }
+
+  uint64_t size() const
+  {
+    return set_.size();
+  }
+
+private:
+  std::vector<bool> set_;
+};
 
 class Bitmap
 {
