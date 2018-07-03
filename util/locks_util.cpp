@@ -468,32 +468,6 @@ int32_t CountDownLatch::getCount() const
   return count_;
 }
 
-class SemaphorePrivate
-{
-public:
-  sem_t sem;
-};
-
-Semaphore::Semaphore(int32_t initValue) : m(new SemaphorePrivate())
-{
-  sem_init(&m->sem, 0, initValue);
-}
-
-Semaphore::~Semaphore()
-{
-  sem_destroy(&m->sem);
-  delete m;
-}
-
-bool Semaphore::timeWait(struct timespec *ts)
-{
-  return (0 == sem_timedwait(&m->sem, ts));
-}
-
-void Semaphore::wait() { sem_wait(&m->sem); }
-
-void Semaphore::post() { sem_post(&m->sem); }
-
 CThreadInterrupt::operator bool() const
 {
   return flag.load(std::memory_order_acquire);
@@ -528,6 +502,35 @@ bool CThreadInterrupt::sleep_for(std::chrono::minutes rel_time)
 {
   return sleep_for(std::chrono::duration_cast<std::chrono::milliseconds>(rel_time));
 }
+
+class SemaphorePrivate
+{
+public:
+  sem_t sem;
+};
+
+Semaphore::Semaphore(int32_t initValue) : m(new SemaphorePrivate())
+{
+  sem_init(&m->sem, 0, initValue);
+}
+
+Semaphore::~Semaphore()
+{
+  sem_destroy(&m->sem);
+  delete m;
+}
+
+bool Semaphore::timeWait(struct timespec *ts)
+{
+  return (0 == sem_timedwait(&m->sem, ts));
+}
+
+void Semaphore::wait() { sem_wait(&m->sem); }
+
+void Semaphore::post() { sem_post(&m->sem); }
+
+struct sembuf g_sem_lock = {0, -1, SEM_UNDO};
+struct sembuf g_sem_unlock = {0, 1, SEM_UNDO | IPC_NOWAIT};
 
 } // namespace util
 } // namespace mycc

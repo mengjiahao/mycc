@@ -71,299 +71,271 @@ inline void MemoryWriteBarrier() { __asm__ __volatile__("sfence" ::
 #endif
 
 /*
- * atomic int ops from linux.
- * Atomic operations that C can't guarantee us.  Useful for
- * resource counting etc..
+ * Atomic operations that C can't guarantee us.  
+ * Useful for resource counting etc..
  */
 
 #define LOCK_PREFIX "lock ; "
 
-/*
- * Make sure gcc doesn't try to be clever and move things around
- * on us. We need to use _exactly_ the address the user gave us,
- * not some alias that contains the same information.
- */
-typedef struct
+//return: the incremented value;
+#ifdef __x86_64__
+static __inline__ uint64_t atomic_inc(volatile uint64_t *pv)
 {
-  volatile int counter;
-} atomic_t;
-
-#define ATOMIC_INIT(i) \
-  {                    \
-    (i)                \
-  }
-
-/**
- * atomic_read - read atomic variable
- * @param v pointer of type atomic_t
- * 
- * Atomically reads the value of v.
- */
-#define atomic_read(v) ((v)->counter)
-
-/**
- * atomic_set - set atomic variable
- * @param v pointer of type atomic_t
- * @param i required value
- * 
- * Atomically sets the value of v to i.
- */
-#define atomic_set(v, i) (((v)->counter) = (i))
-
-/**
- * atomic_add - add integer to atomic variable
- * @param i integer value to add
- * @param v pointer of type atomic_t
- * 
- * Atomically adds i to v.
- */
-__inline__ void atomic_add(int i, atomic_t *v)
-{
+  register unsigned long __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "addl %1,%0"
-      : "=m"(v->counter)
-      : "ir"(i), "m"(v->counter));
+      "movq $1,%0;" LOCK_PREFIX "xaddq %0,(%1);"
+      "incq %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
+#endif
 
-/**
- * atomic_sub - subtract the atomic variable
- * @param i integer value to subtract
- * @param v pointer of type atomic_t
- * 
- * Atomically subtracts i from v.
- */
-__inline__ void atomic_sub(int i, atomic_t *v)
+static __inline__ uint32_t atomic_inc(volatile uint32_t *pv)
 {
+  register unsigned int __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "subl %1,%0"
-      : "=m"(v->counter)
-      : "ir"(i), "m"(v->counter));
+      "movl $1,%0;" LOCK_PREFIX "xaddl %0,(%1);"
+      "incl %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-/**
- * atomic_add_return - add and return
- * @param v pointer of type atomic_t
- * @param i integer value to add
- *
- * Atomically adds i to v and returns i + v
- */
-__inline__ int atomic_add_return(int i, atomic_t *v)
+static __inline__ uint16_t atomic_inc(volatile uint16_t *pv)
 {
-  int __i;
-  /* Modern 486+ processor */
-  __i = i;
+  register unsigned short __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "xaddl %0, %1"
-      : "+r"(i), "+m"(v->counter)
-      :
-      : "memory");
-  return i + __i;
+      "movw $1,%0;" LOCK_PREFIX "xaddw %0,(%1);"
+      "incw %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-__inline__ int atomic_sub_return(int i, atomic_t *v)
+static __inline__ uint8_t atomic_inc(volatile uint8_t *pv)
 {
-  return atomic_add_return(-i, v);
-}
-
-/**
- * atomic_sub_and_test - subtract value from variable and test result
- * @param i integer value to subtract
- * @param v pointer of type atomic_t
- * 
- * Atomically subtracts i from v and returns
- * true if the result is zero, or false for all
- * other cases.
- */
-__inline__ int atomic_sub_and_test(int i, atomic_t *v)
-{
-  unsigned char c;
-
+  register unsigned char __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "subl %2,%0; sete %1"
-      : "=m"(v->counter), "=qm"(c)
-      : "ir"(i), "m"(v->counter)
-      : "memory");
-  return c;
+      "movb $1,%0;" LOCK_PREFIX "xaddb %0,(%1);"
+      "incb %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-/**
- * atomic_inc - increment atomic variable
- * @param v pointer of type atomic_t
- * 
- * Atomically increments v by 1.
- */
-__inline__ void atomic_inc(atomic_t *v)
+//return: the decremented value;
+#ifdef __x86_64__
+static __inline__ uint64_t atomic_dec(volatile uint64_t *pv)
 {
+  register unsigned long __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "incl %0"
-      : "=m"(v->counter)
-      : "m"(v->counter));
+      "movq $0xffffffffffffffff,%0;" LOCK_PREFIX "xaddq %0,(%1);"
+      "decq %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
+#endif
 
-/**
- * atomic_dec - decrement atomic variable
- * @param v pointer of type atomic_t
- * 
- * Atomically decrements v by 1.
- */
-__inline__ void atomic_dec(atomic_t *v)
+static __inline__ uint32_t atomic_dec(volatile uint32_t *pv)
 {
+  register unsigned int __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "decl %0"
-      : "=m"(v->counter)
-      : "m"(v->counter));
+      "movl $0xffffffff,%0;" LOCK_PREFIX "xaddl %0,(%1);"
+      "decl %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-/**
- * atomic_dec_and_test - decrement and test
- * @param v pointer of type atomic_t
- * 
- * Atomically decrements v by 1 and
- * returns true if the result is 0, or false for all other
- * cases.
- */
-__inline__ int atomic_dec_and_test(atomic_t *v)
+static __inline__ uint16_t atomic_dec(volatile uint16_t *pv)
 {
-  unsigned char c;
-
+  register unsigned short __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "decl %0; sete %1"
-      : "=m"(v->counter), "=qm"(c)
-      : "m"(v->counter)
-      : "memory");
-  return c != 0;
+      "movw $0xffff,%0;" LOCK_PREFIX "xaddw %0,(%1);"
+      "decw %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-/**
- * atomic_inc_and_test - increment and test 
- * @param v pointer of type atomic_t
- * 
- * Atomically increments v by 1
- * and returns true if the result is zero, or false for all
- * other cases.
- */
-__inline__ int atomic_inc_and_test(atomic_t *v)
+static __inline__ uint8_t atomic_dec(volatile uint8_t *pv)
 {
-  unsigned char c;
-
+  register unsigned char __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "incl %0; sete %1"
-      : "=m"(v->counter), "=qm"(c)
-      : "m"(v->counter)
-      : "memory");
-  return c != 0;
+      "movb $0xff,%0;" LOCK_PREFIX "xaddb %0,(%1);"
+      "decb %0"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv));
+  return __res;
 }
 
-/**
- * atomic_add_negative - add and test if negative
- * @param v pointer of type atomic_t
- * @param i integer value to add
- * 
- * Atomically adds i to v and returns true
- * if the result is negative, or false when
- * result is greater than or equal to zero.
- */
-__inline__ int atomic_add_negative(int i, atomic_t *v)
+//return: the initial value of *pv
+#ifdef __x86_64__
+static __inline__ uint64_t atomic_add(volatile uint64_t *pv, const uint64_t av)
 {
-  unsigned char c;
-
+  //:"=a" (__res), "=q" (pv): "m"(av), "1" (pv));
+  register unsigned long __res;
   __asm__ __volatile__(
-      LOCK_PREFIX "addl %2,%0; sets %1"
-      : "=m"(v->counter), "=qm"(c)
-      : "ir"(i), "m"(v->counter)
-      : "memory");
-  return c;
+      "movq %2,%0;" LOCK_PREFIX "xaddq %0,(%1);"
+      : "=a"(__res), "=q"(pv)
+      : "mr"(av), "1"(pv));
+  return __res;
+}
+#endif
+
+static __inline__ uint32_t atomic_add(volatile uint32_t *pv, const uint32_t av)
+{
+  //:"=a" (__res), "=q" (pv): "m"(av), "1" (pv));
+  register unsigned int __res;
+  __asm__ __volatile__(
+      "movl %2,%0;" LOCK_PREFIX "xaddl %0,(%1);"
+      : "=a"(__res), "=q"(pv)
+      : "mr"(av), "1"(pv));
+  return __res;
 }
 
-/* These are x86-specific, used by some header files */
-#define atomic_clear_mask(mask, addr)             \
-  __asm__ __volatile__(LOCK_PREFIX "andl %0,%1"   \
-                       :                          \
-                       : "r"(~(mask)), "m"(*addr) \
-                       : "memory")
-
-#define atomic_set_mask(mask, addr)              \
-  __asm__ __volatile__(LOCK_PREFIX "orl %0,%1"   \
-                       :                         \
-                       : "r"(mask), "m"(*(addr)) \
-                       : "memory")
-
-#define atomic_inc_return(v) (atomic_add_return(1, v))
-#define atomic_dec_return(v) (atomic_sub_return(1, v))
-
-class AtomicInt
+static __inline__ uint16_t atomic_add(volatile uint16_t *pv, const uint16_t av)
 {
-public:
-  typedef int atomic_type;
+  //:"=a" (__res), "=q" (pv): "m"(av), "1" (pv));
+  register unsigned short __res;
+  __asm__ __volatile__(
+      "movw %2,%0;" LOCK_PREFIX "xaddw %0,(%1);"
+      : "=a"(__res), "=q"(pv)
+      : "mr"(av), "1"(pv));
+  return __res;
+}
 
-  AtomicInt(atomic_type at = 0)
-  {
-    set(at);
-  }
+static __inline__ uint8_t atomic_add(volatile uint8_t *pv, const uint8_t av)
+{
+  //:"=a" (__res), "=q" (pv): "m"(av), "1" (pv));
+  register unsigned char __res;
+  __asm__ __volatile__(
+      "movb %2,%0;" LOCK_PREFIX "xaddb %0,(%1);"
+      : "=a"(__res), "=q"(pv)
+      : "mr"(av), "1"(pv));
+  return __res;
+}
 
-  AtomicInt &operator++()
-  {
-    inc();
-    return *this;
-  }
+//function: set *pv to nv
+//return: the initial value of *pv
+#ifdef __x86_64__
+static __inline__ uint64_t atomic_exchange(volatile uint64_t *pv, const uint64_t nv)
+{
+  register unsigned long __res;
+  __asm__ __volatile__(
+      "1:" LOCK_PREFIX "cmpxchgq %3,(%1);"
+      "jne 1b"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(*pv));
+  return __res;
+}
+#endif
 
-  AtomicInt &operator--()
-  {
-    dec();
-    return *this;
-  }
+static __inline__ uint32_t atomic_exchange(volatile uint32_t *pv, const uint32_t nv)
+{
+  register unsigned int __res;
+  __asm__ __volatile__(
+      "1:" LOCK_PREFIX "cmpxchgl %3,(%1);"
+      "jne 1b"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(*pv));
+  return __res;
+}
 
-  operator atomic_type() const
-  {
-    return get();
-  }
+static __inline__ uint16_t atomic_exchange(volatile uint16_t *pv, const uint16_t nv)
+{
+  register unsigned short __res;
+  __asm__ __volatile__(
+      "1:" LOCK_PREFIX "cmpxchgw %3,(%1);"
+      "jne 1b"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(*pv));
+  return __res;
+}
 
-  AtomicInt &operator+=(atomic_type n)
-  {
-    add(n);
-    return *this;
-  }
+static __inline__ uint8_t atomic_exchange(volatile uint8_t *pv, const uint8_t nv)
+{
+  register unsigned char __res;
+  __asm__ __volatile__(
+      "1:" LOCK_PREFIX "cmpxchgb %3,(%1);"
+      "jne 1b"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(*pv));
+  return __res;
+}
 
-  AtomicInt &operator-=(atomic_type n)
-  {
-    sub(n);
-    return *this;
-  }
+//function: compare *pv to cv, if equal, set *pv to nv, otherwise do nothing.
+//return: the initial value of *pv
+#ifdef __x86_64__
+static __inline__ uint64_t atomic_compare_exchange(volatile uint64_t *pv,
+                                                   const uint64_t nv, const uint64_t cv)
+{
+  register unsigned long __res;
+  __asm__ __volatile__(
+      LOCK_PREFIX "cmpxchgq %3,(%1)"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(cv));
+  return __res;
+}
+#endif
 
-  AtomicInt &operator=(atomic_type n)
-  {
-    set(n);
-    return *this;
-  }
+static __inline__ uint32_t atomic_compare_exchange(volatile uint32_t *pv,
+                                                   const uint32_t nv, const uint32_t cv)
+{
+  register unsigned int __res;
+  __asm__ __volatile__(
+      LOCK_PREFIX "cmpxchgl %3,(%1)"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(cv));
+  return __res;
+}
 
-  atomic_type get() const { return _value.counter; }
-  atomic_type add(atomic_type i) { return atomic_add_return(i, &_value); }
-  atomic_type sub(atomic_type i) { return atomic_add_return(-i, &_value); }
-  atomic_type inc() { return add(1); }
-  atomic_type dec() { return sub(1); }
+static __inline__ uint16_t atomic_compare_exchange(volatile uint16_t *pv,
+                                                   const uint16_t nv, const uint16_t cv)
+{
+  register unsigned short __res;
+  __asm__ __volatile__(
+      LOCK_PREFIX "cmpxchgw %3,(%1)"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(cv));
+  return __res;
+}
 
-  void inc_fast()
-  {
-    atomic_inc(&_value);
-  }
+static __inline__ uint8_t atomic_compare_exchange(volatile uint8_t *pv,
+                                                  const uint8_t nv, const uint8_t cv)
+{
+  register unsigned char __res;
+  __asm__ __volatile__(
+      LOCK_PREFIX "cmpxchgb %3,(%1)"
+      : "=a"(__res), "=q"(pv)
+      : "1"(pv), "q"(nv), "0"(cv));
+  return __res;
+}
 
-  bool dec_and_test()
-  {
-    return atomic_dec_and_test(&_value);
-  }
+//function: set *pv to nv
+//return: the initial value of *pv
+static __inline__ void *atomic_exchange_pointer(volatile void **pv, const void *nv)
+{
+#ifdef __x86_64__
+  return (void *)atomic_exchange((uint64_t *)pv, (uint64_t)nv);
+#else
+  return (void *)atomic_exchange((uint32_t *)pv, (uint32_t)nv);
+#endif
+}
 
-  /**
-     * @brief 设置值
-     */
-  atomic_type set(atomic_type i)
-  {
-    _value.counter = i;
-    return i;
-  }
-
-protected:
-  atomic_t _value;
-};
+//function: compare *pv to cv, if equal, set *pv to nv, otherwise do nothing.
+//return: the initial value of *pv
+static __inline__ void *atomic_compare_exchange_pointer(volatile void **pv,
+                                                        const void *nv, const void *cv)
+{
+#ifdef __x86_64__
+  return (void *)atomic_compare_exchange((uint64_t *)pv, (uint64_t)nv, (uint64_t)cv);
+#else
+  return (void *)atomic_compare_exchange((uint32_t *)pv, (uint32_t)nv, (uint32_t)cv);
+#endif
+}
 
 // Legacy __sync Built-in Functions for Atomic Memory Access.
 // https://gcc.gnu.org/onlinedocs/gcc-4.4.4/gcc/Atomic-Builtins.html

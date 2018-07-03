@@ -24,40 +24,20 @@ namespace util
 // Provide thread_local keyword (for primitive types) before C++11
 // #define THREAD_LOCAL __thread
 
-template <typename T>
+template <class T>
 class PthreadTss
 {
 public:
   PthreadTss()
   {
-    pthread_key_create(&key_, &PthreadTss::Delete);
+    pthread_key_create(&key, NULL);
   }
-
-  ~PthreadTss()
-  {
-    pthread_key_delete(key_);
-  }
-
-  T *get()
-  {
-    T *result = static_cast<T *>(pthread_getspecific(key_));
-    if (result == nullptr)
-    {
-      result = new T();
-      pthread_setspecific(key_, result);
-    }
-    return result;
-  }
+  virtual ~PthreadTss() {}
+  T get() { return (T)pthread_getspecific(key); }
+  void set(T data) { pthread_setspecific(key, (void *)data); }
 
 private:
-  static void Delete(void *value)
-  {
-    delete static_cast<T *>(value);
-  }
-
-  pthread_key_t key_;
-
-  DISALLOW_COPY_AND_ASSIGN(PthreadTss);
+  pthread_key_t key;
 };
 
 /**
@@ -157,7 +137,11 @@ template <class T>
 class ThreadLocalD
 {
 public:
-  ThreadLocalD() { PANIC_EQ(pthread_key_create(&threadSpecificKey_, NULL), 0); }
+  ThreadLocalD()
+  {
+    PANIC_EQ(pthread_key_create(&threadSpecificKey_, NULL), 0);
+  }
+
   ~ThreadLocalD()
   {
     pthread_key_delete(threadSpecificKey_);

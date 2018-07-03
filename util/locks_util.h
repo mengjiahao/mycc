@@ -5,6 +5,9 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <sched.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
+#include <sys/time.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -356,7 +359,7 @@ public:
 
   inline void lock() { pthread_spin_lock(&lock_); }
   inline void unlock() { pthread_spin_unlock(&lock_); }
-  inline int32_t tryLock() { return pthread_spin_trylock(&lock_); }
+  inline int tryLock() { return pthread_spin_trylock(&lock_); }
 
   pthread_spinlock_t lock_;
   char padding_[64 - sizeof(pthread_spinlock_t)];
@@ -685,153 +688,6 @@ private:
   DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
 };
 
-/**
- * A simple wapper of semaphore which can only be shared in the same process.
- */
-class SemaphorePrivate;
-class Semaphore
-{
-public:
-  //! Enable move.
-  Semaphore(Semaphore &&other) : m(std::move(other.m)) {}
-
-public:
-  /**
-   * @brief Construct Function.
-   * @param[in] initValue the initial value of the
-   * semaphore, default 0.
-   */
-  explicit Semaphore(int32_t initValue = 0);
-
-  ~Semaphore();
-
-  /**
-   * @brief The same as wait(), except if the decrement can not
-   * be performed until ts return false install of blocking.
-   * @param[in] ts an absolute timeout in seconds and nanoseconds
-   * since the Epoch 1970-01-01 00:00:00 +0000(UTC).
-   * @return ture if the decrement proceeds before ts,
-   * else return false.
-   */
-  bool timeWait(struct timespec *ts);
-
-  /**
-   * @brief decrement the semaphore. If the semaphore's value is 0, then call
-   * blocks.
-   */
-  void wait();
-
-  /**
-   * @brief increment the semaphore. If the semaphore's value
-   * greater than 0, wake up a thread blocked in wait().
-   */
-  void post();
-
-private:
-  SemaphorePrivate *m;
-
-  DISALLOW_COPY_AND_ASSIGN(Semaphore);
-};
-
-class CSemaphore
-{
-private:
-  std::condition_variable condition;
-  std::mutex mutex;
-  int32_t value;
-
-public:
-  explicit CSemaphore(int32_t init) : value(init) {}
-
-  void wait()
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    while (value < 1)
-    {
-      condition.wait(lock);
-    }
-    value--;
-  }
-
-  bool try_wait()
-  {
-    std::unique_lock<std::mutex> lock(mutex);
-    if (value < 1)
-      return false;
-    value--;
-    return true;
-  }
-
-  void post()
-  {
-    {
-      std::unique_lock<std::mutex> lock(mutex);
-      value++;
-    }
-    condition.notify_one();
-  }
-};
-
-/** RAII-style semaphore lock */
-class CSemaphoreGrant
-{
-private:
-  CSemaphore *sem;
-  bool fHaveGrant;
-
-public:
-  void Acquire()
-  {
-    if (fHaveGrant)
-      return;
-    sem->wait();
-    fHaveGrant = true;
-  }
-
-  void Release()
-  {
-    if (!fHaveGrant)
-      return;
-    sem->post();
-    fHaveGrant = false;
-  }
-
-  bool TryAcquire()
-  {
-    if (!fHaveGrant && sem->try_wait())
-      fHaveGrant = true;
-    return fHaveGrant;
-  }
-
-  void MoveTo(CSemaphoreGrant &grant)
-  {
-    grant.Release();
-    grant.sem = sem;
-    grant.fHaveGrant = fHaveGrant;
-    fHaveGrant = false;
-  }
-
-  CSemaphoreGrant() : sem(nullptr), fHaveGrant(false) {}
-
-  explicit CSemaphoreGrant(CSemaphore &sema, bool fTry = false) : sem(&sema), fHaveGrant(false)
-  {
-    if (fTry)
-      TryAcquire();
-    else
-      Acquire();
-  }
-
-  ~CSemaphoreGrant()
-  {
-    Release();
-  }
-
-  operator bool() const
-  {
-    return fHaveGrant;
-  }
-};
-
 class Notification
 {
 public:
@@ -918,6 +774,283 @@ private:
   std::condition_variable cond;
   std::mutex mut;
   std::atomic<bool> flag;
+};
+
+class CondVarSem
+{
+private:
+  std::condition_variable condition;
+  std::mutex mutex;
+  int32_t value;
+
+public:
+  explicit CondVarSem(int32_t init) : value(init) {}
+
+  void wait()
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    while (value < 1)
+    {
+      condition.wait(lock);
+    }
+    value--;
+  }
+
+  bool try_wait()
+  {
+    std::unique_lock<std::mutex> lock(mutex);
+    if (value < 1)
+      return false;
+    value--;
+    return true;
+  }
+
+  void post()
+  {
+    {
+      std::unique_lock<std::mutex> lock(mutex);
+      value++;
+    }
+    condition.notify_one();
+  }
+};
+
+/** RAII-style semaphore lock */
+class CondVarSemGrant
+{
+private:
+  CondVarSem *sem;
+  bool fHaveGrant;
+
+public:
+  void Acquire()
+  {
+    if (fHaveGrant)
+      return;
+    sem->wait();
+    fHaveGrant = true;
+  }
+
+  void Release()
+  {
+    if (!fHaveGrant)
+      return;
+    sem->post();
+    fHaveGrant = false;
+  }
+
+  bool TryAcquire()
+  {
+    if (!fHaveGrant && sem->try_wait())
+      fHaveGrant = true;
+    return fHaveGrant;
+  }
+
+  void MoveTo(CondVarSemGrant &grant)
+  {
+    grant.Release();
+    grant.sem = sem;
+    grant.fHaveGrant = fHaveGrant;
+    fHaveGrant = false;
+  }
+
+  CondVarSemGrant() : sem(nullptr), fHaveGrant(false) {}
+
+  explicit CondVarSemGrant(CondVarSem &sema, bool fTry = false) : sem(&sema), fHaveGrant(false)
+  {
+    if (fTry)
+      TryAcquire();
+    else
+      Acquire();
+  }
+
+  ~CondVarSemGrant()
+  {
+    Release();
+  }
+
+  operator bool() const
+  {
+    return fHaveGrant;
+  }
+};
+
+/**
+ * A simple wapper of semaphore which can only be shared in the same process.
+ */
+class SemaphorePrivate;
+class Semaphore
+{
+public:
+  //! Enable move.
+  Semaphore(Semaphore &&other) : m(std::move(other.m)) {}
+
+public:
+  /**
+   * @brief Construct Function.
+   * @param[in] initValue the initial value of the
+   * semaphore, default 0.
+   */
+  explicit Semaphore(int32_t initValue = 0);
+
+  ~Semaphore();
+
+  /**
+   * @brief The same as wait(), except if the decrement can not
+   * be performed until ts return false install of blocking.
+   * @param[in] ts an absolute timeout in seconds and nanoseconds
+   * since the Epoch 1970-01-01 00:00:00 +0000(UTC).
+   * @return ture if the decrement proceeds before ts,
+   * else return false.
+   */
+  bool timeWait(struct timespec *ts);
+
+  /**
+   * @brief decrement the semaphore. If the semaphore's value is 0, then call
+   * blocks.
+   */
+  void wait();
+
+  /**
+   * @brief increment the semaphore. If the semaphore's value
+   * greater than 0, wake up a thread blocked in wait().
+   */
+  void post();
+
+private:
+  SemaphorePrivate *m;
+
+  DISALLOW_COPY_AND_ASSIGN(Semaphore);
+};
+
+class CSemaphore
+{
+public:
+  CSemaphore()
+  {
+    sem_init(&m_sem, 0, 0);
+  }
+
+  ~CSemaphore()
+  {
+    sem_destroy(&m_sem);
+  }
+
+  void Produce()
+  {
+    sem_post(&m_sem);
+  }
+
+  void Consume()
+  {
+    while (sem_wait(&m_sem) != 0)
+    {
+      sched_yield();
+    }
+  }
+
+  bool Try()
+  {
+    int32_t value = 0;
+    int ret = sem_getvalue(&m_sem, &value);
+    if (ret < 0 || value <= 0)
+      return false;
+    return true;
+  }
+
+  bool TryTime(int32_t micSec)
+  {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    if (micSec >= 1000000)
+    {
+      ts.tv_sec += micSec / 1000000;
+    }
+    ts.tv_nsec += micSec % 1000000 * 1000;
+    if (ts.tv_nsec >= 1000000000)
+    {
+      ++ts.tv_sec;
+      ts.tv_nsec -= 1000000000;
+    }
+
+    int ret = sem_timedwait(&m_sem, &ts);
+    if (ret < 0)
+      return false;
+    return true;
+  }
+
+  int32_t GetCount()
+  {
+    int32_t value = 0;
+    int ret = sem_getvalue(&m_sem, &value);
+    if (ret < 0)
+      return -1;
+    else
+      return value;
+  }
+
+private:
+  sem_t m_sem;
+};
+
+extern struct sembuf g_sem_lock;
+extern struct sembuf g_sem_unlock;
+
+class CSemOper
+{
+public:
+  CSemOper() {}
+
+  CSemOper(int semid)
+  {
+    m_semid = semid;
+  }
+
+  ~CSemOper() {}
+
+  void SetSemid(int semid)
+  {
+    m_semid = semid;
+  }
+
+  void Produce()
+  {
+    semop(m_semid, &g_sem_unlock, 1);
+  }
+
+  void Consume()
+  {
+    while (semop(m_semid, &g_sem_lock, 1) != 0)
+    {
+      sched_yield();
+    }
+  }
+
+  int GetCount()
+  {
+    return semctl(m_semid, 0, GETVAL, 0);
+  }
+
+private:
+  int m_semid;
+};
+
+class CSemLock
+{
+public:
+  CSemLock(int semid)
+  {
+    m_semid = semid;
+    semop(m_semid, &g_sem_lock, 1);
+  }
+
+  ~CSemLock()
+  {
+    semop(m_semid, &g_sem_unlock, 1);
+  }
+
+private:
+  int m_semid;
 };
 
 } // namespace util

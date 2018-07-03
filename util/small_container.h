@@ -5,10 +5,12 @@
 #include <assert.h>
 #include <algorithm>
 #include <array>
+#include <deque>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 #include "types_util.h"
 
@@ -53,6 +55,94 @@ public:
     }
     return _a[key];
   }
+};
+
+// This queue reduces the chance to allocate memory for deque
+template <typename T, int32_t N>
+class SmallQueue
+{
+public:
+  SmallQueue() : _begin(0), _size(0), _full(NULL) {}
+
+  void push(const T &val)
+  {
+    if (_full != NULL && !_full->empty())
+    {
+      _full->push_back(val);
+    }
+    else if (_size < N)
+    {
+      int64_t tail = _begin + _size;
+      if (tail >= N)
+      {
+        tail -= N;
+      }
+      _c[tail] = val;
+      ++_size;
+    }
+    else
+    {
+      if (_full == NULL)
+      {
+        _full = new std::deque<T>;
+      }
+      _full->push_back(val);
+    }
+  }
+  bool pop(T *val)
+  {
+    if (_size > 0)
+    {
+      *val = _c[_begin];
+      ++_begin;
+      if (_begin >= N)
+      {
+        _begin -= N;
+      }
+      --_size;
+      return true;
+    }
+    else if (_full && !_full->empty())
+    {
+      *val = _full->front();
+      _full->pop_front();
+      return true;
+    }
+    return false;
+  }
+  bool empty() const
+  {
+    return _size == 0 && (_full == NULL || _full->empty());
+  }
+
+  uint64_t size() const
+  {
+    return _size + (_full ? _full->size() : 0);
+  }
+
+  void clear()
+  {
+    _size = 0;
+    _begin = 0;
+    if (_full)
+    {
+      _full->clear();
+    }
+  }
+
+  ~SmallQueue()
+  {
+    delete _full;
+    _full = NULL;
+  }
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SmallQueue);
+
+  int64_t _begin;
+  int64_t _size;
+  T _c[N];
+  std::deque<T> *_full;
 };
 
 // A vector that leverages pre-allocated stack-based array to achieve better
@@ -575,7 +665,7 @@ public:
     return data_.empty();
   }
 
-  void reset_root_cmp_cache() { root_cmp_cache_ = port::kMaxSizet; }
+  void reset_root_cmp_cache() { root_cmp_cache_ = kMaxSizet; }
 
 private:
   static inline uint64_t get_root() { return 0; }
@@ -604,7 +694,7 @@ private:
   {
     T v = std::move(data_[index]);
 
-    uint64_t picked_child = port::kMaxSizet;
+    uint64_t picked_child = kMaxSizet;
     while (1)
     {
       const uint64_t left_child = get_left(index);

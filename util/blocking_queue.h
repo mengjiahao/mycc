@@ -20,97 +20,80 @@ namespace mycc
 namespace util
 {
 
-// This queue reduces the chance to allocate memory for deque
-template <typename T, int N>
-class SmallQueue
+template <class T>
+class RingBuffer
 {
 public:
-  SmallQueue() : _begin(0), _size(0), _full(NULL) {}
-
-  void push(const T &val)
+  RingBuffer(int32_t size)
   {
-    if (_full != NULL && !_full->empty())
-    {
-      _full->push_back(val);
-    }
-    else if (_size < N)
-    {
-      int64_t tail = _begin + _size;
-      if (tail >= N)
-      {
-        tail -= N;
-      }
-      _c[tail] = val;
-      ++_size;
-    }
-    else
-    {
-      if (_full == NULL)
-      {
-        _full = new std::deque<T>;
-      }
-      _full->push_back(val);
-    }
-  }
-  bool pop(T *val)
-  {
-    if (_size > 0)
-    {
-      *val = _c[_begin];
-      ++_begin;
-      if (_begin >= N)
-      {
-        _begin -= N;
-      }
-      --_size;
-      return true;
-    }
-    else if (_full && !_full->empty())
-    {
-      *val = _full->front();
-      _full->pop_front();
-      return true;
-    }
-    return false;
-  }
-  bool empty() const
-  {
-    return _size == 0 && (_full == NULL || _full->empty());
+    head = 0;
+    tail = 0;
+    bufferSize = size;
+    buffer = new T[size];
   }
 
-  uint64_t size() const
+  ~RingBuffer()
   {
-    return _size + (_full ? _full->size() : 0);
+    delete buffer;
   }
 
-  void clear()
+  int32_t can_consume_size()
   {
-    _size = 0;
-    _begin = 0;
-    if (_full)
+    return (tail + bufferSize - head) % bufferSize;
+  }
+
+  bool empty()
+  {
+    return head == tail;
+  }
+
+  bool full()
+  {
+    return (tail + 1) % bufferSize == head;
+  }
+
+  bool put(T &v)
+  {
+    if (UNLIKELY(full()))
     {
-      _full->clear();
+      return false;
+    }
+    buffer[tail] = v;
+    MemoryBarrier();
+    tail = (tail + 1) % bufferSize;
+    return true;
+  }
+
+  void force_put(T &v)
+  {
+    while (!put(v))
+    {
+      AsmVolatileCpuRelax();
     }
   }
 
-  ~SmallQueue()
+  bool get(T &v)
   {
-    delete _full;
-    _full = NULL;
+    if (UNLIKELY(empty()))
+    {
+      return false;
+    }
+    v = buffer[head];
+    MemoryBarrier();
+    head = (head + 1) % bufferSize;
+    return true;
   }
 
 private:
-  DISALLOW_COPY_AND_ASSIGN(SmallQueue);
-
-  int64_t _begin;
-  int64_t _size;
-  T _c[N];
-  std::deque<T> *_full;
+  T *buffer;
+  int32_t bufferSize __attribute__((__aligned__(64)));
+  int32_t head __attribute__((__aligned__(64)));
+  int32_t tail __attribute__((__aligned__(64)));
 };
 
 // [Create a on-stack small queue]
 //   char storage[64];
-//   butil::BoundedQueue<int> q(storage, sizeof(storage), butil::NOT_OWN_STORAGE);
+//   butil::BoundedQueue<int32_t> q(storage, sizeof(storage), butil::NOT_OWN_STORAGE);
 //   q.push(1);
 //   q.push(2);
 //   ...
@@ -118,10 +101,10 @@ private:
 // [Initialize a class-member queue]
 //   class Foo {
 //     ...
-//     BoundQueue<int> _queue;
+//     BoundQueue<int32_t> _queue;
 //   };
-//   int Foo::init() {
-//     BoundedQueue<int> tmp(capacity);
+//   int32_t Foo::init() {
+//     BoundedQueue<int32_t> tmp(capacity);
 //     if (!tmp.initialized()) {
 //       LOG(ERROR) << "Fail to create _queue";
 //       return -1;
@@ -560,7 +543,7 @@ public:
    * the parameter.
    */
   template <typename E>
-  void Push(E &&e, int priority = 0);
+  void Push(E &&e, int32_t priority = 0);
 
   /*!
    * \brief Push element to the front of the queue. Only works for FIFO queue.
@@ -574,7 +557,7 @@ public:
    * the parameter.
    */
   template <typename E>
-  void PushFront(E &&e, int priority = 0);
+  void PushFront(E &&e, int32_t priority = 0);
   /*!
    * \brief Pop element from the queue.
    * \param rv Element popped.
@@ -600,7 +583,7 @@ private:
   struct Entry
   {
     T data;
-    int priority;
+    int32_t priority;
     inline bool operator<(const Entry &b) const
     {
       return priority < b.priority;
@@ -627,7 +610,7 @@ ConcurrentBlockingQueue<T, type>::ConcurrentBlockingQueue()
 
 template <typename T, ConcurrentQueueType type>
 template <typename E>
-void ConcurrentBlockingQueue<T, type>::Push(E &&e, int priority)
+void ConcurrentBlockingQueue<T, type>::Push(E &&e, int32_t priority)
 {
   static_assert(std::is_same<typename std::remove_cv<
                                  typename std::remove_reference<E>::type>::type,
@@ -657,7 +640,7 @@ void ConcurrentBlockingQueue<T, type>::Push(E &&e, int priority)
 
 template <typename T, ConcurrentQueueType type>
 template <typename E>
-void ConcurrentBlockingQueue<T, type>::PushFront(E &&e, int priority)
+void ConcurrentBlockingQueue<T, type>::PushFront(E &&e, int32_t priority)
 {
   static_assert(std::is_same<typename std::remove_cv<
                                  typename std::remove_reference<E>::type>::type,
@@ -898,7 +881,7 @@ private:
  * For example.
  * @code{.cpp}
  *
- * paddle::BlockingQueue<int> q(capacity);
+ * paddle::BlockingQueue<int32_t> q(capacity);
  * END_OF_JOB=-1
  * void thread1() {
  *   while (true) {

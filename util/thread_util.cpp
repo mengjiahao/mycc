@@ -293,9 +293,6 @@ void *BGThread::ThreadMain()
   return NULL;
 }
 
-/*
- * timeout is in millisecond
- */
 void BGThread::DelaySchedule(
     uint64_t timeout_ms, void (*function)(void *), void *arg)
 {
@@ -307,6 +304,45 @@ void BGThread::DelaySchedule(
   timer_queue_.push(TimerItem(exec_time, function, arg));
   rsignal_.signal();
   mu_.unlock();
+}
+
+////////////////////// StdThreadGroup //////////////////////////
+
+StdThreadGroup::StdThreadGroup(const std::function<void()> &callback,
+                               uint64_t count)
+{
+  Add(callback, count);
+}
+
+StdThreadGroup::~StdThreadGroup()
+{
+  for (uint64_t i = 0; i < m_threads.size(); ++i)
+  {
+    m_threads[i].join();
+  }
+  m_threads.clear();
+}
+
+void StdThreadGroup::Add(const std::function<void()> &callback,
+                         uint64_t count)
+{
+  for (uint64_t i = 0; i < count; ++i)
+  {
+    m_threads.emplace_back(callback);
+  }
+}
+
+void StdThreadGroup::Join()
+{
+  for (uint64_t i = 0; i < m_threads.size(); ++i)
+  {
+    m_threads[i].join();
+  }
+}
+
+uint64_t StdThreadGroup::Size() const
+{
+  return m_threads.size();
 }
 
 } // namespace util

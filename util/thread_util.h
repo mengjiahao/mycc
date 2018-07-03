@@ -37,7 +37,7 @@ public:
     return pthread_self();
   }
 
-  static bool isThreadIdEqual(pthread_t &a, pthread_t &b)
+  static bool IsThreadIdEqual(pthread_t &a, pthread_t &b)
   {
     return pthread_equal(a, b) == 0;
   }
@@ -141,47 +141,47 @@ private:
   DISALLOW_COPY_AND_ASSIGN(PosixThread);
 };
 
-// ThreadBase class
+//////////////////////// BGThread ///////////////////////////
 
-class ThreadBase
+class BGThreadBase
 {
 public:
-  ThreadBase()
+  BGThreadBase()
       : should_stop_(false),
         running_(false),
         thread_id_(0)
   {
   }
 
-  virtual ~ThreadBase(){};
+  virtual ~BGThreadBase(){};
 
-  virtual int StartThread()
+  virtual bool start()
   {
     MutexLock l(&running_mu_);
     should_stop_ = false;
     if (!running_)
     {
       running_ = true;
-      return pthread_create(&thread_id_, nullptr, RunThread, (void *)this);
+      return (0 == pthread_create(&thread_id_, nullptr, RunThread, (void *)this));
     }
-    return 0;
+    return true;
   }
 
-  virtual int StopThread()
+  virtual bool stop()
   {
     MutexLock l(&running_mu_);
     should_stop_ = true;
     if (running_)
     {
       running_ = false;
-      return pthread_join(thread_id_, nullptr);
+      return (0 == pthread_join(thread_id_, nullptr));
     }
-    return 0;
+    return true;
   }
 
-  int JoinThread()
+  bool join()
   {
-    return pthread_join(thread_id_, nullptr);
+    return (0 == pthread_join(thread_id_, nullptr));
   }
 
   bool should_stop()
@@ -222,7 +222,7 @@ protected:
 private:
   static void *RunThread(void *arg)
   {
-    ThreadBase *thread = reinterpret_cast<ThreadBase *>(arg);
+    BGThreadBase *thread = reinterpret_cast<BGThreadBase *>(arg);
     if (!(thread->thread_name().empty()))
     {
       //SetThreadName(pthread_self(), thread->thread_name());
@@ -236,10 +236,10 @@ private:
   pthread_t thread_id_;
   string thread_name_;
 
-  DISALLOW_COPY_AND_ASSIGN(ThreadBase);
+  DISALLOW_COPY_AND_ASSIGN(BGThreadBase);
 };
 
-class BGThread : public ThreadBase
+class BGThread : public BGThreadBase
 {
 public:
   struct TimerItem
@@ -260,7 +260,7 @@ public:
   };
 
   explicit BGThread(uint64_t full = 100000)
-      : ThreadBase::ThreadBase(),
+      : BGThreadBase::BGThreadBase(),
         full_(full),
         mu_(),
         rsignal_(&mu_),
@@ -270,15 +270,15 @@ public:
 
   virtual ~BGThread()
   {
-    StopThread();
+    stop();
   }
 
-  virtual int StopThread() override
+  virtual bool stop() override
   {
     should_stop_ = true;
     rsignal_.signal();
     wsignal_.signal();
-    return ThreadBase::StopThread();
+    return BGThreadBase::stop();
   }
 
   void Schedule(void (*function)(void *), void *arg);
@@ -434,6 +434,24 @@ protected:
   bool stopping_;
   LockedCondition finishCV_;
   bool empty_;
+};
+
+////////////////////// StdThreadGroup //////////////////////////
+
+class StdThreadGroup
+{
+public:
+  StdThreadGroup() {};
+  StdThreadGroup(const std::function<void()> &callback, uint64_t count);
+  ~StdThreadGroup();
+  void Add(const std::function<void()> &callback, uint64_t count = 1);
+  void Start();
+  void Join();
+  uint64_t Size() const;
+
+private:
+  std::vector<std::thread> m_threads;
+  DISALLOW_COPY_AND_ASSIGN(StdThreadGroup);
 };
 
 } // namespace util
