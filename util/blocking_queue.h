@@ -696,6 +696,145 @@ private:
   DISALLOW_COPY_AND_ASSIGN(BlockChannel);
 };
 
+/**
+ * A thread-safe queue that automatically grows but never shrinks.
+ * Dequeue a empty queue will block current thread. Enqueue an element
+ * will wake up another thread that blocked by dequeue method.
+ *
+ * For example.
+ * @code{.cpp}
+ *
+ * paddle::SimpleQueue<int32_t> q;
+ * END_OF_JOB=-1
+ * void thread1() {
+ *   while (true) {
+ *     auto job = q.dequeue();
+ *     if (job == END_OF_JOB) {
+ *       break;
+ *     }
+ *     processJob(job);
+ *   }
+ * }
+ *
+ * void thread2() {
+ *   while (true) {
+ *      auto job = getJob();
+ *      q.enqueue(job);
+ *      if (job == END_OF_JOB) {
+ *        break;
+ *      }
+ *   }
+ * }
+ *
+ * @endcode
+ */
+template <class T>
+class SimpleQueue
+{
+public:
+  /**
+   * @brief Construct Function. Default capacity of SimpleQueue is zero.
+   */
+  SimpleQueue() : numElements_(0) {}
+
+  ~SimpleQueue() {}
+
+  /**
+   * @brief enqueue an element into SimpleQueue.
+   * @param[in] el The enqueue element.
+   * @note This method is thread-safe, and will wake up another blocked thread.
+   */
+  void enqueue(const T &el)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    elements_.emplace_back(el);
+    numElements_++;
+
+    queueCV_.notify_all();
+  }
+
+  /**
+   * @brief enqueue an element into SimpleQueue.
+   * @param[in] el The enqueue element. rvalue reference .
+   * @note This method is thread-safe, and will wake up another blocked thread.
+   */
+  void enqueue(T &&el)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    elements_.emplace_back(std::move(el));
+    numElements_++;
+
+    queueCV_.notify_all();
+  }
+
+  /**
+   * Dequeue from a queue and return a element.
+   * @note this method will be blocked until not empty.
+   */
+  T dequeue()
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    queueCV_.wait(lock, [this]() { return numElements_ != 0; });
+    T el;
+
+    using std::swap;
+    // Becuase of the previous statement, the right swap() can be found
+    // via argument-dependent lookup (ADL).
+    swap(elements_.front(), el);
+
+    elements_.pop_front();
+    numElements_--;
+    if (numElements_ == 0)
+    {
+      queueCV_.notify_all();
+    }
+    return el;
+  }
+
+  /**
+   * Return size of queue.
+   *
+   * @note This method is not thread safe. Obviously this number
+   * can change by the time you actually look at it.
+   */
+  inline int32_t size() const { return numElements_; }
+
+  /**
+   * @brief is empty or not.
+   * @return true if empty.
+   * @note This method is not thread safe.
+   */
+  inline bool empty() const { return numElements_ == 0; }
+
+  /**
+   * @brief wait util queue is empty
+   */
+  void waitEmpty()
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    queueCV_.wait(lock, [this]() { return numElements_ == 0; });
+  }
+
+  /**
+   * @brief wait queue is not empty at most for some seconds.
+   * @param seconds wait time limit.
+   * @return true if queue is not empty. false if timeout.
+   */
+  bool waitNotEmptyFor(int32_t seconds)
+  {
+    std::unique_lock<std::mutex> lock(queueLock_);
+    return queueCV_.wait_for(lock, std::chrono::seconds(seconds), [this] {
+      return numElements_ != 0;
+    });
+  }
+
+private:
+  std::deque<T> elements_;
+  int32_t numElements_;
+  std::mutex queueLock_;
+  std::condition_variable queueCV_;
+};
+
 /*! \brief type of concurrent queue */
 enum class ConcurrentQueueType
 {
@@ -917,145 +1056,6 @@ uint64_t ConcurrentBlockingQueue<T, type>::Size()
     return priority_queue_.size();
   }
 }
-
-/**
- * A thread-safe queue that automatically grows but never shrinks.
- * Dequeue a empty queue will block current thread. Enqueue an element
- * will wake up another thread that blocked by dequeue method.
- *
- * For example.
- * @code{.cpp}
- *
- * paddle::SimpleQueue<int32_t> q;
- * END_OF_JOB=-1
- * void thread1() {
- *   while (true) {
- *     auto job = q.dequeue();
- *     if (job == END_OF_JOB) {
- *       break;
- *     }
- *     processJob(job);
- *   }
- * }
- *
- * void thread2() {
- *   while (true) {
- *      auto job = getJob();
- *      q.enqueue(job);
- *      if (job == END_OF_JOB) {
- *        break;
- *      }
- *   }
- * }
- *
- * @endcode
- */
-template <class T>
-class SimpleQueue
-{
-public:
-  /**
-   * @brief Construct Function. Default capacity of SimpleQueue is zero.
-   */
-  SimpleQueue() : numElements_(0) {}
-
-  ~SimpleQueue() {}
-
-  /**
-   * @brief enqueue an element into SimpleQueue.
-   * @param[in] el The enqueue element.
-   * @note This method is thread-safe, and will wake up another blocked thread.
-   */
-  void enqueue(const T &el)
-  {
-    std::unique_lock<std::mutex> lock(queueLock_);
-    elements_.emplace_back(el);
-    numElements_++;
-
-    queueCV_.notify_all();
-  }
-
-  /**
-   * @brief enqueue an element into SimpleQueue.
-   * @param[in] el The enqueue element. rvalue reference .
-   * @note This method is thread-safe, and will wake up another blocked thread.
-   */
-  void enqueue(T &&el)
-  {
-    std::unique_lock<std::mutex> lock(queueLock_);
-    elements_.emplace_back(std::move(el));
-    numElements_++;
-
-    queueCV_.notify_all();
-  }
-
-  /**
-   * Dequeue from a queue and return a element.
-   * @note this method will be blocked until not empty.
-   */
-  T dequeue()
-  {
-    std::unique_lock<std::mutex> lock(queueLock_);
-    queueCV_.wait(lock, [this]() { return numElements_ != 0; });
-    T el;
-
-    using std::swap;
-    // Becuase of the previous statement, the right swap() can be found
-    // via argument-dependent lookup (ADL).
-    swap(elements_.front(), el);
-
-    elements_.pop_front();
-    numElements_--;
-    if (numElements_ == 0)
-    {
-      queueCV_.notify_all();
-    }
-    return el;
-  }
-
-  /**
-   * Return size of queue.
-   *
-   * @note This method is not thread safe. Obviously this number
-   * can change by the time you actually look at it.
-   */
-  inline int32_t size() const { return numElements_; }
-
-  /**
-   * @brief is empty or not.
-   * @return true if empty.
-   * @note This method is not thread safe.
-   */
-  inline bool empty() const { return numElements_ == 0; }
-
-  /**
-   * @brief wait util queue is empty
-   */
-  void waitEmpty()
-  {
-    std::unique_lock<std::mutex> lock(queueLock_);
-    queueCV_.wait(lock, [this]() { return numElements_ == 0; });
-  }
-
-  /**
-   * @brief wait queue is not empty at most for some seconds.
-   * @param seconds wait time limit.
-   * @return true if queue is not empty. false if timeout.
-   */
-  bool waitNotEmptyFor(int32_t seconds)
-  {
-    std::unique_lock<std::mutex> lock(queueLock_);
-    return queueCV_.wait_for(lock, std::chrono::seconds(seconds), [this] {
-      return numElements_ != 0;
-    });
-  }
-
-private:
-  std::deque<T> elements_;
-  int32_t numElements_;
-  std::mutex queueLock_;
-  std::condition_variable queueCV_;
-};
 
 /*
  * A thread-safe circular queue that

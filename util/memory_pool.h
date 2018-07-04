@@ -3,10 +3,12 @@
 #define MYCC_UTIL_MEMORY_POOL_H_
 
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <algorithm>
 #include <list>
 #include <memory>
+#include <vector>
 #include "locks_util.h"
 #include "singleton.h"
 #include "threadlocal_util.h"
@@ -17,6 +19,7 @@ namespace mycc
 namespace util
 {
 
+// lazy destroy
 class Crematory
 {
 public:
@@ -601,6 +604,151 @@ private:
   }
   // internal block
   RefBlock *block_;
+};
+
+//////////////////////// TC_MemMalloc /////////////////////////
+
+class TCMemChunk
+{
+public:
+  TCMemChunk();
+
+  static uint64_t calcMemSize(uint64_t iBlockSize, uint64_t iBlockCount);
+  static uint64_t calcBlockCount(uint64_t iMemSize, uint64_t iBlockSize);
+  static uint64_t getHeadSize() { return sizeof(tagChunkHead); }
+  void create(void *pAddr, uint64_t iBlockSize, uint64_t iBlockCount);
+  void connect(void *pAddr);
+  uint64_t getBlockSize() const { return _pHead->_iBlockSize; }
+  uint64_t getMemSize() const { return _pHead->_iBlockSize * _pHead->_iBlockCount + sizeof(tagChunkHead); }
+  uint64_t getCapacity() const { return _pHead->_iBlockSize * _pHead->_iBlockCount; }
+  uint64_t getBlockCount() const { return _pHead->_iBlockCount; }
+  bool isBlockAvailable() const { return _pHead->_blockAvailable > 0; }
+  uint64_t getBlockAvailableCount() const { return _pHead->_blockAvailable; }
+  void *allocate();
+  void *allocate2(uint64_t &iIndex);
+  void deallocate(void *pAddr);
+  void deallocate2(uint64_t iIndex);
+  void rebuild();
+
+  struct tagChunkHead
+  {
+    uint64_t _iBlockSize;
+    uint64_t _iBlockCount;
+    uint64_t _firstAvailableBlock;
+    uint64_t _blockAvailable;
+  } __attribute__((packed));
+
+  tagChunkHead getChunkHead() const;
+  void *getAbsolute(uint64_t iIndex);
+  uint64_t getRelative(void *pAddr);
+
+protected:
+  void init(void *pAddr);
+
+private:
+  tagChunkHead *_pHead;
+  unsigned char *_pData;
+};
+
+class TCMemChunkAllocator
+{
+public:
+  TCMemChunkAllocator();
+
+  void create(void *pAddr, uint64_t iSize, uint64_t iBlockSize);
+  void connect(void *pAddr);
+  void *getHead() const { return _pHead; }
+  uint64_t getBlockSize() const { return _pHead->_iBlockSize; }
+  uint64_t getMemSize() const { return _pHead->_iSize; }
+  uint64_t getCapacity() const { return _chunk.getCapacity(); }
+  void *allocate();
+  void *allocate2(uint64_t &iIndex);
+  void deallocate(void *pAddr);
+  void deallocate2(uint64_t iIndex);
+  uint64_t blockCount() const { return _chunk.getBlockCount(); }
+  void *getAbsolute(uint64_t iIndex) { return _chunk.getAbsolute(iIndex); };
+  uint64_t getRelative(void *pAddr) { return _chunk.getRelative(pAddr); };
+  TCMemChunk::tagChunkHead getBlockDetail() const;
+  void rebuild();
+
+  struct tagChunkAllocatorHead
+  {
+    uint64_t _iSize;
+    uint64_t _iBlockSize;
+  } __attribute__((packed));
+
+  static uint64_t getHeadSize() { return sizeof(tagChunkAllocatorHead); }
+
+protected:
+  void init(void *pAddr);
+  void initChunk();
+  void connectChunk();
+
+  TCMemChunkAllocator(const TCMemChunkAllocator &);
+  TCMemChunkAllocator &operator=(const TCMemChunkAllocator &);
+  bool operator==(const TCMemChunkAllocator &mca) const;
+  bool operator!=(const TCMemChunkAllocator &mca) const;
+
+private:
+  tagChunkAllocatorHead *_pHead;
+  void *_pChunk;
+  TCMemChunk _chunk;
+};
+
+class TCMemMultiChunkAllocator
+{
+public:
+  TCMemMultiChunkAllocator();
+  ~TCMemMultiChunkAllocator();
+
+  void create(void *pAddr, uint64_t iSize, uint64_t iMinBlockSize, uint64_t iMaxBlockSize, float fFactor = 1.1);
+  void connect(void *pAddr);
+  void append(void *pAddr, uint64_t iSize);
+  std::vector<uint64_t> getBlockSize() const;
+  uint64_t getBlockCount() const { return _iBlockCount; }
+  std::vector<TCMemChunk::tagChunkHead> getBlockDetail() const;
+  uint64_t getMemSize() const { return _pHead->_iTotalSize; }
+  uint64_t getCapacity() const;
+  std::vector<uint64_t> singleBlockChunkCount() const;
+  uint64_t allBlockChunkCount() const;
+  void *allocate(uint64_t iNeedSize, uint64_t &iAllocSize);
+  void *allocate2(uint64_t iNeedSize, uint64_t &iAllocSize, uint64_t &iIndex);
+  void deallocate(void *pAddr);
+  void deallocate2(uint64_t iIndex);
+  void rebuild();
+  void *getAbsolute(uint64_t iIndex);
+  uint64_t getRelative(void *pAddr);
+
+  struct tagChunkAllocatorHead
+  {
+    uint64_t _iSize;
+    uint64_t _iTotalSize;
+    uint64_t _iMinBlockSize;
+    uint64_t _iMaxBlockSize;
+    float _fFactor;
+    uint64_t _iNext;
+  } __attribute__((packed));
+
+  static uint64_t getHeadSize() { return sizeof(tagChunkAllocatorHead); }
+
+protected:
+  void init(void *pAddr);
+  void calc();
+  void clear();
+  TCMemMultiChunkAllocator *lastAlloc();
+  TCMemMultiChunkAllocator(const TCMemMultiChunkAllocator &);
+  TCMemMultiChunkAllocator &operator=(const TCMemMultiChunkAllocator &);
+  bool operator==(const TCMemMultiChunkAllocator &mca) const;
+  bool operator!=(const TCMemMultiChunkAllocator &mca) const;
+
+private:
+  tagChunkAllocatorHead *_pHead;
+  void *_pChunk;
+  std::vector<uint64_t> _vBlockSize;
+  uint64_t _iBlockCount;
+  std::vector<TCMemChunkAllocator *> _allocator;
+  uint64_t _iAllIndex;
+  TCMemMultiChunkAllocator *_nallocator;
 };
 
 } // namespace util

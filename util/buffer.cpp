@@ -1,6 +1,11 @@
 
 #include "buffer.h"
 #include <stdlib.h>
+#include <algorithm>
+#include <iostream>
+#include <limits>
+#include <iomanip>
+#include <sstream>
 #include "error_util.h"
 #include "math_util.h"
 
@@ -193,320 +198,317 @@ Status InputBuffer::Seek(int64_t position)
   return Status::OK();
 }
 
-/////////////////////// AutoBuffer //////////////////////////////
+////////////////////// TCBuffer /////////////////////////
 
-AutoBuffer::AutoBuffer(uint64_t _nSize)
-    : parray_(NULL), pos_(0), length_(0), capacity_(0), malloc_unitsize_(_nSize)
+const uint64_t TCBuffer::kMaxBufferSize = std::numeric_limits<uint64_t>::max() / 2;
+const uint64_t TCBuffer::kDefaultSize = 128;
+
+uint64_t TCBuffer::PushData(const void *data, uint64_t size)
 {
+  if (!data || size == 0)
+    return 0;
+  if (ReadableSize() + size >= kMaxBufferSize)
+    return 0; // overflow
+
+  AssureSpace(size);
+  ::memcpy(&_buffer[_writePos], data, size);
+  Produce(size);
+  return size;
 }
 
-AutoBuffer::AutoBuffer(void *_pbuffer, uint64_t _len, uint64_t _nSize)
-    : parray_(NULL), pos_(0), length_(0), capacity_(0), malloc_unitsize_(_nSize)
+uint64_t TCBuffer::PopData(void *buf, uint64_t size)
 {
-  Attach(_pbuffer, _len);
+  const uint64_t dataSize = ReadableSize();
+  if (!buf || size == 0 || dataSize == 0)
+    return 0;
+
+  if (size > dataSize)
+    size = dataSize; // truncate
+
+  ::memcpy(buf, &_buffer[_readPos], size);
+  Consume(size);
+  return size;
 }
 
-AutoBuffer::AutoBuffer(const void *_pbuffer, uint64_t _len, uint64_t _nSize)
-    : parray_(NULL), pos_(0), length_(0), capacity_(0), malloc_unitsize_(_nSize)
+void TCBuffer::PeekData(void *&buf, uint64_t &size)
 {
-  Write(0, _pbuffer, _len);
+  buf = ReadAddr();
+  size = ReadableSize();
 }
 
-AutoBuffer::~AutoBuffer()
+void TCBuffer::Consume(uint64_t bytes)
 {
-  Reset();
+  assert(_readPos + bytes <= _writePos);
+  _readPos += bytes;
+  if (IsEmpty())
+    Clear();
 }
 
-void AutoBuffer::AllocWrite(uint64_t _readytowrite, bool _changelength)
+void TCBuffer::AssureSpace(uint64_t needsize)
 {
-  uint64_t nLen = Pos() + _readytowrite;
-  __FitSize(nLen);
+  if (WritableSize() >= needsize)
+    return;
 
-  if (_changelength)
-    length_ = MATH_MAX(nLen, length_);
-}
+  const uint64_t dataSize = ReadableSize();
+  const uint64_t oldCap = _capacity;
 
-void AutoBuffer::AddCapacity(uint64_t _len)
-{
-  __FitSize(Capacity() + _len);
-}
-
-void AutoBuffer::Write(const AutoBuffer &_buffer)
-{
-  Write(_buffer.Ptr(), _buffer.Length());
-}
-
-void AutoBuffer::Write(const void *_pbuffer, uint64_t _len)
-{
-  Write(Pos(), _pbuffer, _len);
-  Seek(_len, ESeekCur);
-}
-
-void AutoBuffer::Write(int64_t &_pos, const AutoBuffer &_buffer)
-{
-  Write((const int64_t &)_pos, _buffer.Ptr(), _buffer.Length());
-  _pos += _buffer.Length();
-}
-
-void AutoBuffer::Write(int64_t &_pos, const void *_pbuffer, uint64_t _len)
-{
-  Write((const int64_t &)_pos, _pbuffer, _len);
-  _pos += _len;
-}
-
-void AutoBuffer::Write(const int64_t &_pos, const AutoBuffer &_buffer)
-{
-  Write((const int64_t &)_pos, _buffer.Ptr(), _buffer.Length());
-}
-
-void AutoBuffer::Write(const int64_t &_pos, const void *_pbuffer, uint64_t _len)
-{
-  ASSERT(NULL != _pbuffer || 0 == _len);
-  ASSERT(0 <= _pos);
-  ASSERT((uint64_t)_pos <= Length());
-  uint64_t nLen = _pos + _len;
-  __FitSize(nLen);
-  length_ = MATH_MAX(nLen, length_);
-  memcpy((unsigned char *)Ptr() + _pos, _pbuffer, _len);
-}
-
-void AutoBuffer::Write(TSeek _seek, const void *_pbuffer, uint64_t _len)
-{
-  int64_t pos = 0;
-  switch (_seek)
+  while (WritableSize() + _readPos < needsize)
   {
-  case ESeekStart:
-    pos = 0;
-    break;
-  case ESeekCur:
-    pos = pos_;
-    break;
-  case ESeekEnd:
-    pos = length_;
-    break;
-  default:
-    ASSERT(false);
-    break;
+    if (_capacity < kDefaultSize)
+    {
+      _capacity = kDefaultSize;
+    }
+    else if (_capacity <= kMaxBufferSize)
+    {
+      const uint64_t newCapcity = RoundupPower2(_capacity);
+      if (_capacity < newCapcity)
+        _capacity = newCapcity;
+      else
+        _capacity = 2 * newCapcity;
+    }
+    else
+    {
+      assert(false);
+    }
   }
 
-  Write(pos, _pbuffer, _len);
-}
-
-uint64_t AutoBuffer::Read(void *_pbuffer, uint64_t _len)
-{
-  uint64_t readlen = Read(Pos(), _pbuffer, _len);
-  Seek(readlen, ESeekCur);
-  return readlen;
-}
-
-uint64_t AutoBuffer::Read(AutoBuffer &_rhs, uint64_t _len)
-{
-  uint64_t readlen = Read(Pos(), _rhs, _len);
-  Seek(readlen, ESeekCur);
-  return readlen;
-}
-
-uint64_t AutoBuffer::Read(int64_t &_pos, void *_pbuffer, uint64_t _len) const
-{
-  uint64_t readlen = Read((const int64_t &)_pos, _pbuffer, _len);
-  _pos += readlen;
-  return readlen;
-}
-
-uint64_t AutoBuffer::Read(int64_t &_pos, AutoBuffer &_rhs, uint64_t _len) const
-{
-  uint64_t readlen = Read((const int64_t &)_pos, _rhs, _len);
-  _pos += readlen;
-  return readlen;
-}
-
-uint64_t AutoBuffer::Read(const int64_t &_pos, void *_pbuffer, uint64_t _len) const
-{
-  ASSERT(NULL != _pbuffer);
-  ASSERT(0 <= _pos);
-  ASSERT((uint64_t)_pos <= Length());
-
-  uint64_t readlen = Length() - _pos;
-  readlen = MATH_MIN(readlen, _len);
-  memcpy(_pbuffer, PosPtr(), readlen);
-  return readlen;
-}
-
-uint64_t AutoBuffer::Read(const int64_t &_pos, AutoBuffer &_rhs, uint64_t _len) const
-{
-  uint64_t readlen = Length() - _pos;
-  readlen = MATH_MIN(readlen, _len);
-  _rhs.Write(PosPtr(), readlen);
-  return readlen;
-}
-
-int64_t AutoBuffer::Move(int64_t _move_len)
-{
-  if (0 < _move_len)
+  if (oldCap < _capacity)
   {
-    __FitSize(Length() + _move_len);
-    memmove(parray_ + _move_len, parray_, Length());
-    memset(parray_, 0, _move_len);
-    Length(Pos() + _move_len, Length() + _move_len);
+    char *tmp(new char[_capacity]);
+    if (dataSize != 0)
+    {
+      memcpy(&tmp[0], &_buffer[_readPos], dataSize);
+    }
+    ResetBuffer(tmp);
   }
   else
   {
-    uint64_t move_len = -_move_len;
-
-    if (move_len > Length())
-      move_len = Length();
-
-    memmove(parray_, parray_ + move_len, Length() - move_len);
-    Length(move_len < (uint64_t)Pos() ? Pos() - move_len : 0, Length() - move_len);
+    assert(_readPos > 0);
+    ::memmove(&_buffer[0], &_buffer[_readPos], dataSize);
   }
 
-  return Length();
+  _readPos = 0;
+  _writePos = dataSize;
+  assert(needsize <= WritableSize());
 }
 
-void AutoBuffer::Seek(int64_t _offset, TSeek _eorigin)
+void TCBuffer::Shrink()
 {
-  switch (_eorigin)
+  if (IsEmpty())
   {
-  case ESeekStart:
-    pos_ = _offset;
-    break;
-
-  case ESeekCur:
-    pos_ += _offset;
-    break;
-
-  case ESeekEnd:
-    pos_ = length_ + _offset;
-    break;
-
-  default:
-    ASSERT(false);
-    break;
+    Clear();
+    _capacity = 0;
+    ResetBuffer();
+    return;
   }
 
-  if (pos_ < 0)
-    pos_ = 0;
-
-  if ((uint64_t)pos_ > length_)
-    pos_ = length_;
-}
-
-void AutoBuffer::Length(int64_t _pos, uint64_t _lenght)
-{
-  ASSERT(0 <= _pos);
-  ASSERT((uint64_t)_pos <= _lenght);
-  ASSERT(_lenght <= Capacity());
-  length_ = _lenght;
-  Seek(_pos, ESeekStart);
-}
-
-void *AutoBuffer::Ptr(int64_t _offset)
-{
-  return (char *)parray_ + _offset;
-}
-
-const void *AutoBuffer::Ptr(int64_t _offset) const
-{
-  return (const char *)parray_ + _offset;
-}
-
-void *AutoBuffer::PosPtr()
-{
-  return ((unsigned char *)Ptr()) + Pos();
-}
-
-const void *AutoBuffer::PosPtr() const
-{
-  return ((unsigned char *)Ptr()) + Pos();
-}
-
-int64_t AutoBuffer::Pos() const
-{
-  return pos_;
-}
-
-uint64_t AutoBuffer::PosLength() const
-{
-  return length_ - pos_;
-}
-
-uint64_t AutoBuffer::Length() const
-{
-  return length_;
-}
-
-uint64_t AutoBuffer::Capacity() const
-{
-  return capacity_;
-}
-
-void AutoBuffer::Attach(void *_pbuffer, uint64_t _len)
-{
-  Reset();
-  parray_ = (unsigned char *)_pbuffer;
-  length_ = _len;
-  capacity_ = _len;
-}
-
-void AutoBuffer::Attach(AutoBuffer &_rhs)
-{
-  Reset();
-  parray_ = _rhs.parray_;
-  pos_ = _rhs.pos_;
-  length_ = _rhs.length_;
-  capacity_ = _rhs.capacity_;
-
-  _rhs.parray_ = NULL;
-  _rhs.Reset();
-}
-
-void *AutoBuffer::Detach(uint64_t *_plen)
-{
-  unsigned char *ret = parray_;
-  parray_ = NULL;
-  uint64_t nLen = Length();
-
-  if (NULL != _plen)
-    *_plen = nLen;
-
-  Reset();
-  return ret;
-}
-
-void AutoBuffer::Reset()
-{
-  if (NULL != parray_)
-    free(parray_);
-
-  parray_ = NULL;
-  pos_ = 0;
-  length_ = 0;
-  capacity_ = 0;
-}
-
-void AutoBuffer::__FitSize(uint64_t _len)
-{
-  if (_len > capacity_)
+  if (_capacity <= kDefaultSize)
   {
-    uint64_t mallocsize = ((_len + malloc_unitsize_ - 1) / malloc_unitsize_) * malloc_unitsize_;
+    return;
+  }
 
-    void *p = realloc(parray_, mallocsize);
+  uint64_t oldCap = _capacity;
+  uint64_t dataSize = ReadableSize();
+  if (dataSize * 100 > oldCap * _highWaterPercent)
+  {
+    return;
+  }
 
-    if (NULL == p)
+  uint64_t newCap = RoundupPower2(dataSize);
+
+  char *tmp(new char[newCap]);
+  memcpy(&tmp[0], &_buffer[_readPos], dataSize);
+  ResetBuffer(tmp);
+  _capacity = newCap;
+  _readPos = 0;
+  _writePos = dataSize;
+}
+
+void TCBuffer::Clear()
+{
+  _readPos = _writePos = 0;
+}
+
+void TCBuffer::Swap(TCBuffer &buf)
+{
+  std::swap(_readPos, buf._readPos);
+  std::swap(_writePos, buf._writePos);
+  std::swap(_capacity, buf._capacity);
+  std::swap(_buffer, buf._buffer);
+}
+
+void TCBuffer::ResetBuffer(void *ptr)
+{
+  delete[] _buffer;
+  _buffer = reinterpret_cast<char *>(ptr);
+}
+
+void TCBuffer::SetHighWaterPercent(uint64_t percents)
+{
+  if (percents < 10 || percents >= 100)
+  {
+    return;
+  }
+  _highWaterPercent = percents;
+}
+
+TCSlice::TCSlice(void *d, uint64_t dl, uint64_t l)
+    : data(d),
+      dataLen(dl),
+      len(l)
+{
+}
+
+TCBufferPool::TCBufferPool(uint64_t minBlock, uint64_t maxBlock)
+    : _minBlock(RoundupPower2(minBlock)),
+      _maxBlock(RoundupPower2(maxBlock)),
+      _maxBytes(1024 * 1024),
+      _totalBytes(0)
+{
+  uint64_t listCount = 0;
+  uint64_t testVal = _minBlock;
+  while (testVal <= _maxBlock)
+  {
+    testVal *= 2;
+    ++listCount;
+  }
+
+  assert(listCount > 0);
+  _buffers.resize(listCount);
+}
+
+TCBufferPool::~TCBufferPool()
+{
+  std::vector<BufferList>::iterator it(_buffers.begin());
+  for (; it != _buffers.end(); ++it)
+  {
+    BufferList &blist = *it;
+    BufferList::iterator bit(blist.begin());
+    for (; bit != blist.end(); ++bit)
     {
-      //ASSERT2(p, "_len=%" PRIu64 ", m_nMallocUnitSize=%" PRIu64 ", nMallocSize=%" PRIu64", m_nCapacity=%" PRIu64,
-      //        (uint64_t)_len, (uint64_t)malloc_unitsize_, (uint64_t)mallocsize, (uint64_t)capacity_);
-      free(parray_);
+      //delete[] (*bit);
+      delete[] reinterpret_cast<char *>(*bit);
     }
-
-    parray_ = (unsigned char *)p;
-
-    //ASSERT2(_len <= 10 * 1024 * 1024, "%u", (uint32_t)_len);
-    ASSERT(parray_);
-
-    memset(parray_ + capacity_, 0, mallocsize - capacity_);
-    capacity_ = mallocsize;
   }
+}
+
+TCSlice TCBufferPool::Allocate(uint64_t size)
+{
+  TCSlice s;
+  size = RoundupPower2(size);
+  if (size == 0)
+    return s;
+
+  if (size < _minBlock || size > _maxBlock)
+  {
+    // not managed by pool, directly new
+    s.data = new char[size];
+    s.len = size;
+  }
+  else
+  {
+    BufferList &blist = _GetBufferList(size);
+    s = _Allocate(size, blist);
+  }
+
+  return s;
+}
+
+void TCBufferPool::Deallocate(TCSlice s)
+{
+  if (s.len < _minBlock || s.len > _maxBlock)
+  {
+    // not managed by pool, directly delete
+    delete[] reinterpret_cast<char *>(s.data);
+  }
+  else if (_totalBytes >= _maxBytes)
+  {
+    // use too more, directly delete
+    delete[] reinterpret_cast<char *>(s.data);
+  }
+  else
+  {
+    // free to pool
+    BufferList &blist = _GetBufferList(s.len);
+    blist.push_back(s.data);
+    _totalBytes += s.len;
+  }
+}
+
+void TCBufferPool::SetMaxBytes(uint64_t bytes)
+{
+  _maxBytes = bytes;
+}
+
+uint64_t TCBufferPool::GetMaxBytes() const
+{
+  return _maxBytes;
+}
+
+string TCBufferPool::DebugPrint() const
+{
+  std::ostringstream oss;
+
+  oss << "\n===============================================================\n";
+  oss << "============  BucketCount " << std::setiosflags(std::ios::left) << std::setw(4) << _buffers.size() << " ================================" << std::endl;
+  oss << "============  PoolBytes " << std::setw(10) << _totalBytes << " ============================" << std::endl;
+
+  int bucket = 0;
+  uint64_t size = _minBlock;
+  std::vector<BufferList>::const_iterator it(_buffers.begin());
+  for (; it != _buffers.end(); ++it)
+  {
+    const BufferList &blist = *it;
+    oss << "== Bucket " << std::setw(3) << bucket
+        << ": BlockSize " << std::setw(8) << size
+        << " Remain blocks " << std::setw(6) << blist.size()
+        << " ======== \n";
+
+    ++bucket;
+    size *= 2;
+  }
+
+  return oss.str();
+}
+
+TCSlice TCBufferPool::_Allocate(uint64_t size, BufferList &blist)
+{
+  assert((size & (size - 1)) == 0);
+  TCSlice s;
+  s.len = size;
+
+  if (blist.empty())
+  {
+    s.data = new char[size];
+  }
+  else
+  {
+    s.data = *blist.begin();
+    blist.pop_front();
+    _totalBytes -= s.len;
+  }
+  return s;
+}
+
+TCBufferPool::BufferList &TCBufferPool::_GetBufferList(uint64_t s)
+{
+  const BufferList &blist = const_cast<const TCBufferPool &>(*this)._GetBufferList(s);
+  return const_cast<BufferList &>(blist);
+}
+
+const TCBufferPool::BufferList &TCBufferPool::_GetBufferList(uint64_t s) const
+{
+  assert((s & (s - 1)) == 0);
+  assert(s >= _minBlock && s <= _maxBlock);
+
+  uint64_t index = _buffers.size();
+  uint64_t testVal = s;
+  while (testVal <= _maxBlock)
+  {
+    testVal *= 2;
+    index--;
+  }
+  return _buffers[index];
 }
 
 } // namespace util

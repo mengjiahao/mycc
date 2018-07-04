@@ -344,9 +344,9 @@ inline float InvSqrt(float x)
 {
   float xhalf = 0.5f * x;
   int32_t i = *reinterpret_cast<int32_t *>(&x); // get bits for floating VALUE
-  i = 0x5f375a86 - (i >> 1);            // gives initial guess y0
-  x = *reinterpret_cast<float *>(&i);   // convert bits BACK to float
-  x = x * (1.5f - xhalf * x * x);       // Newton step, repeating increases accuracy
+  i = 0x5f375a86 - (i >> 1);                    // gives initial guess y0
+  x = *reinterpret_cast<float *>(&i);           // convert bits BACK to float
+  x = x * (1.5f - xhalf * x * x);               // Newton step, repeating increases accuracy
   return x;
 }
 
@@ -512,9 +512,23 @@ inline uint64_t LowerUint(const uint64_t i, const uint64_t fac)
   return i - (i % fac);
 }
 
-inline uint64_t RoundupPow2(uint64_t i, uint64_t base2)
+inline uint64_t RoundupPow2Base(uint64_t i, uint64_t base2)
 {
   return (i + base2 - 1) & (~(base2 - 1));
+}
+
+inline static uint64_t RoundupPower2(uint64_t size)
+{
+  if (size == 0)
+  {
+    return 0;
+  }
+  uint64_t roundUp = 1;
+  while (roundUp < size)
+  {
+    roundUp <<= 1;
+  }
+  return roundUp;
 }
 
 inline uint64_t Roundup(uint64_t x, uint64_t y)

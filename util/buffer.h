@@ -2,6 +2,8 @@
 #ifndef MYCC_UTIL_BUFFER_H_
 #define MYCC_UTIL_BUFFER_H_
 
+#include <list>
+#include <vector>
 #include "env_util.h"
 #include "coding_util.h"
 #include "math_util.h"
@@ -152,128 +154,97 @@ inline Status InputBuffer::ReadVarint32(uint32_t *result)
   }
 }
 
-class AutoBuffer
+class TCBuffer
 {
 public:
-  enum TSeek
+  TCBuffer()
+      : _readPos(0),
+        _writePos(0),
+        _capacity(0),
+        _buffer(NULL),
+        _highWaterPercent(50)
   {
-    ESeekStart,
-    ESeekCur,
-    ESeekEnd,
-  };
+  }
+
+  ~TCBuffer()
+  {
+    delete[] _buffer;
+  }
+
+private:
+  TCBuffer(const TCBuffer &);
+  void operator=(const TCBuffer &);
 
 public:
-  explicit AutoBuffer(uint64_t _size = 128);
-  explicit AutoBuffer(void *_pbuffer, uint64_t _len, uint64_t _size = 128);
-  explicit AutoBuffer(const void *_pbuffer, uint64_t _len, uint64_t _size = 128);
-  ~AutoBuffer();
+  uint64_t PushData(const void *data, uint64_t size);
+  void Produce(uint64_t bytes) { _writePos += bytes; }
+  // deep copy, may < size
+  uint64_t PopData(void *buf, uint64_t size);
+  void PeekData(void *&buf, uint64_t &size);
+  void Consume(uint64_t bytes);
+  char *ReadAddr() { return &_buffer[_readPos]; }
+  char *WriteAddr() { return &_buffer[_writePos]; }
+  bool IsEmpty() const { return ReadableSize() == 0; }
+  uint64_t ReadableSize() const { return _writePos - _readPos; }
+  uint64_t WritableSize() const { return _capacity - _writePos; }
+  uint64_t Capacity() const { return _capacity; }
+  // if mem > 2 * size, try to free mem
+  void Shrink();
+  void Clear();
+  void Swap(TCBuffer &buf);
+  void AssureSpace(uint64_t size);
+  // > Shrink do nothing, percents [10,100)
+  void SetHighWaterPercent(uint64_t percents);
 
-  void AllocWrite(uint64_t _readytowrite, bool _changelength = true);
-  void AddCapacity(uint64_t _len);
-
-  template <class T>
-  void Write(const T &_val)
-  {
-    Write(&_val, sizeof(_val));
-  }
-
-  template <class T>
-  void Write(int64_t &_pos, const T &_val)
-  {
-    Write(_pos, &_val, sizeof(_val));
-  }
-
-  template <class T>
-  void Write(const int64_t &_pos, const T &_val)
-  {
-    Write(_pos, &_val, sizeof(_val));
-  }
-
-  void Write(const char *const _val)
-  {
-    Write(_val, strlen(_val));
-  }
-
-  void Write(int64_t &_pos, const char *const _val)
-  {
-    Write(_pos, _val, strlen(_val));
-  }
-
-  void Write(const int64_t &_pos, const char *const _val)
-  {
-    Write(_pos, _val, strlen(_val));
-  }
-
-  void Write(const AutoBuffer &_buffer);
-  void Write(const void *_pbuffer, uint64_t _len);
-  void Write(int64_t &_pos, const AutoBuffer &_buffer);
-  void Write(int64_t &_pos, const void *_pbuffer, uint64_t _len);
-  void Write(const int64_t &_pos, const AutoBuffer &_buffer);
-  void Write(const int64_t &_pos, const void *_pbuffer, uint64_t _len);
-  void Write(TSeek _seek, const void *_pbuffer, uint64_t _len);
-
-  template <class T>
-  uint64_t Read(T &_val)
-  {
-    return Read(&_val, sizeof(_val));
-  }
-
-  template <class T>
-  uint64_t Read(int64_t &_pos, T &_val) const
-  {
-    return Read(_pos, &_val, sizeof(_val));
-  }
-
-  template <class T>
-  uint64_t Read(const int64_t &_pos, T &_val) const
-  {
-    return Read(_pos, &_val, sizeof(_val));
-  }
-
-  uint64_t Read(void *_pbuffer, uint64_t _len);
-  uint64_t Read(AutoBuffer &_rhs, uint64_t _len);
-
-  uint64_t Read(int64_t &_pos, void *_pbuffer, uint64_t _len) const;
-  uint64_t Read(int64_t &_pos, AutoBuffer &_rhs, uint64_t _len) const;
-
-  uint64_t Read(const int64_t &_pos, void *_pbuffer, uint64_t _len) const;
-  uint64_t Read(const int64_t &_pos, AutoBuffer &_rhs, uint64_t _len) const;
-
-  int64_t Move(int64_t _move_len);
-
-  void Seek(int64_t _offset, TSeek _eorigin);
-  void Length(int64_t _pos, uint64_t _lenght);
-
-  void *Ptr(int64_t _offset = 0);
-  void *PosPtr();
-  const void *Ptr(int64_t _offset = 0) const;
-  const void *PosPtr() const;
-
-  int64_t Pos() const;
-  uint64_t PosLength() const;
-  uint64_t Length() const;
-  uint64_t Capacity() const;
-
-  void Attach(void *_pbuffer, uint64_t _len);
-  void Attach(AutoBuffer &_rhs);
-  void *Detach(uint64_t *_plen = NULL);
-
-  void Reset();
+  static const uint64_t kMaxBufferSize;
+  static const uint64_t kDefaultSize;
 
 private:
-  void __FitSize(uint64_t _len);
+  void ResetBuffer(void *ptr = NULL);
 
-private:
-  unsigned char *parray_;
-  int64_t pos_;
-  uint64_t length_;
-  uint64_t capacity_;
-  uint64_t malloc_unitsize_;
-
-  DISALLOW_COPY_AND_ASSIGN(AutoBuffer);
+  uint64_t _readPos;
+  uint64_t _writePos;
+  uint64_t _capacity;
+  char *_buffer;
+  // Shrink()
+  uint64_t _highWaterPercent;
 };
 
-extern const AutoBuffer KNullAtuoBuffer;
+struct TCSlice 
+{
+  explicit TCSlice(void *d = NULL, uint64_t ds = 0, uint64_t l = 0);
+  void *data;
+  uint64_t dataLen;
+  uint64_t len;
+};
+
+class TCBufferPool 
+{
+public:
+  TCBufferPool(uint64_t minBlock, uint64_t maxBlock);
+  ~TCBufferPool();
+
+  TCSlice Allocate(uint64_t size);
+  void Deallocate(TCSlice s);
+  void SetMaxBytes(uint64_t bytes);
+  uint64_t GetMaxBytes() const;
+  string DebugPrint() const;
+
+private:
+  typedef std::list<void *> BufferList;
+
+  TCSlice _Allocate(uint64_t size, BufferList &blist);
+  // find one
+  BufferList &_GetBufferList(uint64_t s);
+  const BufferList &_GetBufferList(uint64_t s) const;
+
+  std::vector<BufferList> _buffers;
+  const uint64_t _minBlock;
+  const uint64_t _maxBlock;
+  uint64_t _maxBytes;
+  // current bufferpool mem
+  uint64_t _totalBytes;
+};
 
 } // namespace util
 } // namespace mycc
