@@ -3,8 +3,11 @@
 #define MYCC_UTIL_MEMORY_POOL_H_
 
 #include <stdlib.h>
+#include <time.h>
 #include <algorithm>
+#include <list>
 #include <memory>
+#include "locks_util.h"
 #include "singleton.h"
 #include "threadlocal_util.h"
 #include "types_util.h"
@@ -13,6 +16,86 @@ namespace mycc
 {
 namespace util
 {
+
+class Crematory
+{
+public:
+  Crematory()
+      : last_fire_time_(0)
+  {
+  }
+
+  ~Crematory()
+  {
+    fire(true);
+  }
+
+  typedef void (*CleanupFunc)(void *trash);
+
+  // LAZY_DESTROY(trash, cleanup)
+  void add(void *trash, CleanupFunc cleanup)
+  {
+    MutexLock guard(&lock_);
+    bodys_.push_back(new Body(time(NULL), trash, cleanup));
+  }
+
+  // TRY_DESTROY_TRASH
+  // not want to be self-thread here, somebody should call me.
+  void fire(bool force = false)
+  {
+    if (!bodys_.empty() && (force || time(NULL) - last_fire_time_ > Body::ALIVE_TIME_S))
+    {
+      // avoid side-effect of cleanup
+      std::vector<Body *> deads;
+      {
+        MutexLock guard(&lock_);
+        time_t now = time(NULL);
+        std::list<Body *>::iterator it = bodys_.begin();
+        while (it != bodys_.end() && (force || (*it)->dead(now))) // list is time-sorted
+        {
+          deads.push_back(*it);
+          it = bodys_.erase(it);
+        }
+        last_fire_time_ = time(NULL);
+      }
+
+      for (uint64_t i = 0; i < deads.size(); ++i)
+      {
+        delete deads[i];
+      }
+    }
+  }
+
+public:
+  static Crematory *g_crematory;
+
+private:
+  typedef struct Body
+  {
+    Body(time_t time, void *trash, CleanupFunc cleanup)
+        : dead_time_(time + ALIVE_TIME_S), trash_(trash), cleanup_(cleanup) {}
+
+    ~Body()
+    {
+      cleanup_(trash_);
+    }
+
+    bool dead(time_t now)
+    {
+      return now > dead_time_;
+    }
+
+    time_t dead_time_;
+    void *trash_;
+    CleanupFunc cleanup_;
+
+    static const time_t ALIVE_TIME_S = 10;
+  } Body;
+
+  Mutex lock_;
+  std::list<Body *> bodys_;
+  time_t last_fire_time_;
+};
 
 /*!
  * \brief A memory pool that allocate memory of fixed size and alignment.

@@ -204,7 +204,7 @@ uint32_t StringParseUint32(const string &value);
 uint64_t StringParseUint64(const string &value);
 int32_t StringParseInt32(const string &value);
 double StringParseDouble(const string &value);
-size_t StringParseSizeT(const string &value);
+uint64_t StringParseSizeT(const string &value);
 
 bool StringParseInt32(const string &str, int32_t *out);
 bool StringParseInt64(const string &str, int64_t *out);
@@ -557,29 +557,41 @@ inline uint64_t StrLength(const char *string)
   return (length);
 }
 
+int stringmatchlen(const char *p, int plen, const char *s, int slen, int nocase);
+int stringmatch(const char *p, const char *s, int nocase);
+int64_t memtoll(const char *p, int *err);
+uint32_t digits10(uint64_t v);
+uint32_t sdigits10(int64_t v);
+int ll2string(char *s, uint64_t len, int64_t value);
+int string2ll(const char *s, uint64_t slen, int64_t *value);
+int string2l(const char *s, uint64_t slen, long *value);
+int string2ld(const char *s, uint64_t slen, long double *dp);
+int d2string(char *buf, uint64_t len, double value);
+int ld2string(char *buf, uint64_t len, long double value, int humanfriendly);
+
 // Helper class for building result strings in a character buffer. The
 // purpose of the class is to use safe operations that checks the
 // buffer bounds on all operations in debug mode.
 
-// This is a simplified version of V8's SimpleVector class.
+// This is a simplified version of V8's StringBuilderVec class.
 template <typename T>
-class SimpleVector
+class StringBuilderVec
 {
 public:
-  SimpleVector() : start_(NULL), length_(0) {}
-  SimpleVector(T *data, uint64_t len) : start_(data), length_(len)
+  StringBuilderVec() : start_(NULL), length_(0) {}
+  StringBuilderVec(T *data, uint64_t len) : start_(data), length_(len)
   {
     ASSERT(len == 0 || (len > 0 && data != NULL));
   }
 
   // Returns a vector using the same backing storage as this one,
   // spanning from and including 'from', to but not including 'to'.
-  SimpleVector<T> SubVector(uint64_t from, uint64_t to)
+  StringBuilderVec<T> SubVector(uint64_t from, uint64_t to)
   {
     ASSERT(to <= length_);
     ASSERT(from < to);
     ASSERT(0 <= from);
-    return SimpleVector<T>(start() + from, to - from);
+    return StringBuilderVec<T>(start() + from, to - from);
   }
 
   // Returns the length of the vector.
@@ -653,7 +665,7 @@ public:
   void AddSubstring(const char *s, uint64_t n)
   {
     ASSERT(!is_finalized() && position_ + n < buffer_.length());
-    ASSERT(static_cast<size_t>(n) <= strlen(s));
+    ASSERT(static_cast<uint64_t>(n) <= strlen(s));
     memmove(&buffer_[position_], s, n * sizeof(char));
     position_ += n;
   }
@@ -675,14 +687,14 @@ public:
     buffer_[position_] = '\0';
     // Make sure nobody managed to add a 0-character to the
     // buffer while building the string.
-    ASSERT(strlen(buffer_.start()) == static_cast<size_t>(position_));
+    ASSERT(strlen(buffer_.start()) == static_cast<uint64_t>(position_));
     position_ = -1;
     ASSERT(is_finalized());
     return buffer_.start();
   }
 
 private:
-  SimpleVector<char> buffer_;
+  StringBuilderVec<char> buffer_;
   int64_t position_;
 
   bool is_finalized() const { return position_ < 0; }

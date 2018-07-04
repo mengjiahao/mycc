@@ -4,27 +4,13 @@
 #include <string.h>
 #include <sys/prctl.h>
 #include "math_util.h"
+#include "string_util.h"
 #include "time_util.h"
 
 namespace mycc
 {
 namespace util
 {
-
-namespace CurrentThread
-{
-__thread int t_cachedTid = 0;
-__thread const char *t_threadName = "unknown";
-} // namespace CurrentThread
-
-struct ThreadData
-{
-  void (*user_function)(void *);
-  void *user_arg;
-  string name;
-  pthread_t tid;
-  CountDownLatch *latch;
-};
 
 namespace
 { // anonymous namespace
@@ -39,18 +25,46 @@ bool PthreadCall(const char *label, int result)
   return true;
 }
 
+} // namespace
+
+namespace CurrentThread
+{
+__thread int t_cachedTid = 0;
+__thread const char *t_threadName = "unknown";
+} // namespace CurrentThread
+
 void *StartPthreadWrapper(void *arg)
 {
-  ThreadData *data = reinterpret_cast<ThreadData *>(arg);
-  (data->latch)->countDown();
-  //::prctl(PR_SET_NAME, (data->name).c_str());
-  pthread_setname_np(data->tid, (data->name).c_str());
-  data->user_function(data->user_arg);
-  delete data;
+  PosixThread *data = reinterpret_cast<PosixThread *>(arg);
+  data->set_is_running(true);
+  try
+  {
+    if (data->is_std_func())
+    {
+      PosixThread::UserStdFunctionType user_std_func = data->user_std_func();
+      user_std_func();
+    }
+    else
+    {
+      PosixThread::UserFunctionType user_func = data->user_func();
+      if (user_func)
+      {
+        user_func(data->user_arg());
+      }
+    }
+  }
+  catch (...)
+  {
+    //CurrentThread::t_threadName = "Crashed";
+    fprintf(stderr, "unknown exception caught in Thread " PRIu64_FORMAT "\n",
+            (uint64_t)data->thread_id());
+    throw; // rethrow
+  }
+  data->set_is_running(false);
+  // resource reclaim
+  data->clearThreadId();
   return NULL;
 }
-
-} // namespace
 
 uint64_t PosixThread::GetTID()
 {
@@ -58,84 +72,134 @@ uint64_t PosixThread::GetTID()
   return tid;
 }
 
-uint64_t PosixThread::PthreadIntId()
+uint64_t PosixThread::PthreadIdInt()
 {
   pthread_t tid = pthread_self();
-  uint64_t thread_id = 0;
-  memcpy(&thread_id, &tid, MATH_MIN(sizeof(thread_id), sizeof(tid)));
-  return thread_id;
+  return (uint64_t)tid;
 }
 
-void *PosixThread::StartProcWrapper(void *arg)
+pthread_t PosixThread::ThisThreadId()
 {
-  PosixThread *pth = reinterpret_cast<PosixThread *>(arg);
-  CountDownLatch &latch = pth->latch();
-  latch.countDown();
-  //::prctl(PR_SET_NAME, (pth->name()).c_str());
-  pthread_setname_np(pth->tid(), (pth->name()).c_str());
-  try
-  {
-    pth->user_proc_();
-  }
-  catch (...)
-  {
-    CurrentThread::t_threadName = "Crashed";
-    fprintf(stderr, "unknown exception caught in Thread %s\n", (pth->name()).c_str());
-    throw; // rethrow
-  }
-  return nullptr;
+  return pthread_self();
 }
 
-PosixThread::PosixThread(void (*func)(void *arg), void *arg, const string &name)
-    : name_(name),
-      latch_(1),
-      function_(func),
-      arg_(arg),
-      isStdFunction_(false)
+bool PosixThread::IsThreadIdEqual(pthread_t &a, pthread_t &b)
+{
+  return pthread_equal(a, b) == 0;
+}
+
+void PosixThread::SetThisThreadName(string &name)
+{
+  //::prctl(PR_SET_NAME, name.c_str());
+  pthread_setname_np(pthread_self(), name.c_str());
+}
+
+void PosixThread::ExitThisThread()
+{
+  pthread_exit(NULL);
+}
+
+void PosixThread::YieldThisThread()
+{
+  ::sched_yield();
+}
+
+void PosixThread::UsleepThisThread(uint32_t micros)
+{
+  struct timespec sleep_time = {0, 0};
+  struct timespec remaining;
+  sleep_time.tv_sec = static_cast<time_t>(micros / 1000000);
+  sleep_time.tv_nsec = static_cast<long>(micros % 1000000 * 1000);
+
+  while (::nanosleep(&sleep_time, &remaining) == -1 && errno == EINTR)
+  {
+    sleep_time = remaining;
+  }
+}
+
+void PosixThread::SleepThisThread(uint32_t secs)
+{
+  ::sleep(secs);
+}
+
+cpu_set_t PosixThread::GetThisThreadCpuAffinity()
+{
+  cpu_set_t mask;
+  CPU_ZERO(&mask);
+  ::sched_getaffinity(0, sizeof(mask), &mask);
+  return mask;
+}
+
+bool PosixThread::SetThisThreadCpuAffinity(cpu_set_t mask)
+{
+  if (!::sched_setaffinity(0, sizeof(mask), &mask))
+  {
+    return false;
+  }
+  /* guaranteed to take effect immediately */
+  ::sched_yield();
+  return true;
+}
+
+bool PosixThread::SetCpuMask(int32_t cpu_id, cpu_set_t mask)
+{
+  int32_t cpu_num = sysconf(_SC_NPROCESSORS_CONF);
+  if (cpu_id < 0 || cpu_id >= cpu_num)
+  {
+    return false;
+  }
+  if (CPU_ISSET(cpu_id, &mask))
+  {
+    return true;
+  }
+  CPU_SET(cpu_id, &mask);
+  return true;
+}
+
+PosixThread::PosixThread(std::function<void()> func)
+    : user_func_(NULL),
+      user_arg_(NULL),
+      is_std_func_(true),
+      user_std_func_(func),
+      is_running_(false)
+{
+  clearThreadId();
+}
+
+PosixThread::PosixThread(void (*func)(void *arg), void *arg)
+    : user_func_(func),
+      user_arg_(arg),
+      is_std_func_(false),
+      is_running_(false)
+{
+  clearThreadId();
+}
+
+string PosixThread::toString()
+{
+  string result;
+  util::StringFormatTo(&result, "PosixThread@%p { tid:" PRIu64_FORMAT " }",
+                       this, (uint64_t)tid_);
+  return result;
+}
+
+void PosixThread::clearThreadId()
 {
   memset(&tid_, 0, sizeof(tid_));
-  pthread_attr_init(&attr_);
 }
 
-PosixThread::PosixThread(std::function<void()> func, const string &name)
-    : name_(name),
-      latch_(1),
-      isStdFunction_(true),
-      user_proc_(func)
+bool PosixThread::isRuning()
 {
-  memset(&tid_, 0, sizeof(tid_));
-  pthread_attr_init(&attr_);
-}
-
-PosixThread::~PosixThread()
-{
-  pthread_attr_destroy(&attr_);
-}
-
-bool PosixThread::isStarted()
-{
-  return ((uint64_t)tid_) != 0;
-}
-
-void PosixThread::setAttr(uint64_t stack_size, bool joinable)
-{
-  if (!stack_size)
-  {
-    pthread_attr_setstacksize(&attr_, stack_size);
-  }
-  if (!joinable)
-  {
-    pthread_attr_setdetachstate(&attr_, PTHREAD_CREATE_DETACHED);
-  }
+  return is_running_;
 }
 
 bool PosixThread::start()
 {
-  if (isStarted())
+  bool ret = false;
+  if (isRuning())
   {
     return false;
   }
-
   // The child thread will inherit our signal mask.  Set our signal mask to
   // the set of signals we want to block.  (It's ok to block signals more
   // signals than usual for a little while-- they will just be delivered to
@@ -146,59 +210,25 @@ bool PosixThread::start()
   // pthread_create()...
   // RestoreSigset(&old_sigset);
 
-  bool ret = false;
-  if (isStdFunction_)
-  {
-    ret = PthreadCall("pthread_create",
-                      pthread_create(&tid_, NULL, &StartProcWrapper, this));
-  }
-  else
-  {
-    ThreadData *data = new ThreadData();
-    data->user_function = function_;
-    data->user_arg = arg_;
-    data->name = name_;
-    data->tid = tid_;
-    data->latch = &latch_;
-    ret = PthreadCall("pthread_create",
-                      pthread_create(&tid_, NULL, &StartPthreadWrapper, data));
-    if (!ret)
-    {
-      delete data; // or no delete?
-    }
-
-    return ret;
-  }
-
-  return true;
+  ret = PthreadCall("pthread_create",
+                    pthread_create(&tid_, NULL, &StartPthreadWrapper, this));
+  return ret;
 }
 
-bool PosixThread::startForLaunch()
-{
-  if (!start())
-    return false;
-  latch_.wait();
-  return true;
-}
-
-// Note: if pthread_join when other thread is pthread_detach,
-// pthread_join may not return.
-// if pthread_join when other thread is not started, may crash.
 bool PosixThread::join()
 {
   if (amSelf())
     return false;
-  if (isStarted())
+  if (isRuning())
   {
     return PthreadCall("pthread_join", pthread_join(tid_, NULL));
   }
-  tid_ = 0;
   return true;
 }
 
 bool PosixThread::kill(int32_t signal_val)
 {
-  if (isStarted())
+  if (isRuning())
   {
     return PthreadCall("pthread_kill", pthread_kill(tid_, signal_val));
   }
@@ -207,7 +237,7 @@ bool PosixThread::kill(int32_t signal_val)
 
 bool PosixThread::detach()
 {
-  if (isStarted())
+  if (isRuning())
   {
     return PthreadCall("pthread_detach", pthread_detach(tid_));
   }

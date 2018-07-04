@@ -28,115 +28,55 @@ class PosixThread
 {
 public:
   static const uint64_t kDefaultThreadStackSize = (1 << 23); // 8192K
+  typedef void (*UserFunctionType)(void *);
+  typedef std::function<void()> UserStdFunctionType;
+
   static uint64_t GetTID();
+  static uint64_t PthreadIdInt();
+  static pthread_t ThisThreadId();
+  static bool IsThreadIdEqual(pthread_t &a, pthread_t &b);
+  static void SetThisThreadName(string &name);
+  static void ExitThisThread();
+  static void YieldThisThread();
+  static void UsleepThisThread(uint32_t micros);
+  static void SleepThisThread(uint32_t secs);
+  static cpu_set_t GetThisThreadCpuAffinity();
+  static bool SetThisThreadCpuAffinity(cpu_set_t mask);
+  static bool SetCpuMask(int32_t cpu_id, cpu_set_t mask);
 
-  static uint64_t PthreadIntId();
+  PosixThread(UserStdFunctionType func);
+  PosixThread(UserFunctionType func, void *arg);
+  ~PosixThread(){};
 
-  static pthread_t ThisThreadId()
-  {
-    return pthread_self();
-  }
-
-  static bool IsThreadIdEqual(pthread_t &a, pthread_t &b)
-  {
-    return pthread_equal(a, b) == 0;
-  }
-
-  static void ExitThisThread()
-  {
-    pthread_exit(NULL);
-  }
-
-  static void YieldThisThread()
-  {
-    ::sched_yield();
-  }
-
-  static void UsleepThisThread(uint32_t micros)
-  {
-    struct timespec sleep_time = {0, 0};
-    struct timespec remaining;
-    sleep_time.tv_sec = static_cast<time_t>(micros / 1000000);
-    sleep_time.tv_nsec = static_cast<long>(micros % 1000000 * 1000);
-
-    while (::nanosleep(&sleep_time, &remaining) == -1 && errno == EINTR)
-    {
-      sleep_time = remaining;
-    }
-  }
-
-  static void SleepThisThread(uint32_t secs)
-  {
-    ::sleep(secs);
-  }
-
-  static cpu_set_t GetThisThreadCpuAffinity()
-  {
-    cpu_set_t mask;
-    CPU_ZERO(&mask);
-    ::sched_getaffinity(0, sizeof(mask), &mask);
-    return mask;
-  }
-
-  static bool SetThisThreadCpuAffinity(cpu_set_t mask)
-  {
-    if (!::sched_setaffinity(0, sizeof(mask), &mask))
-    {
-      return false;
-    }
-    /* guaranteed to take effect immediately */
-    sched_yield();
-    return true;
-  }
-
-  static bool SetCpuMask(int32_t cpu_id, cpu_set_t mask)
-  {
-    int32_t cpu_num = sysconf(_SC_NPROCESSORS_CONF);
-    if (cpu_id < 0 || cpu_id >= cpu_num)
-    {
-      return false;
-    }
-    if (CPU_ISSET(cpu_id, &mask))
-    {
-      return true;
-    }
-    CPU_SET(cpu_id, &mask);
-    return true;
-  }
-
-  static void *StartProcWrapper(void *arg);
-
-  PosixThread(void (*func)(void *arg), void *arg, const string &name = "MyThread");
-  PosixThread(std::function<void()> func, const string &name = "MyThread");
-  ~PosixThread();
-
-  pthread_t tid() const { return tid_; }
-  string name() const { return name_; }
-  CountDownLatch &latch() { return latch_; }
+  string toString();
+  void clearThreadId();
+  pthread_t thread_id() const { return tid_; }
   bool amSelf() const
   {
     return (pthread_self() == tid_);
   }
 
-  bool isStarted();
-  void setAttr(uint64_t stack_size = 0, bool joinable = true);
+  bool isRuning();
   bool start();
-  bool startForLaunch();
   bool join();
   bool kill(int32_t signal_val);
   bool detach();
 
+  UserFunctionType user_func() { return user_func_; }
+  void *user_arg() { return user_arg_; }
+  bool is_std_func() { return is_std_func_; }
+  UserStdFunctionType user_std_func() { return user_std_func_; }
+  void set_is_running(bool running) { is_running_ = running; }
+
 private:
+  UserFunctionType user_func_;
+  void *user_arg_;
+
+  bool is_std_func_;
+  UserStdFunctionType user_std_func_; // for c++11
+
   pthread_t tid_;
-  pthread_attr_t attr_;
-  string name_;
-  CountDownLatch latch_;
-
-  void (*function_)(void *) = nullptr;
-  void *arg_ = nullptr;
-
-  bool isStdFunction_ = false;
-  std::function<void()> user_proc_; // for c++11
+  bool is_running_;
 
   DISALLOW_COPY_AND_ASSIGN(PosixThread);
 };
@@ -441,7 +381,7 @@ protected:
 class StdThreadGroup
 {
 public:
-  StdThreadGroup() {};
+  StdThreadGroup(){};
   StdThreadGroup(const std::function<void()> &callback, uint64_t count);
   ~StdThreadGroup();
   void Add(const std::function<void()> &callback, uint64_t count = 1);
