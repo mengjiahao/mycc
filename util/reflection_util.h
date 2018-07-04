@@ -461,6 +461,79 @@ const string PrettyTypeName(const T &t)
   return PrettyTypeName<T>();
 }
 
+///////////////////////// TCDYN_RuntimeClass ///////////////////////
+
+class TCDYN_Object;
+class TCDYN_RuntimeClass;
+
+struct TCDYN_RuntimeClass
+{
+  const char *m_lpszClassName;
+  int m_nObjectSize;
+  TCDYN_Object *(*m_pfnCreateObject)();
+  TCDYN_RuntimeClass *m_pBaseClass;
+  TCDYN_RuntimeClass *m_pNextClass;
+
+  static TCDYN_RuntimeClass *pFirstClass;
+
+  TCDYN_Object *createObject();
+  static TCDYN_RuntimeClass *load(const char *szClassName);
+};
+
+struct TCDYN_Init
+{
+  TCDYN_Init(TCDYN_RuntimeClass *pNewClass)
+  {
+    pNewClass->m_pNextClass = TCDYN_RuntimeClass::pFirstClass;
+    TCDYN_RuntimeClass::pFirstClass = pNewClass;
+  }
+};
+
+class TCDYN_Object
+{
+public:
+  TCDYN_Object(){};
+  virtual ~TCDYN_Object(){};
+
+  virtual TCDYN_RuntimeClass *GetRuntimeClass() const;
+  bool isKindOf(const TCDYN_RuntimeClass *pClass) const;
+
+private:
+  TCDYN_Object(const TCDYN_Object &objectSrc);
+  void operator=(const TCDYN_Object &objectSrc);
+
+public:
+  static TCDYN_RuntimeClass classTCDYN_Object;
+};
+
+#define TC_RUNTIME_CLASS(class_name) ((TCDYN_RuntimeClass *)(&class_name::class##class_name))
+
+#define TC_DECLARE_DYNCREATE(class_name)               \
+public:                                                \
+  static TCDYN_RuntimeClass class##class_name;         \
+  virtual TCDYN_RuntimeClass *GetRuntimeClass() const; \
+  static TCDYN_Object *createObject();
+
+#define TC_IMPLEMENT_DYNCREATE(class_name, base_class_name)             \
+  TCDYN_Object *class_name::createObject()                              \
+  {                                                                     \
+    return new class_name;                                              \
+  }                                                                     \
+  TCDYN_RuntimeClass class_name::class##class_name = {                  \
+      #class_name,                                                      \
+      sizeof(class_name),                                               \
+      &class_name::createObject,                                        \
+      TC_RUNTIME_CLASS(base_class_name),                                \
+      NULL};                                                            \
+  static TCDYN_Init _init_##class_name(&class_name::class##class_name); \
+  TCDYN_RuntimeClass *class_name::GetRuntimeClass() const               \
+  {                                                                     \
+    return TC_RUNTIME_CLASS(class_name);                                \
+  }
+
+#define TCDYN_CreateObject(class_name) \
+  (TCDYN_RuntimeClass::load(class_name) == NULL ? NULL : TCDYN_RuntimeClass::load(class_name)->createObject())
+
 } // namespace util
 } // namespace mycc
 

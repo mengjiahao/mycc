@@ -348,6 +348,20 @@ inline void AtomicSyncMemoryBarrier()
 }
 
 template <typename T>
+inline T AtomicSyncGet(volatile T *ptr)
+{
+  T v = __sync_sub_and_fetch(ptr, 0);
+  return v;
+}
+
+template <typename T>
+inline void AtomicSyncSet(volatile T *ptr, T v)
+{
+  while (!__sync_bool_compare_and_swap(ptr, *ptr, v))
+    ;
+}
+
+template <typename T>
 inline T AtomicSyncLoad(volatile T *ptr)
 {
   T v = *ptr;
