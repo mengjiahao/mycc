@@ -2,6 +2,9 @@
 #define MYCC_UTIL_FILE_UTIL_H_
 
 #include <sys/mman.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include "types_util.h"
 
@@ -218,6 +221,97 @@ protected:
 
 private:
   int _fd;
+};
+
+class FileOperation
+{
+public:
+  FileOperation(const string &file_name, const int open_flags = O_RDWR | O_LARGEFILE | O_CREAT);
+  virtual ~FileOperation();
+
+  int open_file();
+  void close_file();
+  virtual int flush_file();
+  int flush_data();
+  int unlink_file();
+  int rename_file(const char *new_name);
+  inline char *get_file_name() const
+  {
+    return file_name_;
+  }
+  virtual int64_t pread_file(char *buf, const int32_t nbytes, const int64_t offset);
+  virtual int64_t pwrite_file(const char *buf, const int32_t nbytes, const int64_t offset);
+  int write_file(const char *buf, const int32_t nbytes);
+  int64_t get_file_size();
+  int ftruncate_file(const int64_t length);
+  int seek_file(const int64_t offset);
+  int32_t current_pos();
+  int get_fd() const
+  {
+    return fd_;
+  }
+
+protected:
+  FileOperation();
+  FileOperation(const FileOperation &);
+  int check_file();
+
+protected:
+  static const int32_t MAX_DISK_TIMES = 5;
+  static const mode_t OPEN_MODE = 0644;
+
+protected:
+  int fd_;          // file handle
+  int open_flags_;  // open flags
+  char *file_name_; // file path name
+};
+
+class FileMapper
+{
+public:
+  FileMapper()
+  {
+    data = NULL;
+    size = 0;
+    fd = -1;
+  }
+
+  ~FileMapper()
+  {
+    close_file();
+  }
+
+  void close_file();
+  void sync_file();
+  bool open_file(const char *file_name, int64_t create_length = 0);
+
+  void *get_data() const
+  {
+    return data;
+  }
+
+  int64_t get_size() const
+  {
+    return size;
+  }
+
+  int get_modify_time() const
+  {
+    struct stat buffer;
+    if (fd >= 0 && fstat(fd, &buffer) == 0)
+    {
+      return (int)buffer.st_mtime;
+    }
+    return 0;
+  }
+
+private:
+  FileMapper(const FileMapper &);
+  FileMapper &operator=(const FileMapper &);
+
+  void *data;
+  int64_t size;
+  int fd;
 };
 
 // Example:
