@@ -429,6 +429,57 @@ inline int32_t Log2Ceiling64(uint64_t n)
     return floor + 1;
 }
 
+inline int32_t Log2FloorNonZero(uint32_t n)
+{
+  return 31 ^ __builtin_clz(n);
+}
+
+inline int32_t FindLSBSetNonZero(uint32_t n)
+{
+  return __builtin_ctz(n);
+}
+
+inline int32_t Log2FloorNonZero64(uint64_t n)
+{
+  return 63 ^ __builtin_clzll(n);
+}
+
+inline int32_t FindLSBSetNonZero64(uint64_t n)
+{
+  return __builtin_ctzll(n);
+}
+
+inline uint8_t ReverseBits8(unsigned char n)
+{
+  n = ((n >> 1) & 0x55) | ((n & 0x55) << 1);
+  n = ((n >> 2) & 0x33) | ((n & 0x33) << 2);
+  return ((n >> 4) & 0x0f) | ((n & 0x0f) << 4);
+}
+
+inline uint32_t ReverseBits32(uint32_t n)
+{
+  n = ((n >> 1) & 0x55555555) | ((n & 0x55555555) << 1);
+  n = ((n >> 2) & 0x33333333) | ((n & 0x33333333) << 2);
+  n = ((n >> 4) & 0x0F0F0F0F) | ((n & 0x0F0F0F0F) << 4);
+  n = ((n >> 8) & 0x00FF00FF) | ((n & 0x00FF00FF) << 8);
+  return (n >> 16) | (n << 16);
+}
+
+inline uint64_t ReverseBits64(uint64_t n)
+{
+#if defined(__x86_64__)
+  n = ((n >> 1) & 0x5555555555555555ULL) | ((n & 0x5555555555555555ULL) << 1);
+  n = ((n >> 2) & 0x3333333333333333ULL) | ((n & 0x3333333333333333ULL) << 2);
+  n = ((n >> 4) & 0x0F0F0F0F0F0F0F0FULL) | ((n & 0x0F0F0F0F0F0F0F0FULL) << 4);
+  n = ((n >> 8) & 0x00FF00FF00FF00FFULL) | ((n & 0x00FF00FF00FF00FFULL) << 8);
+  n = ((n >> 16) & 0x0000FFFF0000FFFFULL) | ((n & 0x0000FFFF0000FFFFULL) << 16);
+  return (n >> 32) | (n << 32);
+#else
+  return ReverseBits32(n >> 32) |
+         (static_cast<uint64_t>(ReverseBits32(n & 0xffffffff)) << 32);
+#endif
+}
+
 inline uint32_t NextPowerOfTwo(uint32_t value)
 {
   int32_t exponent = Log2Ceiling(value);
@@ -631,6 +682,27 @@ inline int32_t count1Bits(uint32_t value)
 // Return the smallest number n such that (x >> n) == 0
 // (or 64 if the highest bit in x is set.
 uint64_t Count1Bits(uint64_t x);
+
+int32_t CountOnesInByte(unsigned char n);
+
+inline int32_t CountOnes(uint32_t n)
+{
+  n -= ((n >> 1) & 0x55555555);
+  n = ((n >> 2) & 0x33333333) + (n & 0x33333333);
+  return (((n + (n >> 4)) & 0xF0F0F0F) * 0x1010101) >> 24;
+}
+
+// Count bits using sideways addition [WWG'57]. See Knuth TAOCP v4 7.1.3(59)
+inline int32_t CountOnes64(uint64_t n)
+{
+#if defined(__x86_64__)
+  n -= (n >> 1) & 0x5555555555555555ULL;
+  n = ((n >> 2) & 0x3333333333333333ULL) + (n & 0x3333333333333333ULL);
+  return (((n + (n >> 4)) & 0xF0F0F0F0F0F0F0FULL) * 0x101010101010101ULL) >> 56;
+#else
+  return CountOnes(n >> 32) + CountOnes(n & 0xffffffff);
+#endif
+}
 
 // Greatest Common Divisor
 template <typename IntegerType>

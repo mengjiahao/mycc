@@ -436,38 +436,6 @@ void CondLock::broadcast()
   PthreadCall("condlock broadcast", pthread_cond_broadcast(&cond_));
 }
 
-CountDownLatch::CountDownLatch(int32_t count)
-    : mutex_(),
-      condition_(&mutex_),
-      count_(count)
-{
-}
-
-void CountDownLatch::wait()
-{
-  MutexLock lock(&mutex_);
-  while (count_ > 0)
-  {
-    condition_.wait();
-  }
-}
-
-void CountDownLatch::countDown()
-{
-  MutexLock lock(&mutex_);
-  --count_;
-  if (count_ == 0)
-  {
-    condition_.broadcast();
-  }
-}
-
-int32_t CountDownLatch::getCount() const
-{
-  MutexLock lock(&mutex_);
-  return count_;
-}
-
 CThreadInterrupt::operator bool() const
 {
   return flag.load(std::memory_order_acquire);

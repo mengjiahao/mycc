@@ -33,24 +33,6 @@ inline void InitOnce(OnceType *once, void (*initializer)())
   std::call_once(*once, *initializer);
 }
 
-// BASE_SCOPED_LOCK
-#if !defined(BASE_CXX11_ENABLED)
-#define BASE_SCOPED_LOCK(ref_of_lock)       \
-  std::lock_guard<BASE_TYPEOF(ref_of_lock)> \
-      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
-#else
-// c++11 deduces additional reference to the type.
-namespace internal
-{
-template <typename T>
-std::lock_guard<typename std::remove_reference<T>::type> get_lock_guard();
-} // namespace internal
-
-#define BASE_SCOPED_LOCK(ref_of_lock)                                       \
-  decltype(::mycc::util::internal::get_lock_guard<decltype(ref_of_lock)>()) \
-      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
-#endif // BASE_SCOPED_LOCK
-
 /**
  * A wrapper for condition variable with mutex.
  */
@@ -671,19 +653,122 @@ private:
   bool signaled_;
 };
 
+// This is a C++ implementation of the Java CountDownLatch
+// class.
+// See http://docs.oracle.com/javase/6/docs/api/java/util/concurrent/CountDownLatch.html
 class CountDownLatch
 {
 public:
-  explicit CountDownLatch(int32_t count);
+  // Initialize the latch with the given initial count.
+  explicit CountDownLatch(uint64_t count)
+      : cond_(&lock_),
+        count_(count)
+  {
+  }
 
-  void wait();
-  void countDown();
-  int32_t getCount() const;
+  // Decrement the count of this latch by 'amount'
+  // If the new count is less than or equal to zero, then all waiting threads are woken up.
+  // If the count is already zero, this has no effect.
+  void countDown(uint64_t amount)
+  {
+    //DCHECK_GE(amount, 0);
+    MutexLock lock(&lock_);
+    if (count_ == 0)
+    {
+      return;
+    }
+
+    if (amount >= count_)
+    {
+      count_ = 0;
+    }
+    else
+    {
+      count_ -= amount;
+    }
+
+    if (count_ == 0)
+    {
+      // Latch has triggered.
+      cond_.broadcast();
+    }
+  }
+
+  // Decrement the count of this latch.
+  // If the new count is zero, then all waiting threads are woken up.
+  // If the count is already zero, this has no effect.
+  void countDown()
+  {
+    countDown(1);
+  }
+
+  // Wait until the count on the latch reaches zero.
+  // If the count is already zero, this returns immediately.
+  void wait()
+  {
+    //ThreadRestrictions::AssertWaitAllowed();
+    MutexLock lock(&lock_);
+    while (count_ > 0)
+    {
+      cond_.wait();
+    }
+  }
+
+  // Waits for the count on the latch to reach zero, or until 'until' time is reached.
+  // Returns true if the count became zero, false otherwise.
+  bool waitUntil(int64_t abs_time_ms)
+  {
+    //ThreadRestrictions::AssertWaitAllowed();
+    MutexLock lock(&lock_);
+    while (count_ > 0)
+    {
+      if (!cond_.timedWait(abs_time_ms))
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
+  // Returns true if the count became zero, false otherwise.
+  bool waitFor(int64_t timeout_ms)
+  {
+    MutexLock lock(&lock_);
+    while (count_ > 0)
+    {
+      if (!cond_.timedWaitRelative(timeout_ms))
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Reset the latch with the given count. This is equivalent to reconstructing
+  // the latch. If 'count' is 0, and there are currently waiters, those waiters
+  // will be triggered as if you counted down to 0.
+  void reset(uint64_t count)
+  {
+    MutexLock lock(&lock_);
+    count_ = count;
+    if (count_ == 0)
+    {
+      // Awake any waiters if we reset to 0.
+      cond_.broadcast();
+    }
+  }
+
+  uint64_t count() const
+  {
+    MutexLock lock(&lock_);
+    return count_;
+  }
 
 private:
-  mutable Mutex mutex_;
-  CondVar condition_;
-  int32_t count_;
+  mutable Mutex lock_;
+  CondVar cond_;
+  uint64_t count_;
 
   DISALLOW_COPY_AND_ASSIGN(CountDownLatch);
 };

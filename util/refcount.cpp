@@ -11,6 +11,45 @@ namespace mycc
 namespace util
 {
 
+RefCountedBase::RefCountedBase()
+    : ref_count_(0)
+#ifndef NDEBUG
+      ,
+      in_dtor_(false)
+#endif
+{
+}
+
+RefCountedBase::~RefCountedBase()
+{
+  //DCHECK(in_dtor_) << "RefCounted object deleted without calling Release()";
+}
+
+void RefCountedBase::AddRef() const
+{
+  // TODO(maruel): Add back once it doesn't assert 500 times/sec.
+  // Current thread books the critical section "AddRelease" without release it.
+  // DFAKE_SCOPED_LOCK_THREAD_LOCKED(add_release_);
+  //DCHECK(!in_dtor_);
+  ++ref_count_;
+}
+
+bool RefCountedBase::Unref() const
+{
+  // TODO(maruel): Add back once it doesn't assert 500 times/sec.
+  // Current thread books the critical section "AddRelease" without release it.
+  // DFAKE_SCOPED_LOCK_THREAD_LOCKED(add_release_);
+  //DCHECK(!in_dtor_);
+  if (--ref_count_ == 0)
+  {
+#ifndef NDEBUG
+    in_dtor_ = true;
+#endif
+    return true;
+  }
+  return false;
+}
+
 // Trigger an assert if the reference count is 0 but the Ref is still in autorelease pool.
 // This happens when 'autorelease/release' were not used in pairs with 'new/retain'.
 //

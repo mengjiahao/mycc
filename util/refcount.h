@@ -14,6 +14,29 @@ namespace mycc
 namespace util
 {
 
+class RefCountedBase
+{
+public:
+  bool RefCountIsOne() const { return ref_count_ == 1; }
+
+protected:
+  RefCountedBase();
+  ~RefCountedBase();
+
+  void AddRef() const;
+
+  // Returns true if the object should self-delete.
+  bool Unref() const;
+
+private:
+  mutable int ref_count_;
+#ifndef NDEBUG
+  mutable bool in_dtor_;
+#endif
+
+  DISALLOW_COPY_AND_ASSIGN(RefCountedBase);
+};
+
 //
 // A base class for reference counted classes.  Otherwise, known as a cheap
 // knock-off of WebKit's RefCounted<T> class.  To use this guy just extend your
@@ -165,90 +188,104 @@ private:
 //   }
 //
 template <class T>
-class ScopedRefCountedPtr {
- public:
+class ScopedRefCountedPtr
+{
+public:
   typedef T element_type;
 
-  ScopedRefCountedPtr() : ptr_(NULL) {
+  ScopedRefCountedPtr() : ptr_(NULL)
+  {
   }
 
-  ScopedRefCountedPtr(T* p) : ptr_(p) {
+  ScopedRefCountedPtr(T *p) : ptr_(p)
+  {
     if (ptr_)
       ptr_->AddRef();
   }
 
-  ScopedRefCountedPtr(const ScopedRefCountedPtr<T>& r) : ptr_(r.ptr_) {
+  ScopedRefCountedPtr(const ScopedRefCountedPtr<T> &r) : ptr_(r.ptr_)
+  {
     if (ptr_)
       ptr_->AddRef();
   }
 
   template <typename U>
-  ScopedRefCountedPtr(const ScopedRefCountedPtr<U>& r) : ptr_(r.get()) {
+  ScopedRefCountedPtr(const ScopedRefCountedPtr<U> &r) : ptr_(r.get())
+  {
     if (ptr_)
       ptr_->AddRef();
   }
 
-  ~ScopedRefCountedPtr() {
+  ~ScopedRefCountedPtr()
+  {
     if (ptr_)
       ptr_->Unref();
   }
 
-  T* get() const { return ptr_; }
+  T *get() const { return ptr_; }
 
   // Allow ScopedRefCountedPtr<C> to be used in boolean expression
-  // and comparison operations. 
-  operator T*() const { return ptr_; }
+  // and comparison operations.
+  operator T *() const { return ptr_; }
 
-  T* operator->() const {
+  T *operator->() const
+  {
     assert(ptr_ != NULL);
     return ptr_;
   }
 
-  ScopedRefCountedPtr<T>& operator=(T* p) {
+  ScopedRefCountedPtr<T> &operator=(T *p)
+  {
     // AddRef first so that self assignment should work
     if (p)
       p->AddRef();
-    T* old_ptr = ptr_;
+    T *old_ptr = ptr_;
     ptr_ = p;
     if (old_ptr)
       old_ptr->Unref();
     return *this;
   }
 
-  ScopedRefCountedPtr<T>& operator=(const ScopedRefCountedPtr<T>& r) {
+  ScopedRefCountedPtr<T> &operator=(const ScopedRefCountedPtr<T> &r)
+  {
     return *this = r.ptr_;
   }
 
   template <typename U>
-  ScopedRefCountedPtr<T>& operator=(const ScopedRefCountedPtr<U>& r) {
+  ScopedRefCountedPtr<T> &operator=(const ScopedRefCountedPtr<U> &r)
+  {
     return *this = r.get();
   }
 
-  void swap(T** pp) {
-    T* p = ptr_;
+  void swap(T **pp)
+  {
+    T *p = ptr_;
     ptr_ = *pp;
     *pp = p;
   }
 
-  void swap(ScopedRefCountedPtr<T>& r) {
+  void swap(ScopedRefCountedPtr<T> &r)
+  {
     swap(&r.ptr_);
   }
 
   // Release ownership of ptr_, keeping its reference counter unchanged.
-  T* release() WARN_UNUSED_RESULT {
-      T* saved_ptr = NULL;
-      swap(&saved_ptr);
-      return saved_ptr;
+  T *release() WARN_UNUSED_RESULT
+  {
+    T *saved_ptr = NULL;
+    swap(&saved_ptr);
+    return saved_ptr;
   }
 
- protected:
-  T* ptr_;
+protected:
+  T *ptr_;
 };
 
 // Handy utility for creating a ScopedRefCountedPtr<T> out of a T* explicitly without
 // having to retype all the template arguments
 template <typename T>
-ScopedRefCountedPtr<T> MakeScopedRefCountedPtr(T* t) {
+ScopedRefCountedPtr<T> MakeScopedRefCountedPtr(T *t)
+{
   return ScopedRefCountedPtr<T>(t);
 }
 

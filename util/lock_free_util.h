@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <atomic>
+#include <mutex>
 #include <type_traits>
 #include <vector>
 #include "locks_util.h"
@@ -15,6 +16,24 @@ namespace mycc
 {
 namespace util
 {
+
+// BASE_SCOPED_LOCK
+#if !defined(BASE_CXX11_ENABLED)
+#define BASE_SCOPED_LOCK(ref_of_lock)       \
+  std::lock_guard<BASE_TYPEOF(ref_of_lock)> \
+      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
+#else
+// c++11 deduces additional reference to the type.
+namespace internal
+{
+template <typename T>
+std::lock_guard<typename std::remove_reference<T>::type> get_lock_guard();
+} // namespace internal
+
+#define BASE_SCOPED_LOCK(ref_of_lock)                                       \
+  decltype(::mycc::util::internal::get_lock_guard<decltype(ref_of_lock)>()) \
+      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
+#endif // BASE_SCOPED_LOCK
 
 template <typename T>
 class WorkStealingQueue

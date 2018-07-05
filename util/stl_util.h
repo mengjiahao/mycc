@@ -800,6 +800,48 @@ void STLAppendValuesFromMap(const MapContainer &map_container,
   }
 }
 
+// These functions return true if there is some element in the sorted range
+// [begin1, end) which is equal to some element in the sorted range [begin2,
+// end2). The iterators do not have to be of the same type, but the value types
+// must be less-than comparable. (Two elements a,b are considered equal if
+// !(a < b) && !(b < a).
+template<typename InputIterator1, typename InputIterator2>
+bool SortedRangesHaveIntersection(InputIterator1 begin1, InputIterator1 end1,
+                                  InputIterator2 begin2, InputIterator2 end2) {
+  assert(std::is_sorted(begin1, end1));
+  assert(std::is_sorted(begin2, end2));
+  while (begin1 != end1 && begin2 != end2) {
+    if (*begin1 < *begin2) {
+      ++begin1;
+    } else if (*begin2 < *begin1) {
+      ++begin2;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+// This is equivalent to the function above, but using a custom comparison
+// function.
+template<typename InputIterator1, typename InputIterator2, typename Comp>
+bool SortedRangesHaveIntersection(InputIterator1 begin1, InputIterator1 end1,
+                                  InputIterator2 begin2, InputIterator2 end2,
+                                  Comp comparator) {
+  assert(std::is_sorted(begin1, end1, comparator));
+  assert(std::is_sorted(begin2, end2, comparator));
+  while (begin1 != end1 && begin2 != end2) {
+    if (comparator(*begin1, *begin2)) {
+      ++begin1;
+    } else if (comparator(*begin2, *begin1)) {
+      ++begin2;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace util
 } // namespace mycc
 

@@ -363,6 +363,12 @@ private:                                               \
   eintr_wrapper_result;                                   \
 })
 
+// Round down 'x' to the nearest 'align' boundary
+#define ALIGN_DOWN(x, align) ((x) & (~(align) + 1))
+
+// Round up 'x' to the nearest 'align' boundary
+#define ALIGN_UP(x, align) (((x) + ((align)-1)) & (~(align) + 1))
+
 // Cacheline related --------------------------------------
 
 #ifndef CACHE_LINE_SIZE
