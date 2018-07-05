@@ -33,63 +33,63 @@ public:
   // Discards all the jobs that did not
   // start executing and waits for those running
   // to complete
-  void joinAllThreads() override;
+  void JoinAllThreads() override;
 
   // Set the number of background threads that will be executing the
   // scheduled jobs.
-  void setBackgroundThreads(int num) override;
-  int32_t getBackgroundThreads() override;
+  void SetBackgroundThreads(int num) override;
+  int32_t GetBackgroundThreads() override;
 
   // Get the number of jobs scheduled in the ThreadPool queue.
-  uint32_t getQueueLen() const override;
+  uint32_t GetQueueLen() const override;
 
   // Waits for all jobs to complete those
   // that already started running and those that did not
   // start yet
-  void waitForJobsAndJoinAllThreads() override;
+  void WaitForJobsAndJoinAllThreads() override;
 
   // Make threads to run at a lower kernel IO priority
   // Currently only has effect on Linux
-  void lowerIOPriority();
+  void LowerIOPriority();
 
   // Make threads to run at a lower kernel CPU priority
   // Currently only has effect on Linux
-  void lowerCPUPriority();
+  void LowerCPUPriority();
 
   // Ensure there is at aleast num threads in the pool
   // but do not kill threads if there are more
-  void incBackgroundThreadsIfNeeded(int num);
+  void IncBackgroundThreadsIfNeeded(int num);
 
   // Submit a fire and forget job
   // These jobs can not be unscheduled
 
   // This allows to submit the same job multiple times
-  void submitJob(const std::function<void()> &) override;
+  void SubmitJob(const std::function<void()> &) override;
   // This moves the function in for efficiency
-  void submitJob(std::function<void()> &&) override;
+  void SubmitJob(std::function<void()> &&) override;
 
   // Schedule a job with an unschedule tag and unschedule function
   // Can be used to filter and unschedule jobs by a tag
   // that are still in the queue and did not start running
-  void schedule(void (*function)(void *arg1), void *arg, void *tag,
+  void Schedule(void (*function)(void *arg1), void *arg, void *tag,
                 void (*unschedFunction)(void *arg));
 
   // Filter jobs that are still in a queue and match
   // the given tag. Remove them from a queue if any
   // and for each such job execute an unschedule function
   // if such was given at scheduling time.
-  int32_t unSchedule(void *tag);
+  int32_t UnSchedule(void *tag);
 
-  void setHostEnv(Env *env);
+  void SetHostEnv(Env *env);
 
-  Env *getHostEnv() const;
+  Env *GetHostEnv() const;
 
   // Return the thread priority.
   // This would allow its member-thread to know its priority.
-  Env::Priority getThreadPriority() const;
+  Env::Priority GetThreadPriority() const;
 
   // Set the thread priority.
-  void setThreadPriority(Env::Priority priority);
+  void SetThreadPriority(Env::Priority priority);
 
   struct Impl;
 
@@ -130,7 +130,7 @@ public:
     {
       // Create pool threads immediately
       MutexLock ml(&mu_);
-      initPool(attr);
+      InitPool(attr);
     }
   }
   virtual ~PosixFixedThreadPool();
@@ -149,20 +149,20 @@ public:
   // added to the same pool may run concurrently in different threads.
   // I.e., the caller may not assume that background work items are
   // serialized.
-  virtual void schedule(void (*function)(void *), void *arg, const string &name = "BgWork");
+  virtual void Schedule(void (*function)(void *), void *arg, const string &name = "BgWork");
 
   // Return a description of the pool implementation.
-  virtual string toDebugString();
+  virtual string ToDebugString();
 
   // Stop executing any tasks. Tasks already scheduled will keep running. Tasks
   // not yet scheduled won't be scheduled. Tasks submitted in future will be
   // queued but won't be scheduled.
-  virtual void pause();
+  virtual void Pause();
 
   // Resume executing tasks.
-  virtual void resume();
+  virtual void Resume();
 
-  void initPool(void *attr);
+  void InitPool(void *attr);
 
 private:
   // BGThread() is the body of the background thread
@@ -220,25 +220,25 @@ public:
     //stop(false);
   }
 
-  bool start();
+  bool Start();
 
   // Stop the thread pool.
   // Wait for all pending task to complete if wait is true.
-  bool stop(bool wait);
+  bool Stop(bool wait);
 
   // Task definition.
   typedef std::function<void()> Task;
 
   // Add a task to the thread pool.
-  void addTask(const Task &task);
+  void AddTask(const Task &task);
 
-  void addPriorityTask(const Task &task);
+  void AddPriorityTask(const Task &task);
 
-  int64_t delayTask(int64_t delay, const Task &task);
+  int64_t DelayTask(int64_t delay, const Task &task);
 
   /// Cancel a delayed task
   /// if running, wait if non_block==false; return immediately if non_block==true
-  bool cancelTask(int64_t task_id, bool non_block = false,
+  bool CancelTask(int64_t task_id, bool non_block = false,
                   bool *is_running = nullptr);
 
   int64_t pending_num() const
@@ -250,7 +250,7 @@ public:
   // 1st: thread pool schedule average cost (ms)
   // 2nd: user task average cost (ms)
   // 3rd: total task count since last ProfilingLog called
-  string profilingLog();
+  string ProfilingLog();
 
 private:
   static void *ThreadWrapper(void *arg)

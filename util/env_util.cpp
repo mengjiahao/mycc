@@ -177,18 +177,7 @@ class PosixEnv : public Env
 {
 public:
   PosixEnv();
-
-  virtual ~PosixEnv()
-  {
-    for (const auto tid : threads_to_join_)
-    {
-      ::pthread_join(tid, nullptr);
-    }
-    for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
-    {
-      thread_pools_[pool_id].joinAllThreads();
-    }
-  }
+  virtual ~PosixEnv();
 
   virtual int64_t NowMicros() override;
   virtual int64_t NowNanos() override;
@@ -298,6 +287,18 @@ private:
   pthread_mutex_t mu_;
   std::vector<pthread_t> threads_to_join_;
 }; // namespace util
+
+PosixEnv::~PosixEnv()
+{
+  for (const auto tid : threads_to_join_)
+  {
+    ::pthread_join(tid, nullptr);
+  }
+  for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
+  {
+    thread_pools_[pool_id].JoinAllThreads();
+  }
+}
 
 int64_t PosixEnv::NowMicros()
 {
@@ -1332,13 +1333,13 @@ Status PosixEnv::CopyFile(const string &src, const string &dst)
   Status status;
   int r = -1;
   int w = -1;
-  if ((r = open(src.c_str(), O_RDONLY)) == -1)
+  if ((r = ::open(src.c_str(), O_RDONLY)) == -1)
   {
     status = IOError(src, errno);
   }
   if (status.ok())
   {
-    if ((w = open(dst.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1)
+    if ((w = ::open(dst.c_str(), O_CREAT | O_TRUNC | O_WRONLY, 0644)) == -1)
     {
       status = IOError(dst, errno);
     }
@@ -1347,9 +1348,9 @@ Status PosixEnv::CopyFile(const string &src, const string &dst)
   {
     ssize_t n;
     char buf[4096];
-    while ((n = read(r, buf, 4096)) > 0)
+    while ((n = ::read(r, buf, 4096)) > 0)
     {
-      ssize_t m = write(w, buf, n);
+      ssize_t m = ::write(w, buf, n);
       if (m != n)
       {
         status = IOError(dst, errno);
@@ -1366,11 +1367,11 @@ Status PosixEnv::CopyFile(const string &src, const string &dst)
   }
   if (r != -1)
   {
-    close(r);
+    ::close(r);
   }
   if (w != -1)
   {
-    close(w);
+    ::close(w);
   }
   return status;
 #endif
@@ -1431,10 +1432,10 @@ Status PosixEnv::WriteStringToFile(const StringPiece &data, const string &fname,
   {
     return s;
   }
-  s = file->append(data);
+  s = file->Append(data);
   if (s.ok() && should_sync)
   {
-    s = file->sync();
+    s = file->Sync();
   }
   if (!s.ok())
   {
@@ -1458,7 +1459,7 @@ Status PosixEnv::ReadFileToString(const string &fname, string *data)
   while (true)
   {
     StringPiece fragment;
-    s = file->read(kBufferSize, &fragment, space);
+    s = file->Read(kBufferSize, &fragment, space);
     if (!s.ok())
     {
       break;
@@ -1490,7 +1491,7 @@ string PosixEnv::GenerateUniqueId()
   // Could not read uuid_file - generate uuid using "nanos-random"
   Random64 r(time(nullptr));
   uint64_t random_uuid_portion =
-      r.uniform(std::numeric_limits<uint64_t>::max());
+      r.Uniform(std::numeric_limits<uint64_t>::max());
   uint64_t nanos_uuid_portion = NowNanos();
   char uuid2[200];
   snprintf(uuid2,
@@ -1541,7 +1542,7 @@ void PosixEnv::StartNewPthread(void (*function)(void *arg), void *arg)
 ThreadPool *PosixEnv::NewThreadPool(int32_t num_threads)
 {
   ThreadPoolImpl *thread_pool = new ThreadPoolImpl();
-  thread_pool->setBackgroundThreads(num_threads);
+  thread_pool->SetBackgroundThreads(num_threads);
   return thread_pool;
 }
 
@@ -1549,27 +1550,27 @@ ThreadPool *PosixEnv::NewThreadPool(int32_t num_threads)
 void PosixEnv::SetBackgroundThreads(int32_t num, Priority pri)
 {
   assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-  thread_pools_[pri].setBackgroundThreads(num);
+  thread_pools_[pri].SetBackgroundThreads(num);
 }
 
 int32_t PosixEnv::GetBackgroundThreads(Priority pri)
 {
   assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-  return thread_pools_[pri].getBackgroundThreads();
+  return thread_pools_[pri].GetBackgroundThreads();
 }
 
 // Allow increasing the number of worker threads.
 void PosixEnv::IncBackgroundThreadsIfNeeded(int32_t num, Priority pri)
 {
   assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-  thread_pools_[pri].incBackgroundThreadsIfNeeded(num);
+  thread_pools_[pri].IncBackgroundThreadsIfNeeded(num);
 }
 
 void PosixEnv::LowerThreadPoolIOPriority(Priority pool)
 {
   assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
 #ifdef OS_LINUX
-  thread_pools_[pool].lowerIOPriority();
+  thread_pools_[pool].LowerIOPriority();
 #else
   (void)pool;
 #endif
@@ -1579,7 +1580,7 @@ void PosixEnv::LowerThreadPoolCPUPriority(Priority pool)
 {
   assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
 #ifdef OS_LINUX
-  thread_pools_[pool].lowerCPUPriority();
+  thread_pools_[pool].LowerCPUPriority();
 #else
   (void)pool;
 #endif
@@ -1591,10 +1592,10 @@ PosixEnv::PosixEnv()
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, nullptr));
   for (int32_t pool_id = 0; pool_id < Env::Priority::TOTAL; ++pool_id)
   {
-    thread_pools_[pool_id].setThreadPriority(
+    thread_pools_[pool_id].SetThreadPriority(
         static_cast<Env::Priority>(pool_id));
     // This allows later initializing the thread-local-env of each thread.
-    thread_pools_[pool_id].setHostEnv(this);
+    thread_pools_[pool_id].SetHostEnv(this);
   }
 }
 
@@ -1602,12 +1603,12 @@ void PosixEnv::Schedule(void (*function)(void *arg1), void *arg, Priority pri,
                         void *tag, void (*unschedFunction)(void *arg))
 {
   assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-  thread_pools_[pri].schedule(function, arg, tag, unschedFunction);
+  thread_pools_[pri].Schedule(function, arg, tag, unschedFunction);
 }
 
 int32_t PosixEnv::UnSchedule(void *arg, Priority pri)
 {
-  return thread_pools_[pri].unSchedule(arg);
+  return thread_pools_[pri].UnSchedule(arg);
 }
 
 void PosixEnv::StartThread(void (*function)(void *arg), void *arg)
@@ -1627,7 +1628,7 @@ void PosixEnv::WaitForJoin()
 {
   for (const auto tid : threads_to_join_)
   {
-    pthread_join(tid, nullptr);
+    ::pthread_join(tid, nullptr);
   }
   threads_to_join_.clear();
 }
@@ -1635,7 +1636,7 @@ void PosixEnv::WaitForJoin()
 uint32_t PosixEnv::GetThreadPoolQueueLen(Priority pri) const
 {
   assert(pri >= Priority::BOTTOM && pri <= Priority::HIGH);
-  return thread_pools_[pri].getQueueLen();
+  return thread_pools_[pri].GetQueueLen();
 }
 
 /*

@@ -30,9 +30,9 @@ public:
 
   explicit Random(uint32_t s) : seed_(GoodSeed(s)) {}
 
-  void reset(uint32_t s) { seed_ = GoodSeed(s); }
+  void Reset(uint32_t s) { seed_ = GoodSeed(s); }
 
-  uint32_t next()
+  uint32_t Next()
   {
     // We are computing
     //       seed_ = (seed_ * A) % M,    where M = 2^31-1
@@ -56,18 +56,18 @@ public:
 
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
-  uint32_t uniform(int32_t n) { return next() % n; }
+  uint32_t Uniform(int32_t n) { return Next() % n; }
 
   // Randomly returns true ~"1/n" of the time, and false otherwise.
   // REQUIRES: n > 0
-  bool oneIn(int32_t n) { return (next() % n) == 0; }
+  bool OneIn(int32_t n) { return (Next() % n) == 0; }
 
   // Skewed: pick "base" uniformly from range [0,max_log] and then
   // return "base" random bits.  The effect is to pick a number in the
   // range [0,2^max_log-1] with exponential bias towards smaller numbers.
-  uint32_t skewed(int32_t max_log)
+  uint32_t Skewed(int32_t max_log)
   {
-    return uniform(1 << uniform(max_log + 1));
+    return Uniform(1 << Uniform(max_log + 1));
   }
 
   // Returns a Random instance for use by the current thread without
@@ -85,25 +85,25 @@ public:
   explicit Random64(uint64_t s) : generator_(s) {}
 
   // Generates the next random number
-  uint64_t next() { return generator_(); }
+  uint64_t Next() { return generator_(); }
 
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
-  uint64_t uniform(uint64_t n)
+  uint64_t Uniform(uint64_t n)
   {
     return std::uniform_int_distribution<uint64_t>(0, n - 1)(generator_);
   }
 
   // Randomly returns true ~"1/n" of the time, and false otherwise.
   // REQUIRES: n > 0
-  bool oneIn(uint64_t n) { return uniform(n) == 0; }
+  bool OneIn(uint64_t n) { return Uniform(n) == 0; }
 
   // Skewed: pick "base" uniformly from range [0,max_log] and then
   // return "base" random bits.  The effect is to pick a number in the
   // range [0,2^max_log-1] with exponential bias towards smaller numbers.
-  uint64_t skewed(int32_t max_log)
+  uint64_t Skewed(int32_t max_log)
   {
-    return uniform(uint64_t(1) << uniform(max_log + 1));
+    return Uniform(uint64_t(1) << Uniform(max_log + 1));
   }
 };
 
@@ -170,12 +170,12 @@ public:
   TrueRandom();
   ~TrueRandom();
 
-  uint32_t nextUInt32();
-  uint32_t nextUInt32(uint32_t max_random);
-  bool nextBytes(void *buffer, uint64_t size);
+  uint32_t NextUInt32();
+  uint32_t NextUInt32(uint32_t max_random);
+  bool NextBytes(void *buffer, uint64_t size);
 
 private:
-  int32_t m_fd;
+  int m_fd;
   DISALLOW_COPY_AND_ASSIGN(TrueRandom);
 };
 

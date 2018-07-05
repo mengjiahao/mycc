@@ -165,7 +165,7 @@ Status BloomFilter::load(const string &filename)
 
   StringPiece slice;
   char buf[kDumpFileHeaderSize];
-  s = load_file->read(kDumpFileHeaderSize, &slice, buf);
+  s = load_file->Read(kDumpFileHeaderSize, &slice, buf);
   if (!s.ok())
   {
     return s;
@@ -181,7 +181,7 @@ Status BloomFilter::load(const string &filename)
   uint64_t total_bytes = total_bits / 8;
   initialize(total_bits, num_probes);
 
-  s = load_file->read(total_bytes, &slice, reinterpret_cast<char *>(data_));
+  s = load_file->Read(total_bytes, &slice, reinterpret_cast<char *>(data_));
   if (!s.ok())
   {
     return s;
@@ -205,11 +205,11 @@ Status BloomFilter::dump(const string &filename)
   EncodeFixed32(buf, kDumpFileMagic);
   EncodeFixed32(buf + 4, num_probes_);
   EncodeFixed64(buf + 8, total_bits_);
-  dump_file->append(StringPiece(buf, kDumpFileHeaderSize));
+  dump_file->Append(StringPiece(buf, kDumpFileHeaderSize));
 
   uint64_t total_bytes = total_bits_ / 8;
   StringPiece slice(reinterpret_cast<const char *>(&data_[0]), total_bytes);
-  s = dump_file->append(slice);
+  s = dump_file->Append(slice);
 
   if (!s.ok())
   {

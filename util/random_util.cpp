@@ -48,25 +48,25 @@ TrueRandom::TrueRandom()
 
 TrueRandom::~TrueRandom()
 {
-  close(m_fd);
+  ::close(m_fd);
   m_fd = -1;
 }
 
-bool TrueRandom::nextBytes(void *buffer, uint64_t size)
+bool TrueRandom::NextBytes(void *buffer, uint64_t size)
 {
-  return read(m_fd, buffer, size) == static_cast<int32_t>(size);
+  return ::read(m_fd, buffer, size) == static_cast<int32_t>(size);
 }
 
-uint32_t TrueRandom::nextUInt32()
+uint32_t TrueRandom::NextUInt32()
 {
   uint32_t random = -1;
-  nextBytes(&random, sizeof(random));
+  NextBytes(&random, sizeof(random));
   return random;
 }
 
-uint32_t TrueRandom::nextUInt32(uint32_t max_random)
+uint32_t TrueRandom::NextUInt32(uint32_t max_random)
 {
-  return nextUInt32() % max_random;
+  return NextUInt32() % max_random;
 }
 
 // We keep the file descriptor for /dev/urandom around so we don't need to
@@ -167,7 +167,7 @@ StringPiece RandomString(Random *rnd, int32_t len, string *dst)
   dst->resize(len);
   for (int32_t i = 0; i < len; i++)
   {
-    (*dst)[i] = static_cast<char>(' ' + rnd->uniform(95)); // ' ' .. '~'
+    (*dst)[i] = static_cast<char>(' ' + rnd->Uniform(95)); // ' ' .. '~'
   }
   return StringPiece(*dst);
 }
@@ -181,7 +181,7 @@ string RandomKey(Random *rnd, int len)
   string result;
   for (int32_t i = 0; i < len; i++)
   {
-    result += kTestChars[rnd->uniform(sizeof(kTestChars))];
+    result += kTestChars[rnd->Uniform(sizeof(kTestChars))];
   }
   return result;
 }

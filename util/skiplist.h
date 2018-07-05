@@ -305,7 +305,7 @@ int32_t SkipList<Key, Comparator>::RandomHeight()
 
   // Increase height with probability 1 in kBranching
   int32_t height = 1;
-  while (height < kMaxHeight_ && rnd->next() < kScaledInverseBranching_)
+  while (height < kMaxHeight_ && rnd->Next() < kScaledInverseBranching_)
   {
     height++;
   }

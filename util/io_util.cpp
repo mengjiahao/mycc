@@ -141,7 +141,7 @@ PosixSequentialFile::~PosixSequentialFile()
   }
 }
 
-Status PosixSequentialFile::read(uint64_t n, StringPiece *result, char *scratch)
+Status PosixSequentialFile::Read(uint64_t n, StringPiece *result, char *scratch)
 {
   assert(result != nullptr && !use_direct_io());
   Status s;
@@ -169,14 +169,14 @@ Status PosixSequentialFile::read(uint64_t n, StringPiece *result, char *scratch)
   return s;
 }
 
-Status PosixSequentialFile::positionedRead(uint64_t offset, uint64_t n,
+Status PosixSequentialFile::PositionedRead(uint64_t offset, uint64_t n,
                                            StringPiece *result, char *scratch)
 {
   if (use_direct_io())
   {
-    assert(IsSectorAligned(offset, getRequiredBufferAlignment()));
-    assert(IsSectorAligned(n, getRequiredBufferAlignment()));
-    assert(IsSectorAligned(scratch, getRequiredBufferAlignment()));
+    assert(IsSectorAligned(offset, GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(n, GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(scratch, GetRequiredBufferAlignment()));
   }
   Status s;
   int64_t r = -1;
@@ -197,7 +197,7 @@ Status PosixSequentialFile::positionedRead(uint64_t offset, uint64_t n,
     ptr += r;
     offset += r;
     left -= r;
-    if (r % static_cast<int64_t>(getRequiredBufferAlignment()) != 0)
+    if (r % static_cast<int64_t>(GetRequiredBufferAlignment()) != 0)
     {
       // Bytes reads don't fill sectors. Should only happen at the end
       // of the file.
@@ -215,7 +215,7 @@ Status PosixSequentialFile::positionedRead(uint64_t offset, uint64_t n,
   return s;
 }
 
-Status PosixSequentialFile::skip(uint64_t n)
+Status PosixSequentialFile::Skip(uint64_t n)
 {
   if (::fseek(file_, static_cast<int64_t>(n), SEEK_CUR))
   {
@@ -225,7 +225,7 @@ Status PosixSequentialFile::skip(uint64_t n)
   return Status::OK();
 }
 
-Status PosixSequentialFile::readLine(char *buf, int32_t n)
+Status PosixSequentialFile::ReadLine(char *buf, int32_t n)
 {
   if (nullptr == ::fgets(buf, n, file_))
   {
@@ -235,7 +235,7 @@ Status PosixSequentialFile::readLine(char *buf, int32_t n)
   return Status::OK();
 }
 
-Status PosixSequentialFile::invalidateCache(uint64_t offset, uint64_t length)
+Status PosixSequentialFile::InvalidateCache(uint64_t offset, uint64_t length)
 {
   if (use_direct_io())
   {
@@ -252,7 +252,7 @@ Status PosixSequentialFile::invalidateCache(uint64_t offset, uint64_t length)
   return Status::OK();
 }
 
-Status PosixSequentialFile::getCurrentPos(int64_t *curpos)
+Status PosixSequentialFile::GetCurrentPos(int64_t *curpos)
 {
   int64_t pos = ::ftell(file_);
   if (-1 == pos)
@@ -263,7 +263,7 @@ Status PosixSequentialFile::getCurrentPos(int64_t *curpos)
   return Status::OK();
 }
 
-int PosixSequentialFile::getFD()
+int PosixSequentialFile::GetFD()
 {
   return fd_;
 }
@@ -286,14 +286,14 @@ PosixRandomAccessFile::PosixRandomAccessFile(const string &fname, int fd,
 
 PosixRandomAccessFile::~PosixRandomAccessFile() { ::close(fd_); }
 
-Status PosixRandomAccessFile::read(uint64_t offset, uint64_t n, StringPiece *result,
+Status PosixRandomAccessFile::Read(uint64_t offset, uint64_t n, StringPiece *result,
                                    char *scratch) const
 {
   if (use_direct_io())
   {
-    assert(IsSectorAligned(offset, getRequiredBufferAlignment()));
-    assert(IsSectorAligned(n, getRequiredBufferAlignment()));
-    assert(IsSectorAligned(scratch, getRequiredBufferAlignment()));
+    assert(IsSectorAligned(offset, GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(n, GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(scratch, GetRequiredBufferAlignment()));
   }
   Status s;
   int64_t r = -1;
@@ -315,7 +315,7 @@ Status PosixRandomAccessFile::read(uint64_t offset, uint64_t n, StringPiece *res
     offset += r;
     left -= r;
     if (use_direct_io() &&
-        r % static_cast<int64_t>(getRequiredBufferAlignment()) != 0)
+        r % static_cast<int64_t>(GetRequiredBufferAlignment()) != 0)
     {
       // Bytes reads don't fill sectors. Should only happen at the end
       // of the file.
@@ -334,7 +334,7 @@ Status PosixRandomAccessFile::read(uint64_t offset, uint64_t n, StringPiece *res
   return s;
 }
 
-Status PosixRandomAccessFile::prefetch(uint64_t offset, uint64_t n)
+Status PosixRandomAccessFile::Prefetch(uint64_t offset, uint64_t n)
 {
   Status s;
   if (!use_direct_io())
@@ -353,12 +353,12 @@ Status PosixRandomAccessFile::prefetch(uint64_t offset, uint64_t n)
   return s;
 }
 
-uint64_t PosixRandomAccessFile::getUniqueId(char *id, uint64_t max_size) const
+uint64_t PosixRandomAccessFile::GetUniqueId(char *id, uint64_t max_size) const
 {
   return GetUniqueIdFromFile(fd_, id, max_size);
 }
 
-void PosixRandomAccessFile::hint(AccessPattern pattern)
+void PosixRandomAccessFile::Hint(AccessPattern pattern)
 {
   if (use_direct_io())
   {
@@ -387,7 +387,7 @@ void PosixRandomAccessFile::hint(AccessPattern pattern)
   }
 }
 
-Status PosixRandomAccessFile::invalidateCache(uint64_t offset, uint64_t length)
+Status PosixRandomAccessFile::InvalidateCache(uint64_t offset, uint64_t length)
 {
   if (use_direct_io())
   {
@@ -404,7 +404,7 @@ Status PosixRandomAccessFile::invalidateCache(uint64_t offset, uint64_t length)
                  filename_, errno);
 }
 
-int32_t PosixRandomAccessFile::getFD()
+int PosixRandomAccessFile::GetFD()
 {
   return fd_;
 }
@@ -440,7 +440,7 @@ PosixMmapReadableFile::~PosixMmapReadableFile()
   ::close(fd_);
 }
 
-Status PosixMmapReadableFile::read(uint64_t offset, uint64_t n, StringPiece *result,
+Status PosixMmapReadableFile::Read(uint64_t offset, uint64_t n, StringPiece *result,
                                    char *scratch) const
 {
   Status s;
@@ -459,7 +459,7 @@ Status PosixMmapReadableFile::read(uint64_t offset, uint64_t n, StringPiece *res
   return s;
 }
 
-Status PosixMmapReadableFile::invalidateCache(uint64_t offset, uint64_t length)
+Status PosixMmapReadableFile::InvalidateCache(uint64_t offset, uint64_t length)
 {
   // free OS pages
   int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
@@ -472,7 +472,7 @@ Status PosixMmapReadableFile::invalidateCache(uint64_t offset, uint64_t length)
                  filename_, errno);
 }
 
-int PosixMmapReadableFile::getFD()
+int PosixMmapReadableFile::GetFD()
 {
   return fd_;
 }
@@ -497,16 +497,16 @@ PosixWritableFile::~PosixWritableFile()
 {
   if (fd_ >= 0)
   {
-    PosixWritableFile::close();
+    Close();
   }
 }
 
-Status PosixWritableFile::append(const StringPiece &data)
+Status PosixWritableFile::Append(const StringPiece &data)
 {
   if (use_direct_io())
   {
-    assert(IsSectorAligned(data.size(), getRequiredBufferAlignment()));
-    assert(IsSectorAligned(data.data(), getRequiredBufferAlignment()));
+    assert(IsSectorAligned(data.size(), GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(data.data(), GetRequiredBufferAlignment()));
   }
   const char *src = data.data();
   uint64_t left = data.size();
@@ -528,13 +528,13 @@ Status PosixWritableFile::append(const StringPiece &data)
   return Status::OK();
 }
 
-Status PosixWritableFile::positionedAppend(const StringPiece &data, uint64_t offset)
+Status PosixWritableFile::PositionedAppend(const StringPiece &data, uint64_t offset)
 {
   if (use_direct_io())
   {
-    assert(IsSectorAligned(offset, getRequiredBufferAlignment()));
-    assert(IsSectorAligned(data.size(), getRequiredBufferAlignment()));
-    assert(IsSectorAligned(data.data(), getRequiredBufferAlignment()));
+    assert(IsSectorAligned(offset, GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(data.size(), GetRequiredBufferAlignment()));
+    assert(IsSectorAligned(data.data(), GetRequiredBufferAlignment()));
   }
   assert(offset <= std::numeric_limits<off_t>::max());
   const char *src = data.data();
@@ -559,7 +559,7 @@ Status PosixWritableFile::positionedAppend(const StringPiece &data, uint64_t off
   return Status::OK();
 }
 
-Status PosixWritableFile::truncate(uint64_t size)
+Status PosixWritableFile::Truncate(uint64_t size)
 {
   Status s;
   int r = ::ftruncate(fd_, size);
@@ -575,12 +575,12 @@ Status PosixWritableFile::truncate(uint64_t size)
   return s;
 }
 
-Status PosixWritableFile::close()
+Status PosixWritableFile::Close()
 {
   Status s;
   uint64_t block_size;
   uint64_t last_allocated_block;
-  getPreallocationStatus(&block_size, &last_allocated_block);
+  GetPreallocationStatus(&block_size, &last_allocated_block);
   if (last_allocated_block > 0)
   {
     // trim the extra space preallocated at the end of the file
@@ -599,9 +599,9 @@ Status PosixWritableFile::close()
 }
 
 // write out the cached data to the OS cache
-Status PosixWritableFile::flush() { return Status::OK(); }
+Status PosixWritableFile::Flush() { return Status::OK(); }
 
-Status PosixWritableFile::sync()
+Status PosixWritableFile::Sync()
 {
   if (::fdatasync(fd_) < 0)
   {
@@ -610,7 +610,7 @@ Status PosixWritableFile::sync()
   return Status::OK();
 }
 
-Status PosixWritableFile::fsync()
+Status PosixWritableFile::Fsync()
 {
   if (::fsync(fd_) < 0)
   {
@@ -619,11 +619,11 @@ Status PosixWritableFile::fsync()
   return Status::OK();
 }
 
-bool PosixWritableFile::isSyncThreadSafe() const { return true; }
+bool PosixWritableFile::IsSyncThreadSafe() const { return true; }
 
-uint64_t PosixWritableFile::getFileSize() { return filesize_; }
+uint64_t PosixWritableFile::GetFileSize() { return filesize_; }
 
-void PosixWritableFile::setWriteLifeTimeHint(Env::WriteLifeTimeHint hint)
+void PosixWritableFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint hint)
 {
   //if (::fcntl(fd_, F_SET_RW_HINT, &hint) == 0)
   //{
@@ -632,7 +632,7 @@ void PosixWritableFile::setWriteLifeTimeHint(Env::WriteLifeTimeHint hint)
   (void)hint;
 }
 
-Status PosixWritableFile::invalidateCache(uint64_t offset, uint64_t length)
+Status PosixWritableFile::InvalidateCache(uint64_t offset, uint64_t length)
 {
   if (use_direct_io())
   {
@@ -647,7 +647,7 @@ Status PosixWritableFile::invalidateCache(uint64_t offset, uint64_t length)
   return IOError("While fadvise NotNeeded", filename_, errno);
 }
 
-Status PosixWritableFile::rangeSync(uint64_t offset, uint64_t nbytes)
+Status PosixWritableFile::RangeSync(uint64_t offset, uint64_t nbytes)
 {
   assert(offset <= std::numeric_limits<off_t>::max());
   assert(nbytes <= std::numeric_limits<off_t>::max());
@@ -664,12 +664,12 @@ Status PosixWritableFile::rangeSync(uint64_t offset, uint64_t nbytes)
   }
 }
 
-uint64_t PosixWritableFile::getUniqueId(char *id, uint64_t max_size) const
+uint64_t PosixWritableFile::GetUniqueId(char *id, uint64_t max_size) const
 {
   return GetUniqueIdFromFile(fd_, id, max_size);
 }
 
-int PosixWritableFile::getFD()
+int PosixWritableFile::GetFD()
 {
   return fd_;
 }
@@ -682,7 +682,7 @@ int PosixWritableFile::getFD()
  * file before reading from it, or for log files, the reading code
  * knows enough to skip zero suffixes.
  */
-Status PosixMmapFile::unmapCurrentRegion()
+Status PosixMmapFile::UnmapCurrentRegion()
 {
   if (base_ != nullptr)
   {
@@ -706,7 +706,7 @@ Status PosixMmapFile::unmapCurrentRegion()
   return Status::OK();
 }
 
-Status PosixMmapFile::mapNewRegion()
+Status PosixMmapFile::MapNewRegion()
 {
   assert(base_ == nullptr);
   int alloc_status = ::ftruncate(fd_, file_offset_ + map_size_);
@@ -730,7 +730,7 @@ Status PosixMmapFile::mapNewRegion()
   return Status::OK();
 }
 
-Status PosixMmapFile::msync()
+Status PosixMmapFile::Msync()
 {
   if (dst_ == last_sync_)
   {
@@ -738,8 +738,8 @@ Status PosixMmapFile::msync()
   }
   // Find the beginnings of the pages that contain the first and last
   // bytes to be synced.
-  uint64_t p1 = truncateToPageBoundary(last_sync_ - base_);
-  uint64_t p2 = truncateToPageBoundary(dst_ - base_ - 1);
+  uint64_t p1 = TruncateToPageBoundary(last_sync_ - base_);
+  uint64_t p2 = TruncateToPageBoundary(dst_ - base_ - 1);
   last_sync_ = dst_;
   if (::msync(base_ + p1, p2 - p1 + page_size_, MS_SYNC) < 0)
   {
@@ -770,11 +770,11 @@ PosixMmapFile::~PosixMmapFile()
 {
   if (fd_ >= 0)
   {
-    PosixMmapFile::close();
+    Close();
   }
 }
 
-Status PosixMmapFile::append(const StringPiece &data)
+Status PosixMmapFile::Append(const StringPiece &data)
 {
   const char *src = data.data();
   uint64_t left = data.size();
@@ -785,12 +785,12 @@ Status PosixMmapFile::append(const StringPiece &data)
     uint64_t avail = limit_ - dst_;
     if (avail == 0)
     {
-      Status s = unmapCurrentRegion();
+      Status s = UnmapCurrentRegion();
       if (!s.ok())
       {
         return s;
       }
-      s = mapNewRegion();
+      s = MapNewRegion();
       if (!s.ok())
       {
         return s;
@@ -807,12 +807,12 @@ Status PosixMmapFile::append(const StringPiece &data)
   return Status::OK();
 }
 
-Status PosixMmapFile::close()
+Status PosixMmapFile::Close()
 {
   Status s;
   uint64_t unused = limit_ - dst_;
 
-  s = unmapCurrentRegion();
+  s = UnmapCurrentRegion();
   if (!s.ok())
   {
     s = IOError("While closing mmapped file", filename_, errno);
@@ -840,29 +840,29 @@ Status PosixMmapFile::close()
   return s;
 }
 
-Status PosixMmapFile::flush() { return Status::OK(); }
+Status PosixMmapFile::Flush() { return Status::OK(); }
 
-Status PosixMmapFile::sync()
+Status PosixMmapFile::Sync()
 {
   if (::fdatasync(fd_) < 0)
   {
     return IOError("While fdatasync mmapped file", filename_, errno);
   }
 
-  return PosixMmapFile::msync();
+  return Msync();
 }
 
 /**
  * Flush data as well as metadata to stable storage.
  */
-Status PosixMmapFile::fsync()
+Status PosixMmapFile::Fsync()
 {
   if (::fsync(fd_) < 0)
   {
     return IOError("While fsync mmaped file", filename_, errno);
   }
 
-  return PosixMmapFile::msync();
+  return Msync();
 }
 
 /**
@@ -870,13 +870,13 @@ Status PosixMmapFile::fsync()
  * size that is returned from the filesystem because we use mmap
  * to extend file by map_size every time.
  */
-uint64_t PosixMmapFile::getFileSize()
+uint64_t PosixMmapFile::GetFileSize()
 {
   uint64_t used = dst_ - base_;
   return file_offset_ + used;
 }
 
-Status PosixMmapFile::invalidateCache(uint64_t offset, uint64_t length)
+Status PosixMmapFile::InvalidateCache(uint64_t offset, uint64_t length)
 {
   // free OS pages
   int ret = Fadvise(fd_, offset, length, POSIX_FADV_DONTNEED);
@@ -887,7 +887,7 @@ Status PosixMmapFile::invalidateCache(uint64_t offset, uint64_t length)
   return IOError("While fadvise NotNeeded mmapped file", filename_, errno);
 }
 
-int PosixMmapFile::getFD()
+int PosixMmapFile::GetFD()
 {
   return fd_;
 }
@@ -904,11 +904,11 @@ PosixRandomRWFile::~PosixRandomRWFile()
 {
   if (fd_ >= 0)
   {
-    PosixRandomRWFile::close();
+    Close();
   }
 }
 
-Status PosixRandomRWFile::write(uint64_t offset, const StringPiece &data)
+Status PosixRandomRWFile::Write(uint64_t offset, const StringPiece &data)
 {
   const char *src = data.data();
   uint64_t left = data.size();
@@ -937,7 +937,7 @@ Status PosixRandomRWFile::write(uint64_t offset, const StringPiece &data)
   return Status::OK();
 }
 
-Status PosixRandomRWFile::read(uint64_t offset, uint64_t n, StringPiece *result,
+Status PosixRandomRWFile::Read(uint64_t offset, uint64_t n, StringPiece *result,
                                char *scratch) const
 {
   uint64_t left = n;
@@ -973,9 +973,9 @@ Status PosixRandomRWFile::read(uint64_t offset, uint64_t n, StringPiece *result,
   return Status::OK();
 }
 
-Status PosixRandomRWFile::flush() { return Status::OK(); }
+Status PosixRandomRWFile::Flush() { return Status::OK(); }
 
-Status PosixRandomRWFile::sync()
+Status PosixRandomRWFile::Sync()
 {
   if (::fdatasync(fd_) < 0)
   {
@@ -984,7 +984,7 @@ Status PosixRandomRWFile::sync()
   return Status::OK();
 }
 
-Status PosixRandomRWFile::fsync()
+Status PosixRandomRWFile::Fsync()
 {
   if (::fsync(fd_) < 0)
   {
@@ -993,7 +993,7 @@ Status PosixRandomRWFile::fsync()
   return Status::OK();
 }
 
-Status PosixRandomRWFile::close()
+Status PosixRandomRWFile::Close()
 {
   if (::close(fd_) < 0)
   {
@@ -1003,7 +1003,7 @@ Status PosixRandomRWFile::close()
   return Status::OK();
 }
 
-int PosixRandomRWFile::getFD()
+int PosixRandomRWFile::GetFD()
 {
   return fd_;
 }
@@ -1023,7 +1023,7 @@ PosixMemoryMappedFileBuffer::~PosixMemoryMappedFileBuffer()
 
 PosixDirectory::~PosixDirectory() { ::close(fd_); }
 
-Status PosixDirectory::fsync()
+Status PosixDirectory::Fsync()
 {
   if (::fsync(fd_) == -1)
   {

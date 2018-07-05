@@ -29,7 +29,7 @@ InputBuffer::~InputBuffer() { delete[] buf_; }
 Status InputBuffer::FillBuffer()
 {
   StringPiece data;
-  Status s = file_->read(file_pos_, size_, &data, buf_);
+  Status s = file_->Read(file_pos_, size_, &data, buf_);
   if (data.data() != buf_)
   {
     memmove(buf_, data.data(), data.size());

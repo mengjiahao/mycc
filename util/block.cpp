@@ -83,7 +83,7 @@ Status ReadBlock(RandomAccessFile *file, const BlockHandle &handle,
   uint64_t n = static_cast<uint64_t>(handle.size());
   char *buf = new char[n + kBlockTrailerSize];
   StringPiece contents;
-  Status s = file->read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
+  Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
   if (!s.ok())
   {
     delete[] buf;
