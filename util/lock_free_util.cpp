@@ -5,5 +5,6 @@ namespace mycc
 {
 namespace util
 {
+
 }
 } // namespace mycc

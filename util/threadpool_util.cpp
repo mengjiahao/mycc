@@ -827,7 +827,7 @@ void SimpleThreadPool::ThreadProc()
       }
       else if (queue_.empty() && !stop_)
       {
-        work_cv_.timedWait(wait_time);
+        work_cv_.waitFor(wait_time);
         continue;
       }
     }

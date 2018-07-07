@@ -33,17 +33,16 @@ void InitPthreadOnce(PthreadOnceType *once, void (*initializer)())
 
 Mutex::Mutex()
 {
-#ifdef MUTEX_DEBUG
+  PthreadCall("init mutex default", pthread_mutex_init(&mu_, nullptr));
+#ifdef NDEBUG
   locked_ = false;
   owner_ = 0;
 #endif
-
-  PthreadCall("init mutex default", pthread_mutex_init(&mu_, nullptr));
 }
 
 Mutex::Mutex(bool adaptive)
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   locked_ = false;
   owner_ = 0;
 #endif
@@ -77,7 +76,7 @@ void Mutex::lock()
 
 bool Mutex::tryLock()
 {
-  int32_t ret = pthread_mutex_trylock(&mu_);
+  int ret = pthread_mutex_trylock(&mu_);
   switch (ret)
   {
   case 0:
@@ -103,7 +102,7 @@ bool Mutex::timedLock(int64_t time_ms)
 {
   struct timespec ts;
   MakeTimeoutMs(&ts, time_ms);
-  int32_t ret = pthread_mutex_timedlock(&mu_, &ts);
+  int ret = pthread_mutex_timedlock(&mu_, &ts);
   switch (ret)
   {
   case 0:
@@ -133,7 +132,7 @@ void Mutex::unlock()
 
 bool Mutex::isLocked()
 {
-  int32_t ret = pthread_mutex_trylock(&mu_);
+  int ret = pthread_mutex_trylock(&mu_);
   if (0 == ret)
     unlock();
   return 0 != ret;
@@ -141,7 +140,7 @@ bool Mutex::isLocked()
 
 void Mutex::assertHeld()
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   assert(locked_);
   if (0 == pthread_equal(owner_, pthread_self()))
   {
@@ -154,7 +153,7 @@ void Mutex::assertHeld()
 
 void Mutex::afterLock()
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   locked_ = true;
   owner_ = pthread_self();
 #endif
@@ -162,7 +161,7 @@ void Mutex::afterLock()
 
 void Mutex::beforeUnlock()
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   locked_ = false;
   owner_ = 0;
 #endif
@@ -178,74 +177,85 @@ CondVar::~CondVar() { PthreadCall("destroy cv", pthread_cond_destroy(&cv_)); }
 
 void CondVar::wait()
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   mu_->beforeUnlock();
 #endif
   PthreadCall("wait cv", pthread_cond_wait(&cv_, &mu_->mu_));
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   mu_->afterLock();
 #endif
 }
 
-bool CondVar::timedWait(int64_t abs_time_ms)
+bool CondVar::waitUtil(int64_t abs_time_ms)
 {
   struct timespec ts;
   ts.tv_sec = static_cast<time_t>(abs_time_ms / 1000);
   ts.tv_nsec = static_cast<suseconds_t>((abs_time_ms % 1000) * 1000000);
 
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   mu_->beforeUnlock();
 #endif
-  int32_t err = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
-#ifdef MUTEX_DEBUG
+  int err = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
+#ifdef NDEBUG
   mu_->afterLock();
 #endif
 
-  if (err == ETIMEDOUT)
+  if (err == 0 || err == ETIMEDOUT)
   {
     return true;
   }
   if (err != 0)
   {
-    PthreadCall("timedwait cv", err);
+    PthreadCall("waitUtil cv", err);
   }
   return false;
 }
 
 bool CondVar::timedWaitAbsolute(const struct timespec &absolute_time)
 {
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   mu_->beforeUnlock();
 #endif
-  int32_t status = pthread_cond_timedwait(&cv_, &mu_->mu_, &absolute_time);
-#ifdef MUTEX_DEBUG
+  int err = pthread_cond_timedwait(&cv_, &mu_->mu_, &absolute_time);
+#ifdef NDEBUG
   mu_->afterLock();
 #endif
 
-  if (status == ETIMEDOUT)
+  if (err == 0 || err == ETIMEDOUT)
   {
-    return false;
+    return true;
   }
-  assert(status == 0);
-  return true;
+  if (err != 0)
+  {
+    PthreadCall("timedWaitAbsolute cv", err);
+  }
+  return false;
 }
 
-bool CondVar::timedWaitRelative(int64_t time_ms)
+bool CondVar::waitFor(int64_t time_ms)
 {
   // pthread_cond_timedwait api use absolute API
   // so we need gettimeofday + relative_time
   struct timespec ts;
   MakeTimeoutMs(&ts, time_ms);
 
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   mu_->beforeUnlock();
 #endif
-  int32_t ret = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
-#ifdef MUTEX_DEBUG
+  int err = pthread_cond_timedwait(&cv_, &mu_->mu_, &ts);
+#ifdef NDEBUG
   mu_->afterLock();
 #endif
 
-  return (ret == 0);
+  if (err == 0 || err == ETIMEDOUT)
+  {
+    return true;
+  }
+  if (err != 0)
+  {
+    PthreadCall("waitFor cv", err);
+  }
+  return false;
 }
 
 // Calls timedwait with a relative, instead of an absolute, timeout.
@@ -255,7 +265,7 @@ bool CondVar::timedWaitRelative(const struct timespec &relative_time)
   // clock_gettime would be more convenient, but that needs librt
   // int status = clock_gettime(CLOCK_REALTIME, &absolute);
   struct timeval tv;
-  int32_t status = gettimeofday(&tv, NULL);
+  int status = gettimeofday(&tv, NULL);
   assert(status == 0);
   absolute.tv_sec = tv.tv_sec + relative_time.tv_sec;
   absolute.tv_nsec = tv.tv_usec * 1000 + relative_time.tv_nsec;
@@ -293,7 +303,7 @@ void RWMutex::readLock() { PthreadCall("read lock", pthread_rwlock_rdlock(&mu_))
 */
 bool RWMutex::tryReadLock()
 {
-  int32_t ret = pthread_rwlock_tryrdlock(&mu_);
+  int ret = pthread_rwlock_tryrdlock(&mu_);
   switch (ret)
   {
   case 0:
@@ -325,7 +335,7 @@ void RWMutex::writeLock() { PthreadCall("write lock", pthread_rwlock_wrlock(&mu_
 */
 bool RWMutex::tryWriteLock()
 {
-  int32_t ret = pthread_rwlock_trywrlock(&mu_);
+  int ret = pthread_rwlock_trywrlock(&mu_);
   switch (ret)
   {
   case 0:
@@ -418,7 +428,7 @@ void CondLock::wait()
   PthreadCall("condlock wait", pthread_cond_wait(&cond_, &mutex_));
 }
 
-bool CondLock::timedWait(int64_t time_ms)
+bool CondLock::waitUtil(int64_t time_ms)
 {
   struct timespec ts;
   MakeTimeoutMs(&ts, time_ms);

@@ -370,7 +370,7 @@ protected:
     }
   }
 
-  SimpleQueue<JobFunc> jobs_;
+  SimpleSafeQueue<JobFunc> jobs_;
   bool stopping_;
   LockedCondition finishCV_;
   bool empty_;

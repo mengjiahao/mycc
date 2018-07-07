@@ -17,23 +17,357 @@ namespace mycc
 namespace util
 {
 
-// BASE_SCOPED_LOCK
-#if !defined(BASE_CXX11_ENABLED)
-#define BASE_SCOPED_LOCK(ref_of_lock)       \
-  std::lock_guard<BASE_TYPEOF(ref_of_lock)> \
-      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
-#else
-// c++11 deduces additional reference to the type.
-namespace internal
-{
-template <typename T>
-std::lock_guard<typename std::remove_reference<T>::type> get_lock_guard();
-} // namespace internal
+/**
+ * Single Producer Single Consumer Lockless Q
+ */
 
-#define BASE_SCOPED_LOCK(ref_of_lock)                                       \
-  decltype(::mycc::util::internal::get_lock_guard<decltype(ref_of_lock)>()) \
-      BASE_CONCAT(scoped_locker_dummy_at_line_, __LINE__)(ref_of_lock)
-#endif // BASE_SCOPED_LOCK
+template <typename T>
+class SpscQueue
+{
+public:
+  SpscQueue()
+      : _head(reinterpret_cast<node_t *>(new node_aligned_t)),
+        _tail(_head)
+  {
+    _head->next = NULL;
+  }
+
+  ~SpscQueue()
+  {
+    T output;
+    while (this->dequeue(output))
+    {
+    }
+    delete _head;
+  }
+
+  void enqueue(const T &input)
+  {
+    node_t *node = reinterpret_cast<node_t *>(new node_aligned_t);
+    node->data = input;
+    node->next = NULL;
+
+    std::atomic_thread_fence(std::memory_order_acq_rel);
+    _head->next = node;
+    _head = node;
+  }
+
+  bool dequeue(T &output)
+  {
+    std::atomic_thread_fence(std::memory_order_consume);
+    if (!_tail->next)
+    {
+      return false;
+    }
+
+    output = _tail->next->data;
+    std::atomic_thread_fence(std::memory_order_acq_rel);
+    _back = _tail;
+    _tail = _back->next;
+
+    delete _back;
+    return true;
+  }
+
+private:
+  struct node_t
+  {
+    node_t *next;
+    T data;
+  };
+
+  typedef typename std::aligned_storage<sizeof(node_t), std::alignment_of<node_t>::value>::type node_aligned_t;
+
+  node_t *_head;
+  char _cache_line[64];
+  node_t *_tail;
+  node_t *_back;
+
+  DISALLOW_COPY_AND_ASSIGN(SpscQueue);
+};
+
+template <typename T>
+class SpscBoundedQueue
+{
+public:
+  SpscBoundedQueue(uint64_t size)
+      : _size(size),
+        _mask(size - 1),
+        _buffer(reinterpret_cast<T *>(new aligned_t[_size + 1])), // need one extra element for a guard
+        _head(0),
+        _tail(0)
+  {
+    // make sure it's a power of 2
+    assert((_size != 0) && ((_size & (~_size + 1)) == _size));
+  }
+
+  ~SpscBoundedQueue()
+  {
+    delete[] _buffer;
+  }
+
+  bool enqueue(T &input)
+  {
+    const uint64_t head = _head.load(std::memory_order_relaxed);
+
+    if (((_tail.load(std::memory_order_acquire) - (head + 1)) & _mask) >= 1)
+    {
+      _buffer[head & _mask] = input;
+      _head.store(head + 1, std::memory_order_release);
+      return true;
+    }
+    return false;
+  }
+
+  bool dequeue(T &output)
+  {
+    const uint64_t tail = _tail.load(std::memory_order_relaxed);
+
+    if (((_head.load(std::memory_order_acquire) - tail) & _mask) >= 1)
+    {
+      output = _buffer[_tail & _mask];
+      _tail.store(tail + 1, std::memory_order_release);
+      return true;
+    }
+    return false;
+  }
+
+private:
+  typedef typename std::aligned_storage<sizeof(T), std::alignment_of<T>::value>::type aligned_t;
+  typedef char cache_line_pad_t[64];
+
+  cache_line_pad_t _pad0;
+  const uint64_t _size;
+  const uint64_t _mask;
+  T *const _buffer;
+
+  cache_line_pad_t _pad1;
+  std::atomic<uint64_t> _head;
+
+  cache_line_pad_t _pad2;
+  std::atomic<uint64_t> _tail;
+
+  DISALLOW_COPY_AND_ASSIGN(SpscBoundedQueue);
+};
+
+/**
+ * Multiple Producer Single Consumer Lockless Q
+ */
+
+template <typename T>
+class MpscQueue
+{
+public:
+  struct buffer_node_t
+  {
+    T data;
+    std::atomic<buffer_node_t *> next;
+  };
+
+  MpscQueue()
+      : _head(reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t)),
+        _tail(_head.load(std::memory_order_relaxed))
+  {
+    buffer_node_t *front = _head.load(std::memory_order_relaxed);
+    front->next.store(NULL, std::memory_order_relaxed);
+  }
+
+  ~MpscQueue()
+  {
+    T output;
+    while (this->dequeue(output))
+    {
+    }
+    buffer_node_t *front = _head.load(std::memory_order_relaxed);
+    delete front;
+  }
+
+  void enqueue(const T &input)
+  {
+    buffer_node_t *node = reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t);
+    node->data = input;
+    node->next.store(NULL, std::memory_order_relaxed);
+
+    buffer_node_t *prev_head = _head.exchange(node, std::memory_order_acq_rel);
+    prev_head->next.store(node, std::memory_order_release);
+  }
+
+  bool dequeue(T *output)
+  {
+    buffer_node_t *tail = _tail.load(std::memory_order_relaxed);
+    buffer_node_t *next = tail->next.load(std::memory_order_acquire);
+
+    if (next == NULL)
+    {
+      return false;
+    }
+
+    output = next->data;
+    _tail.store(next, std::memory_order_release);
+    delete tail;
+    return true;
+  }
+
+  // you can only use pop_all if the queue is SPSC
+  buffer_node_t *pop_all()
+  {
+    // nobody else can move the tail pointer.
+    buffer_node_t *tptr = _tail.load(std::memory_order_relaxed);
+    buffer_node_t *next =
+        tptr->next.exchange(nullptr, std::memory_order_acquire);
+    _head.exchange(tptr, std::memory_order_acquire);
+
+    // there is a race condition here
+    return next;
+  }
+
+private:
+  typedef typename std::aligned_storage<
+      sizeof(buffer_node_t), std::alignment_of<buffer_node_t>::value>::type
+      buffer_node_aligned_t;
+
+  std::atomic<buffer_node_t *> _head;
+  std::atomic<buffer_node_t *> _tail;
+
+  DISALLOW_COPY_AND_ASSIGN(MpscQueue);
+};
+
+template <typename T>
+class MpmcBoundedQueue
+{
+public:
+  MpmcBoundedQueue(uint64_t size)
+      : _size(size),
+        _mask(size - 1),
+        _buffer(reinterpret_cast<node_t *>(new aligned_node_t[_size])),
+        _head_seq(0),
+        _tail_seq(0)
+  {
+    // make sure it's a power of 2
+    assert((_size != 0) && ((_size & (~_size + 1)) == _size));
+
+    // populate the sequence initial values
+    for (uint64_t i = 0; i < _size; ++i)
+    {
+      _buffer[i].seq.store(i, std::memory_order_relaxed);
+    }
+  }
+
+  ~MpmcBoundedQueue()
+  {
+    delete[] _buffer;
+  }
+
+  bool enqueue(const T &data)
+  {
+    // _head_seq only wraps at MAX(_head_seq) instead we use a mask to convert the sequence to an array index
+    // this is why the ring buffer must be a size which is a power of 2. this also allows the sequence to double as a ticket/lock.
+    uint64_t head_seq = _head_seq.load(std::memory_order_relaxed);
+
+    for (;;)
+    {
+      node_t *node = &_buffer[head_seq & _mask];
+      uint64_t node_seq = node->seq.load(std::memory_order_acquire);
+      intptr_t dif = (intptr_t)node_seq - (intptr_t)head_seq;
+
+      // if seq and head_seq are the same then it means this slot is empty
+      if (dif == 0)
+      {
+        // claim our spot by moving head
+        // if head isn't the same as we last checked then that means someone beat us to the punch
+        // weak compare is faster, but can return spurious results
+        // which in this instance is OK, because it's in the loop
+        if (_head_seq.compare_exchange_weak(head_seq, head_seq + 1, std::memory_order_relaxed))
+        {
+          // set the data
+          node->data = data;
+          // increment the sequence so that the tail knows it's accessible
+          node->seq.store(head_seq + 1, std::memory_order_release);
+          return true;
+        }
+      }
+      else if (dif < 0)
+      {
+        // if seq is less than head seq then it means this slot is full and therefore the buffer is full
+        return false;
+      }
+      else
+      {
+        // under normal circumstances this branch should never be taken
+        head_seq = _head_seq.load(std::memory_order_relaxed);
+      }
+    }
+
+    // never taken
+    return false;
+  }
+
+  bool dequeue(T &data)
+  {
+    uint64_t tail_seq = _tail_seq.load(std::memory_order_relaxed);
+
+    for (;;)
+    {
+      node_t *node = &_buffer[tail_seq & _mask];
+      uint64_t node_seq = node->seq.load(std::memory_order_acquire);
+      intptr_t dif = (intptr_t)node_seq - (intptr_t)(tail_seq + 1);
+
+      // if seq and head_seq are the same then it means this slot is empty
+      if (dif == 0)
+      {
+        // claim our spot by moving head
+        // if head isn't the same as we last checked then that means someone beat us to the punch
+        // weak compare is faster, but can return spurious results
+        // which in this instance is OK, because it's in the loop
+        if (_tail_seq.compare_exchange_weak(tail_seq, tail_seq + 1, std::memory_order_relaxed))
+        {
+          // set the output
+          data = node->data;
+          // set the sequence to what the head sequence should be next time around
+          node->seq.store(tail_seq + _mask + 1, std::memory_order_release);
+          return true;
+        }
+      }
+      else if (dif < 0)
+      {
+        // if seq is less than head seq then it means this slot is full and therefore the buffer is full
+        return false;
+      }
+      else
+      {
+        // under normal circumstances this branch should never be taken
+        tail_seq = _tail_seq.load(std::memory_order_relaxed);
+      }
+    }
+
+    // never taken
+    return false;
+  }
+
+private:
+  struct node_t
+  {
+    T data;
+    std::atomic<uint64_t> seq;
+  };
+
+  typedef typename std::aligned_storage<sizeof(node_t), std::alignment_of<node_t>::value>::type aligned_node_t;
+  typedef char cache_line_pad_t[64]; // it's either 32 or 64 so 64 is good enough
+
+  cache_line_pad_t _pad0;
+  const uint64_t _size;
+  const uint64_t _mask;
+  node_t *const _buffer;
+  cache_line_pad_t _pad1;
+  std::atomic<uint64_t> _head_seq;
+  cache_line_pad_t _pad2;
+  std::atomic<uint64_t> _tail_seq;
+  cache_line_pad_t _pad3;
+
+  DISALLOW_COPY_AND_ASSIGN(MpmcBoundedQueue);
+};
+
+///////////////// WorkStealingQueue //////////////////////
 
 template <typename T>
 class WorkStealingQueue
@@ -173,7 +507,7 @@ private:
 
   // Copying a concurrent structure makes no sense.
   DISALLOW_COPY_AND_ASSIGN(WorkStealingQueue);
-};  
+};
 
 // This data structure makes Read() almost lock-free by making Modify()
 // *much* slower. It's very suitable for implementing LoadBalancers which
@@ -341,10 +675,10 @@ private:
   std::vector<Wrapper *> _wrappers;
 
   // Sequence access to _wrappers.
-  pthread_mutex_t _wrappers_mutex;
+  Mutex _wrappers_mutex;
 
   // Sequence modifications.
-  pthread_mutex_t _modify_mutex;
+  Mutex _modify_mutex;
 };
 
 static const pthread_key_t INVALID_PTHREAD_KEY = (pthread_key_t)-1;
@@ -373,7 +707,6 @@ class DoublyBufferedData<T, TLS>::Wrapper
 public:
   explicit Wrapper(DoublyBufferedData *c) : _control(c)
   {
-    pthread_mutex_init(&_mutex, NULL);
   }
 
   ~Wrapper()
@@ -382,7 +715,6 @@ public:
     {
       _control->RemoveWrapper(this);
     }
-    pthread_mutex_destroy(&_mutex);
   }
 
   // _mutex will be locked by the calling pthread and DoublyBufferedData.
@@ -390,22 +722,22 @@ public:
   // uncontended and fast.
   inline void BeginRead()
   {
-    pthread_mutex_lock(&_mutex);
+    _mutex.lock();
   }
 
   inline void EndRead()
   {
-    pthread_mutex_unlock(&_mutex);
+    _mutex.unlock();
   }
 
   inline void WaitReadDone()
   {
-    BASE_SCOPED_LOCK(_mutex);
+    MutexLock lock(&_mutex);
   }
 
 private:
   DoublyBufferedData *_control;
-  pthread_mutex_t _mutex;
+  Mutex _mutex;
 };
 
 // Called when thread initializes thread-local wrapper.
@@ -420,7 +752,7 @@ DoublyBufferedData<T, TLS>::AddWrapper()
   }
   try
   {
-    BASE_SCOPED_LOCK(_wrappers_mutex);
+    MutexLock wlock(&_wrappers_mutex);
     _wrappers.push_back(w);
   }
   catch (std::exception &e)
@@ -439,7 +771,7 @@ void DoublyBufferedData<T, TLS>::RemoveWrapper(
   {
     return;
   }
-  BASE_SCOPED_LOCK(_wrappers_mutex);
+  MutexLock wlock(&_wrappers_mutex);
   for (uint64_t i = 0; i < _wrappers.size(); ++i)
   {
     if (_wrappers[i] == w)
@@ -456,8 +788,6 @@ DoublyBufferedData<T, TLS>::DoublyBufferedData()
     : _index(0), _created_key(false), _wrapper_key(0)
 {
   _wrappers.reserve(64);
-  pthread_mutex_init(&_modify_mutex, NULL);
-  pthread_mutex_init(&_wrappers_mutex, NULL);
   const int rc = pthread_key_create(&_wrapper_key,
                                     delete_object<Wrapper>);
   if (rc != 0)
@@ -490,7 +820,7 @@ DoublyBufferedData<T, TLS>::~DoublyBufferedData()
   }
 
   {
-    BASE_SCOPED_LOCK(_wrappers_mutex);
+    MutexLock wlock(&_wrappers_mutex);
     for (uint64_t i = 0; i < _wrappers.size(); ++i)
     {
       _wrappers[i]->_control = NULL; // hack: disable removal.
@@ -498,8 +828,6 @@ DoublyBufferedData<T, TLS>::~DoublyBufferedData()
     }
     _wrappers.clear();
   }
-  pthread_mutex_destroy(&_modify_mutex);
-  pthread_mutex_destroy(&_wrappers_mutex);
 }
 
 template <typename T, typename TLS>
@@ -541,7 +869,7 @@ uint64_t DoublyBufferedData<T, TLS>::Modify(Fn &fn)
   // than _wrappers_mutex is to avoid blocking threads calling
   // AddWrapper() or RemoveWrapper() too long. Most of the time, modifications
   // are done by one thread, contention should be negligible.
-  BASE_SCOPED_LOCK(_modify_mutex);
+  MutexLock mlock(&_modify_mutex);
   // background instance is not accessed by other threads, being safe to
   // modify.
   const uint64_t ret = fn(_data[!_index]);
@@ -556,7 +884,7 @@ uint64_t DoublyBufferedData<T, TLS>::Modify(Fn &fn)
   // Wait until all threads finishes current reading. When they begin next
   // read, they should see updated _index.
   {
-    BASE_SCOPED_LOCK(_wrappers_mutex);
+    MutexLock wlock(&_wrappers_mutex);
     for (uint64_t i = 0; i < _wrappers.size(); ++i)
     {
       _wrappers[i]->WaitReadDone();

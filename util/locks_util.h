@@ -132,7 +132,7 @@ public:
   bool isLocked();
   // this will assert if the mutex is not locked
   // it does NOT verify that mutex is held by a calling thread
-  // use when MUTEX_DEBUG is defined
+  // use when NDEBUG is defined
   void assertHeld();
   pthread_mutex_t *getMutex()
   {
@@ -146,7 +146,7 @@ private:
   friend class CondVar;
   pthread_mutex_t mu_;
 
-#ifdef MUTEX_DEBUG
+#ifdef NDEBUG
   pthread_t owner_;
   bool locked_;
 #endif
@@ -238,10 +238,10 @@ public:
   // sleep, and the reacquires it when it is signaled.
   void wait();
   // Timed condition wait.  Returns true if timeout occurred.
-  bool timedWait(int64_t abs_time_ms);
+  bool waitUtil(int64_t abs_time_ms);
   bool timedWaitAbsolute(const struct timespec &absolute_time);
   // Time wait in timeout us, return true if timeout
-  bool timedWaitRelative(int64_t time_ms);
+  bool waitFor(int64_t time_ms);
   bool timedWaitRelative(const struct timespec &relative_time);
   void signal();
   void broadcast();
@@ -541,7 +541,7 @@ public:
   void lock();
   void unlock();
   void wait();
-  bool timedWait(int64_t time_ms);
+  bool waitUtil(int64_t time_ms);
   void signal();
   void broadcast();
 
@@ -627,12 +627,12 @@ public:
     signaled_ = false;
   }
 
-  bool timedWaitRelative(int64_t timeout_ms)
+  bool waitFor(int64_t timeout_ms)
   {
     MutexLock lock(&mutex_);
     if (!signaled_)
     {
-      cv_.timedWaitRelative(timeout_ms);
+      cv_.waitFor(timeout_ms);
     }
     bool ret = signaled_;
     signaled_ = false;
@@ -722,7 +722,7 @@ public:
     MutexLock lock(&lock_);
     while (count_ > 0)
     {
-      if (!cond_.timedWait(abs_time_ms))
+      if (!cond_.waitUtil(abs_time_ms))
       {
         return false;
       }
@@ -737,7 +737,7 @@ public:
     MutexLock lock(&lock_);
     while (count_ > 0)
     {
-      if (!cond_.timedWaitRelative(timeout_ms))
+      if (!cond_.waitFor(timeout_ms))
       {
         return false;
       }

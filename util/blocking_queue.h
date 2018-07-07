@@ -204,10 +204,10 @@ private:
 };
 
 template <class T>
-class RingBuffer
+class RingQueue
 {
 public:
-  RingBuffer(int32_t size)
+  RingQueue(int32_t size)
   {
     head = 0;
     tail = 0;
@@ -215,7 +215,7 @@ public:
     buffer = new T[size];
   }
 
-  ~RingBuffer()
+  ~RingQueue()
   {
     delete buffer;
   }
@@ -273,6 +273,11 @@ private:
   int32_t head __attribute__((__aligned__(64)));
   int32_t tail __attribute__((__aligned__(64)));
 };
+
+// A thread-unsafe bounded queue(ring buffer). It can push/pop from both
+// sides and is more handy than thread-safe queues in single thread. Use
+// boost::lockfree::spsc_queue or boost::lockfree::queue in multi-threaded
+// scenarios.
 
 // [Create a on-stack small queue]
 //   char storage[64];
@@ -704,7 +709,7 @@ private:
  * For example.
  * @code{.cpp}
  *
- * paddle::SimpleQueue<int32_t> q;
+ * paddle::SimpleSafeQueue<int32_t> q;
  * END_OF_JOB=-1
  * void thread1() {
  *   while (true) {
@@ -729,18 +734,18 @@ private:
  * @endcode
  */
 template <class T>
-class SimpleQueue
+class SimpleSafeQueue
 {
 public:
   /**
-   * @brief Construct Function. Default capacity of SimpleQueue is zero.
+   * @brief Construct Function. Default capacity of SimpleSafeQueue is zero.
    */
-  SimpleQueue() : numElements_(0) {}
+  SimpleSafeQueue() : numElements_(0) {}
 
-  ~SimpleQueue() {}
+  ~SimpleSafeQueue() {}
 
   /**
-   * @brief enqueue an element into SimpleQueue.
+   * @brief enqueue an element into SimpleSafeQueue.
    * @param[in] el The enqueue element.
    * @note This method is thread-safe, and will wake up another blocked thread.
    */
@@ -754,7 +759,7 @@ public:
   }
 
   /**
-   * @brief enqueue an element into SimpleQueue.
+   * @brief enqueue an element into SimpleSafeQueue.
    * @param[in] el The enqueue element. rvalue reference .
    * @note This method is thread-safe, and will wake up another blocked thread.
    */
@@ -1097,7 +1102,7 @@ public:
   explicit SimpleBlockingQueue(uint64_t capacity) : capacity_(capacity) {}
 
   /**
-   * @brief enqueue an element into SimpleQueue.
+   * @brief enqueue an element into SimpleSafeQueue.
    * @param[in] x The enqueue element, pass by reference .
    * @note This method is thread-safe, and will wake up another thread
    * who was blocked because of the queue is empty.
@@ -1313,7 +1318,7 @@ public:
       MutexLock locker(&m_mutex);
 
       if (UnlockedIsFull())
-        m_cond_not_full.timedWait(timeout_in_ms);
+        m_cond_not_full.waitFor(timeout_in_ms);
 
       if (!UnlockedIsFull())
       {
@@ -1338,7 +1343,7 @@ public:
     {
       MutexLock locker(&m_mutex);
       if (UnlockedIsFull())
-        m_cond_not_full.timedWait(timeout_in_ms);
+        m_cond_not_full.waitFor(timeout_in_ms);
 
       if (!UnlockedIsFull())
       {
@@ -1362,7 +1367,7 @@ public:
       MutexLock locker(&m_mutex);
 
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(timeout_in_ms);
+        m_cond_not_empty.waitFor(timeout_in_ms);
 
       if (!m_queue.empty())
       {
@@ -1389,7 +1394,7 @@ public:
       MutexLock locker(&m_mutex);
 
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(timeout_in_ms);
+        m_cond_not_empty.waitFor(timeout_in_ms);
 
       if (!m_queue.empty())
       {
@@ -1456,7 +1461,7 @@ public:
     {
       MutexLock locker(&m_mutex);
       if (m_queue.empty())
-        m_cond_not_empty.timedWait(timeout_in_ms);
+        m_cond_not_empty.waitFor(timeout_in_ms);
 
       if (!m_queue.empty())
       {

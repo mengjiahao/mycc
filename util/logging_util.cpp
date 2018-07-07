@@ -1111,7 +1111,7 @@ struct tb_log_item
   const char *function;
 };
 
-typedef RingBuffer<char *> TBLogQueue;
+typedef RingQueue<char *> TBLogQueue;
 
 __thread TBLogQueue *g_tb_pre_thread_log_queue = NULL;
 

@@ -14,6 +14,35 @@ namespace util
 #error "Arch not supprot asm atomic!"
 #endif
 
+/*
+ * lfence : performs a serializing operation on all load-from-memory
+ * instructions that were issued prior the LFENCE instruction.
+ */
+inline void SMP_RMB()
+{
+  asm volatile("lfence" ::
+                   : "memory");
+}
+
+/*
+ * sfence : the means same as lfence.
+ */
+inline void SMP_WMB()
+{
+  asm volatile("sfence" ::
+                   : "memory");
+}
+
+/*
+ * mfence : performs a serializing operation on all load-from-memory and
+ * store-to-memory instructions that were issued prior the MFENCE instructions.
+ */
+inline void SMP_MB()
+{
+  asm volatile("mfence" ::
+                   : "memory");
+}
+
 inline void AsmVolatilePause()
 {
 #if defined(__i386__) || defined(__x86_64__)

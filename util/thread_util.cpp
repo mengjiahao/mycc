@@ -304,7 +304,7 @@ void *BGThread::ThreadMain()
       }
       else if (queue_.empty() && !should_stop())
       {
-        rsignal_.timedWait((timer_item.exec_time - unow) / 1000);
+        rsignal_.waitFor((timer_item.exec_time - unow) / 1000);
         mu_.unlock();
         continue;
       }
