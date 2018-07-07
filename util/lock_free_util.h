@@ -4,11 +4,13 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include <atomic>
 #include <mutex>
 #include <type_traits>
 #include <vector>
+#include "atomic_util.h"
 #include "locks_util.h"
 #include "types_util.h"
 
@@ -16,6 +18,181 @@ namespace mycc
 {
 namespace util
 {
+
+// Lock-Free Data Structures with Hazard Pointers.
+// Each reader thread owns a single-writer/multi-reader shared pointer called hazard pointer.
+// When a reader thread assigns the address of a map to its hazard pointer,
+// it is basically announcing to other threads (writers),
+// "I am reading this map. You can replace it if you want,
+// but don’t change its contents and certainly keep your deleteing hands off it."
+
+struct HazardPtrEasy
+{
+public:
+  typedef struct free_t
+  {
+    void *p;
+    struct free_t *next;
+  } free_t;
+
+  static const int64_t HAZ_MAX_THREAD = 1024;
+  static const int64_t HAZ_MAX_COUNT_PER_THREAD = 4;
+  static const int64_t HAZ_MAX_COUNT = HAZ_MAX_THREAD * HAZ_MAX_COUNT_PER_THREAD;
+  static int64_t _tidSeed;
+  static void *_haz_array[HAZ_MAX_COUNT];
+  /* a simple link list to save pending free pointers */
+  static free_t _free_list[HAZ_MAX_THREAD];
+
+  static void **haz_get(int64_t idx);
+  static void haz_defer_free(void *p);
+  static void haz_gc();
+  static void haz_set_ptr(void **haz, void *p)
+  {
+    (*haz) = p;
+  }
+
+private:
+  static int64_t seq_thread_id();
+  static bool haz_confict(int64_t self, void *p);
+};
+
+// These files are about implementation of seqlock in userspace.　
+// About seqlock, you can see https://en.wikipedia.org/wiki/Seqlock.
+// About memory barrier, there is a paper that is very much to recommend,
+// its name is Memory Barriers: a Hardware View for Software Hackers and
+// you can get it from http://www.rdrop.com/users/paulmck/scalability/paper/whymb.2010.07.23a.pdf.
+// Using write lock, you can put your critical code between write_seqlock(&seqlock) and write_sequnlock(&seqlock).
+// Using read lock, you can do as follow:
+// uint32_t int start;
+// do {
+//   start = read_seqbegin(&seqlock);
+// } while(read_seqretry(&seqlock, start));
+
+/*
+ * Before and after critical code, sequence will be add one.
+ * If sequence is odd, it says that wirte critical code isn't executed
+ * completely. So if there is a read code in this case, the data getted
+ * by read is inconsistent.
+ */
+
+struct SeqLock
+{
+public:
+  static inline void lock_init(SeqLock *seqlock)
+  {
+    int err;
+    if ((err = pthread_spin_init(&seqlock->lock, PTHREAD_PROCESS_SHARED)) != 0)
+    {
+      abort();
+    }
+    seqlock->sequence = 0;
+  }
+
+  static inline void write_seqlock(SeqLock *seqlock)
+  {
+    pthread_spin_lock(&seqlock->lock);
+    ++seqlock->sequence;
+    SMP_WMB();
+  }
+
+  static inline void write_sequnlock(SeqLock *seqlock)
+  {
+    SMP_WMB();
+    ++seqlock->sequence;
+    pthread_spin_unlock(&seqlock->lock);
+  }
+
+  static inline uint32_t read_seqbegin(SeqLock *seqlock)
+  {
+    uint32_t ret;
+
+  repeat:
+    ret = ACCESS_ONCE(seqlock->sequence);
+    if (UNLIKELY(ret & 1))
+    {
+      REP_NOP();
+      goto repeat;
+    }
+    SMP_RMB();
+    return ret;
+  }
+
+  static inline uint32_t read_seqretry(SeqLock *seqlock, uint32_t start)
+  {
+    SMP_RMB();
+    return UNLIKELY(seqlock->sequence != start);
+  }
+
+private:
+  uint32_t sequence;
+  pthread_spinlock_t lock;
+};
+
+// A seqlock can be used as an alternative to a readers-writer lock.
+// It will never block the writer and doesn't require any memory bus locks.
+// Implementing the seqlock in portable C++11 is quite tricky.
+// The basic seqlock implementation unconditionally loads the sequence number,
+// then unconditionally loads the protected data and finally unconditionally
+// loads the sequence number again. Since loading the protected data is done
+// unconditionally on the sequence number the compiler is free to move these loads
+// before or after the loads from the sequence number.
+// We see that the compiler did indeed reorder the load of the protected data
+// outside the critical section and the data is no longer protected from torn reads.
+// For x86 it's enough to insert a compiler barrier using
+// std::atomic_signal_fence(std::memory_order_acq_rel).
+// This will only work on the x86 memory model.
+// On ARM memory model you need to inserts a dmb memory barrier instruction,
+// which is not possible in C++11.
+template <typename T>
+class SeqAtomicLock
+{
+public:
+  static_assert(std::is_nothrow_copy_assignable<T>::value,
+                "T must satisfy is_nothrow_copy_assignable");
+  static_assert(std::is_trivially_copy_assignable<T>::value,
+                "T must satisfy is_trivially_copy_assignable");
+
+  SeqAtomicLock() : seq_(0) {}
+
+  T load() const noexcept __attribute__((noinline))
+  {
+    T copy;
+    uint64_t seq0, seq1;
+    do
+    {
+      seq0 = seq_.load(std::memory_order_acquire);
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      copy = value_;
+      std::atomic_signal_fence(std::memory_order_acq_rel);
+      seq1 = seq_.load(std::memory_order_acquire);
+    } while (seq0 != seq1 || seq0 & 1);
+    return copy;
+  }
+
+  void store(const T &desired) noexcept __attribute__((noinline))
+  {
+    uint64_t seq0 = seq_.load(std::memory_order_relaxed);
+    seq_.store(seq0 + 1, std::memory_order_release);
+    std::atomic_signal_fence(std::memory_order_acq_rel);
+    value_ = desired;
+    std::atomic_signal_fence(std::memory_order_acq_rel);
+    seq_.store(seq0 + 2, std::memory_order_release);
+  }
+
+private:
+  static const uint64_t kFalseSharingRange = 128;
+
+  // Align to prevent false sharing with adjecent data
+  alignas(kFalseSharingRange) T value_;
+  std::atomic<uint64_t> seq_;
+  // Padding to prevent false sharing with adjecent data
+  char padding_[kFalseSharingRange -
+                ((sizeof(value_) + sizeof(seq_)) % kFalseSharingRange)];
+  static_assert(
+      ((sizeof(value_) + sizeof(seq_) + sizeof(padding_)) %
+       kFalseSharingRange) == 0,
+      "sizeof(SeqAtomicLock<T>) should be a multiple of kFalseSharingRange");
+};
 
 /**
  * Single Producer Single Consumer Lockless Q

@@ -310,8 +310,8 @@ private:                                               \
 #define FIELD_OFFSET(s, field) (((size_t) & ((s *)(10))->field) - 10)
 #endif
 
-#ifndef CONTAINING_RECORD
-#define CONTAINING_RECORD(address, type, field) \
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(address, type, field) \
   ((type *)((char *)(address)-FIELD_OFFSET(type, field)))
 #endif
 
@@ -368,6 +368,8 @@ private:                                               \
 
 // Round up 'x' to the nearest 'align' boundary
 #define ALIGN_UP(x, align) (((x) + ((align)-1)) & (~(align) + 1))
+
+#define IS_SIGNED_TYPE(type) ((type)-1 < (type)0)
 
 // Cacheline related --------------------------------------
 

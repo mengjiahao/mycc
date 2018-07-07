@@ -15,6 +15,20 @@ namespace util
 #endif
 
 /*
+ * Instruct the compiler to perform only a single access to a variable
+ * (prohibits merging and refetching). The compiler is also forbidden to reorder
+ * successive instances of ACCESS_ONCE(), but only when the compiler is aware of
+ * particular ordering. Compiler ordering can be ensured, for example, by
+ * putting two ACCESS_ONCE() in separate C statements.
+ *
+ * This macro does absolutely -nothing- to prevent the CPU from reordering,
+ * merging, or refetching absolutely anything at any time.  Its main intended
+ * use is to mediate communication between process-level code and irq/NMI
+ * handlers, all running on the same CPU.
+ */
+#define ACCESS_ONCE(x) (*(volatile __typeof__(x) *)&(x))
+
+/*
  * lfence : performs a serializing operation on all load-from-memory
  * instructions that were issued prior the LFENCE instruction.
  */
@@ -42,6 +56,35 @@ inline void SMP_MB()
   asm volatile("mfence" ::
                    : "memory");
 }
+
+inline void REP_NOP()
+{
+  asm volatile("rep;nop" ::
+                   : "memory");
+}
+
+/*
+ * Load a data from shared memory, doing a cache flush if required.
+ * A cmm_smp_rmc() or cmm_smp_mc() should come before the load.
+ */
+#define MM_LOAD_SHARED(p) \
+  __extension__({         \
+    __sync_synchronize(); \
+    ACCESS_ONCE(p);       \
+  })
+
+/*
+ * Store v into x, where x is located in shared memory.
+ * Performs the required cache flush after writing. Returns v.
+ * A cmm_smp_wmc() or cmm_smp_mc() should follow the store.
+ */
+#define MM_STORE_SHARED(x, v)                         \
+  __extension__							\
+	({								\
+		__typeof__(x) _v = { ACCESS_ONCE(x) = (v); };		\
+		__sync_synchronize();						\
+		_v = _v;	/* Work around clang "unused result" */ \
+  })
 
 inline void AsmVolatilePause()
 {
@@ -562,8 +605,8 @@ inline T AtomicSyncExchange(volatile T *ptr,
   T old_value;
   do
   {
-    old_value = *ptr;
-  } while (!__sync_bool_compare_and_swap(ptr, old_value, new_value));
+    old_value = *ptr; // atomic_read?
+  } while (!__sync_bool_compare_and_swap(ptr, old_value, new_value)); // cmpxchg
   return old_value;
 }
 

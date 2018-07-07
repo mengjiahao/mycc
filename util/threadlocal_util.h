@@ -25,14 +25,14 @@ namespace util
 // #define THREAD_LOCAL __thread
 
 template <class T>
-class PthreadTss
+class PthreadTLS
 {
 public:
-  PthreadTss()
+  PthreadTLS()
   {
     pthread_key_create(&key, NULL);
   }
-  virtual ~PthreadTss() {}
+  virtual ~PthreadTLS() {}
   T get() { return (T)pthread_getspecific(key); }
   void set(T data) { pthread_setspecific(key, (void *)data); }
 

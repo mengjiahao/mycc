@@ -274,7 +274,7 @@ public:
   void dump();
 
 private:
-  PthreadTss<Entry *> entry;
+  PthreadTLS<Entry *> entry;
 
 public:
   int threshold;
