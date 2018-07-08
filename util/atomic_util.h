@@ -90,6 +90,12 @@ inline void REP_NOP()
                    : "memory");
 }
 
+inline void CPU_RELAX()
+{
+  asm volatile("rep;nop" ::
+                   : "memory");
+}
+
 /*
  * Load a data from shared memory, doing a cache flush if required.
  * A cmm_smp_rmc() or cmm_smp_mc() should come before the load.

@@ -75,7 +75,7 @@ public:
     ret = ACCESS_ONCE(seqlock->sequence);
     if (UNLIKELY(ret & 1))
     {
-      REP_NOP();
+      CPU_RELAX();
       goto repeat;
     }
     SMP_RMB();
@@ -195,6 +195,19 @@ private:
   static int64_t seq_thread_id();
   static bool haz_confict(int64_t self, void *p);
 };
+
+//////////////////////////// URCU //////////////////////////////
+// User-Level Implementations of Read-Copy Update
+// https://www.efficios.com/pub/rcu/urcu-main.pdf
+
+namespace urcu_easy
+{
+
+void rcu_read_lock();
+void rcu_read_unlock();
+void synchronize_rcu();
+
+} // namespace urcu_easy
 
 /*
  * ProducerConsumerFreeQueue is a one producer and one consumer queue
@@ -372,6 +385,77 @@ private:
   char pad1_[port::k_hardware_destructive_interference_size - sizeof(AtomicIndex)];
 };
 
+template <class T>
+class RingQueue
+{
+public:
+  RingQueue(int32_t size)
+  {
+    head = 0;
+    tail = 0;
+    bufferSize = size;
+    buffer = new T[size];
+  }
+
+  ~RingQueue()
+  {
+    delete buffer;
+  }
+
+  int32_t can_consume_size()
+  {
+    return (tail + bufferSize - head) % bufferSize;
+  }
+
+  bool empty()
+  {
+    return head == tail;
+  }
+
+  bool full()
+  {
+    return (tail + 1) % bufferSize == head;
+  }
+
+  bool put(T &v)
+  {
+    if (UNLIKELY(full()))
+    {
+      return false;
+    }
+    buffer[tail] = v;
+    SMP_MB();
+    tail = (tail + 1) % bufferSize;
+    return true;
+  }
+
+  void force_put(T &v)
+  {
+    while (!put(v))
+    {
+      CPU_RELAX();
+    }
+  }
+
+  bool get(T &v)
+  {
+    if (UNLIKELY(empty()))
+    {
+      return false;
+    }
+    v = buffer[head];
+    SMP_MB();
+    head = (head + 1) % bufferSize;
+    return true;
+  }
+
+private:
+  T *buffer;
+  int32_t bufferSize __attribute__((__aligned__(64)));
+  int32_t head __attribute__((__aligned__(64)));
+  int32_t tail __attribute__((__aligned__(64)));
+};
+
 // A simple CAS-based lock-free free list. Not the fastest thing in the world under heavy contention,
 // but simple and correct (assuming nodes are never freed until after the free list is destroyed),
 // and fairly speedy under low contention.
@@ -497,17 +581,17 @@ private:
  */
 
 template <typename T>
-class SpscQueue
+class SpscEasyQueue
 {
 public:
-  SpscQueue()
+  SpscEasyQueue()
       : _head(reinterpret_cast<node_t *>(new node_aligned_t)),
         _tail(_head)
   {
     _head->next = NULL;
   }
 
-  ~SpscQueue()
+  ~SpscEasyQueue()
   {
     T output;
     while (this->dequeue(output))
@@ -558,14 +642,14 @@ private:
   node_t *_tail;
   node_t *_back;
 
-  DISALLOW_COPY_AND_ASSIGN(SpscQueue);
+  DISALLOW_COPY_AND_ASSIGN(SpscEasyQueue);
 };
 
 template <typename T>
-class SpscBoundedQueue
+class SpscEasyBoundedQueue
 {
 public:
-  SpscBoundedQueue(uint64_t size)
+  SpscEasyBoundedQueue(uint64_t size)
       : _size(size),
         _mask(size - 1),
         _buffer(reinterpret_cast<T *>(new aligned_t[_size + 1])), // need one extra element for a guard
@@ -576,7 +660,7 @@ public:
     assert((_size != 0) && ((_size & (~_size + 1)) == _size));
   }
 
-  ~SpscBoundedQueue()
+  ~SpscEasyBoundedQueue()
   {
     delete[] _buffer;
   }
@@ -622,7 +706,7 @@ private:
   cache_line_pad_t _pad2;
   std::atomic<uint64_t> _tail;
 
-  DISALLOW_COPY_AND_ASSIGN(SpscBoundedQueue);
+  DISALLOW_COPY_AND_ASSIGN(SpscEasyBoundedQueue);
 };
 
 /**
@@ -630,7 +714,7 @@ private:
  */
 
 template <typename T>
-class MpscQueue
+class MpscEasyQueue
 {
 public:
   struct buffer_node_t
@@ -639,7 +723,7 @@ public:
     std::atomic<buffer_node_t *> next;
   };
 
-  MpscQueue()
+  MpscEasyQueue()
       : _head(reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t)),
         _tail(_head.load(std::memory_order_relaxed))
   {
@@ -647,7 +731,7 @@ public:
     front->next.store(NULL, std::memory_order_relaxed);
   }
 
-  ~MpscQueue()
+  ~MpscEasyQueue()
   {
     T output;
     while (this->dequeue(output))
@@ -704,14 +788,14 @@ private:
   std::atomic<buffer_node_t *> _head;
   std::atomic<buffer_node_t *> _tail;
 
-  DISALLOW_COPY_AND_ASSIGN(MpscQueue);
+  DISALLOW_COPY_AND_ASSIGN(MpscEasyQueue);
 };
 
 template <typename T>
-class MpmcBoundedQueue
+class MpmcEasyBoundedQueue
 {
 public:
-  MpmcBoundedQueue(uint64_t size)
+  MpmcEasyBoundedQueue(uint64_t size)
       : _size(size),
         _mask(size - 1),
         _buffer(reinterpret_cast<node_t *>(new aligned_node_t[_size])),
@@ -728,7 +812,7 @@ public:
     }
   }
 
-  ~MpmcBoundedQueue()
+  ~MpmcEasyBoundedQueue()
   {
     delete[] _buffer;
   }
@@ -839,7 +923,7 @@ private:
   std::atomic<uint64_t> _tail_seq;
   cache_line_pad_t _pad3;
 
-  DISALLOW_COPY_AND_ASSIGN(MpmcBoundedQueue);
+  DISALLOW_COPY_AND_ASSIGN(MpmcEasyBoundedQueue);
 };
 
 ///////////////// WorkStealingQueue //////////////////////

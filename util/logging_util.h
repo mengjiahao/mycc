@@ -19,7 +19,7 @@
 #include <new>
 #include <sstream>
 #include <string>
-#include "blocking_queue.h"
+#include "lock_free_util.h"
 #include "types_util.h"
 
 namespace mycc
@@ -36,7 +36,7 @@ enum LogLevel
   FATAL = 32,
 };
 
-////////////////////// BD log ///////////////////////////
+////////////////////// BD LOG ///////////////////////////
 
 void BDSetLogLevel(int32_t level);
 bool BDSetLogFile(const char *path, bool append = false);
@@ -67,7 +67,7 @@ private:
 #define BDLOG(level, fmt, args...) ::mycc::util::BDLogC(level, "[%s:%d] " fmt, __FILE__, __LINE__, ##args)
 #define BDLOGS(level) ::mycc::util::BDLogStream(level)
 
-//////////////////////////////////////// TBLOG /////////////////////////////
+/////////////////////////// TB LOG /////////////////////////////
 
 #define TB_LOG_LEVEL_ERROR 0
 #define TB_LOG_LEVEL_USER_ERROR 1

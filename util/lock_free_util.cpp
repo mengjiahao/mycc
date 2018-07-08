@@ -2,16 +2,15 @@
 #include "lock_free_util.h"
 #include <assert.h>
 #include <poll.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 namespace mycc
 {
 namespace util
 {
 
-// Hazard Pointers
-
+/////////////////////// Hazard Pointers ////////////////////////////////
 int64_t HazardPtrEasy::_tidSeed = 0;
 void *HazardPtrEasy::_haz_array[HAZ_MAX_COUNT];
 HazardPtrEasy::free_t HazardPtrEasy::_free_list[HAZ_MAX_THREAD];
@@ -82,6 +81,111 @@ void HazardPtrEasy::haz_gc()
     printf("thread %d freed all ptrs\n", (int)tid);
   }
 }
+
+//////////////////////////// URCU //////////////////////////////
+// User-Level Implementations of Read-Copy Update
+
+namespace urcu_easy
+{
+
+static const int64_t RCU_GP_CTR_BOTTOM_BIT = 0x80000000;
+static const int64_t RCU_GP_CTR_NEST_MASK = (RCU_GP_CTR_BOTTOM_BIT - 1);
+static const int64_t NR_THREADS = 512;
+
+static int64_t rcu_gp_ctr = 1;
+static __thread int64_t thread_id = -1;
+static int32_t rcu_thread_num = 0;
+static pthread_mutex_t rcu_gp_lock;
+
+struct PerThread
+{
+  int64_t v __attribute__((__aligned__(CACHE_LINE_SIZE)));
+} rcu_reader_gp[NR_THREADS];
+
+void rcu_init()
+{
+  pthread_mutex_init(&rcu_gp_lock, NULL);
+}
+
+static inline void rcu_thread_register()
+{
+  pthread_mutex_lock(&rcu_gp_lock);
+  assert(rcu_thread_num < NR_THREADS);
+  thread_id = rcu_thread_num;
+  rcu_thread_num++;
+  pthread_mutex_unlock(&rcu_gp_lock);
+}
+
+static inline int64_t *per_thread_val()
+{
+  if (UNLIKELY(thread_id == -1))
+  {
+    rcu_thread_register();
+  }
+  return &(rcu_reader_gp[thread_id].v);
+}
+
+static inline int64_t *per_thread_val(int32_t id)
+{
+  return &(rcu_reader_gp[id].v);
+}
+
+static inline int64_t rcu_old_gp_ongoing(int32_t t)
+{
+  int64_t v = ACCESS_ONCE(*per_thread_val(t));
+  return (v & RCU_GP_CTR_NEST_MASK) &&
+         ((v ^ rcu_gp_ctr) & ~RCU_GP_CTR_NEST_MASK);
+}
+
+static void flip_counter_and_wait()
+{
+  rcu_gp_ctr ^= RCU_GP_CTR_BOTTOM_BIT;
+  for (int64_t t = 0; t < rcu_thread_num; ++t)
+  {
+    while (rcu_old_gp_ongoing(t))
+    {
+      //poll(NULL, 0, 1);
+      CPU_RELAX();
+      CompilerBarrier();
+    }
+  }
+}
+
+void rcu_read_lock()
+{
+  int64_t tmp;
+  int64_t *rrgp;
+
+  rrgp = per_thread_val();
+  tmp = *rrgp;
+  if ((tmp & RCU_GP_CTR_NEST_MASK) == 0)
+  {
+    *rrgp = ACCESS_ONCE(rcu_gp_ctr);
+    SMP_MB();
+  }
+  else
+  {
+    *rrgp = tmp + 1;
+  }
+}
+
+void rcu_read_unlock()
+{
+  SMP_MB();
+  --(*per_thread_val());
+}
+
+void synchronize_rcu()
+{
+  SMP_MB();
+  pthread_mutex_lock(&rcu_gp_lock);
+  flip_counter_and_wait();
+  flip_counter_and_wait();
+  pthread_mutex_unlock(&rcu_gp_lock);
+  SMP_MB();
+}
+
+} // namespace urcu_easy
 
 } // namespace util
 } // namespace mycc

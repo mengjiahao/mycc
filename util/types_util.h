@@ -87,6 +87,28 @@ static const double kVerySmallNumberDouble = 1e-15;
 
 using ::std::string;
 
+// Cacheline related --------------------------------------
+
+#ifndef CACHE_LINE_SIZE
+#if defined(__s390__)
+#define CACHE_LINE_SIZE 256U
+#elif defined(__powerpc__) || defined(__aarch64__)
+#define CACHE_LINE_SIZE 128U
+#else
+#define CACHE_LINE_SIZE 64U
+#endif
+#endif // CACHE_LINE_SIZE
+
+#ifndef CACHE_LINE_ALIGNMENT
+#if defined(COMPILER_MSVC)
+#define CACHE_LINE_ALIGNMENT __declspec(align(CACHE_LINE_SIZE))
+#elif defined(COMPILER_GCC)
+#define CACHE_LINE_ALIGNMENT __attribute__((aligned(CACHE_LINE_SIZE)))
+#else
+#define CACHE_LINE_ALIGNMENT
+#endif
+#endif // CACHE_LINE_ALIGNMENT
+
 /// platform portable
 
 namespace port
