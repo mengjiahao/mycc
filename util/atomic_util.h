@@ -28,6 +28,33 @@ namespace util
  */
 #define ACCESS_ONCE(x) (*(volatile __typeof__(x) *)&(x))
 
+inline void CompilerBarrier()
+{
+  __asm__ __volatile__(""
+                       :
+                       :
+                       : "memory");
+}
+
+#if defined __i386__ || defined __x86_64__
+// x86/x64 has a relatively strong memory model,
+// but on x86/x64 StoreLoad reordering (later loads passing earlier stores) can happen.
+// Both a compiler barrier and CPU barrier.
+inline void MemoryBarrier()
+{
+  __asm__ __volatile__("mfence"
+                       :
+                       :
+                       : "memory");
+}
+inline void MemoryReadBarrier() { __asm__ __volatile__("lfence" ::
+                                                           : "memory"); }
+inline void MemoryWriteBarrier() { __asm__ __volatile__("sfence" ::
+                                                            : "memory"); }
+#else
+#error Unsupportted platform.
+#endif
+
 /*
  * lfence : performs a serializing operation on all load-from-memory
  * instructions that were issued prior the LFENCE instruction.
@@ -69,7 +96,7 @@ inline void REP_NOP()
  */
 #define MM_LOAD_SHARED(p) \
   __extension__({         \
-    __sync_synchronize(); \
+    CompilerBarrier();    \
     ACCESS_ONCE(p);       \
   })
 
@@ -82,7 +109,7 @@ inline void REP_NOP()
   __extension__							\
 	({								\
 		__typeof__(x) _v = { ACCESS_ONCE(x) = (v); };		\
-		__sync_synchronize();						\
+		CompilerBarrier();						\
 		_v = _v;	/* Work around clang "unused result" */ \
   })
 
@@ -106,41 +133,6 @@ inline void AsmVolatileCpuRelax()
                :
                : "memory");
 }
-
-// Compile read-write barrier
-inline void AsmVolatileBarrier()
-{
-  asm volatile(""
-               :
-               :
-               : "memory");
-}
-
-inline void CompilerBarrier()
-{
-  __asm__ __volatile__(""
-                       :
-                       :
-                       : "memory");
-}
-#if defined __i386__ || defined __x86_64__
-// x86/x64 has a relatively strong memory model,
-// but on x86/x64 StoreLoad reordering (later loads passing earlier stores) can happen.
-// Both a compiler barrier and CPU barrier.
-inline void MemoryBarrier()
-{
-  __asm__ __volatile__("mfence"
-                       :
-                       :
-                       : "memory");
-}
-inline void MemoryReadBarrier() { __asm__ __volatile__("lfence" ::
-                                                           : "memory"); }
-inline void MemoryWriteBarrier() { __asm__ __volatile__("sfence" ::
-                                                            : "memory"); }
-#else
-#error Unsupportted platform.
-#endif
 
 /*
  * Atomic operations that C can't guarantee us.  
@@ -605,7 +597,7 @@ inline T AtomicSyncExchange(volatile T *ptr,
   T old_value;
   do
   {
-    old_value = *ptr; // atomic_read?
+    old_value = *ptr;                                                 // atomic_read?
   } while (!__sync_bool_compare_and_swap(ptr, old_value, new_value)); // cmpxchg
   return old_value;
 }
@@ -639,6 +631,8 @@ enum AtomicMemoryOrder
   MEMORY_ORDER_ATOMIC_ACQ_REL = __ATOMIC_ACQ_REL,
   MEMORY_ORDER_ATOMIC_SEQ_CST = __ATOMIC_SEQ_CST,
 };
+
+#define AtomicCompilerBarrier() std::atomic_signal_fence(std::memory_order_seq_cst)
 
 // This built-in function implements an atomic load operation. It returns the contents of *ptr.
 // The valid memory order variants are __ATOMIC_RELAXED, __ATOMIC_SEQ_CST, __ATOMIC_ACQUIRE, and __ATOMIC_CONSUME.

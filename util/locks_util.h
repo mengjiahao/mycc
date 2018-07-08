@@ -391,118 +391,6 @@ protected:
   SpinLock *spin_lock_ = nullptr;
 };
 
-/*
- * Improves the performance of spin-wait loops. 
- * When executing a “spin-wait loop,” a Pentium 4 or Intel Xeon processor 
- * suffers a severe performance penalty when exiting the loop 
- * because it detects a possible memory order violation. 
- * The PAUSE instruction provides a hint to the processor 
- * that the code sequence is a spin-wait loop. 
- * The processor uses this hint to avoid the memory order violation in most situations,
- * which greatly improves processor performance. 
- * For this reason, it is recommended that a PAUSE instruction 
- * be placed in all spin-wait loops.
- * An additional fucntion of the PAUSE instruction 
- * is to reduce the power consumed by a Pentium 4 processor 
- * while executing a spin loop.
-*/
-class SpinLockCas
-{
-public:
-  typedef uint32_t handle_type;
-
-private:
-  enum state
-  {
-    initial_pause = 2,
-    max_pause = 16
-  };
-
-  uint32_t state_;
-
-public:
-  SpinLockCas() : state_(0) {}
-
-  bool trylock()
-  {
-    return (AtomicSyncValCompareAndSwap<uint32_t>((volatile uint32_t *)&state_, 0, 1) == 0);
-  }
-
-  bool lock()
-  {
-    /*register*/ uint32_t pause_count = initial_pause; //'register' storage class specifier is deprecated and incompatible with C++1z
-    while (!trylock())
-    {
-      if (pause_count < max_pause)
-      {
-        for (/*register*/ uint32_t i = 0; i < pause_count; ++i) //'register' storage class specifier is deprecated and incompatible with C++1z
-        {
-          AsmVolatileCpuRelax();
-        }
-        pause_count += pause_count;
-      }
-      else
-      {
-        pause_count = initial_pause;
-        ::sched_yield();
-      }
-    }
-    return true;
-  }
-
-  bool unlock()
-  {
-    AtomicSyncStore<uint32_t>((volatile uint32_t *)&state_, 0);
-    return true;
-  }
-
-  uint32_t *internal() { return &state_; }
-
-private:
-  DISALLOW_COPY_AND_ASSIGN(SpinLockCas);
-};
-
-//
-// SpinMutex has very low overhead for low-contention cases.  Method names
-// are chosen so you can use std::unique_lock or std::lock_guard with it.
-//
-class SpinMutex
-{
-public:
-  SpinMutex() : locked_(false) {}
-
-  bool try_lock()
-  {
-    auto currently_locked = locked_.load(std::memory_order_relaxed);
-    return !currently_locked &&
-           locked_.compare_exchange_weak(currently_locked, true,
-                                         std::memory_order_acquire,
-                                         std::memory_order_relaxed);
-  }
-
-  void lock()
-  {
-    for (uint64_t tries = 0;; ++tries)
-    {
-      if (try_lock())
-      {
-        // success
-        break;
-      }
-      AsmVolatilePause();
-      if (tries > 100)
-      {
-        std::this_thread::yield();
-      }
-    }
-  }
-
-  void unlock() { locked_.store(false, std::memory_order_release); }
-
-private:
-  std::atomic<bool> locked_;
-};
-
 class RefMutex
 {
 public:
@@ -1002,6 +890,8 @@ public:
    */
   void post();
 
+  void post(uint32_t count);
+
 private:
   SemaphorePrivate *m;
 
@@ -1161,6 +1051,565 @@ public:
 protected:
   int _semID;
   key_t _semKey;
+};
+
+//////////////////////////// lock free sync ///////////////////////////////
+
+/*
+ * Improves the performance of spin-wait loops. 
+ * When executing a “spin-wait loop,” a Pentium 4 or Intel Xeon processor 
+ * suffers a severe performance penalty when exiting the loop 
+ * because it detects a possible memory order violation. 
+ * The PAUSE instruction provides a hint to the processor 
+ * that the code sequence is a spin-wait loop. 
+ * The processor uses this hint to avoid the memory order violation in most situations,
+ * which greatly improves processor performance. 
+ * For this reason, it is recommended that a PAUSE instruction 
+ * be placed in all spin-wait loops.
+ * An additional fucntion of the PAUSE instruction 
+ * is to reduce the power consumed by a Pentium 4 processor 
+ * while executing a spin loop.
+*/
+class SpinFreeLock
+{
+public:
+  typedef uint32_t handle_type;
+
+private:
+  enum state
+  {
+    initial_pause = 2,
+    max_pause = 16
+  };
+
+  uint32_t state_;
+
+public:
+  SpinFreeLock() : state_(0) {}
+
+  bool trylock()
+  {
+    return (AtomicSyncValCompareAndSwap<uint32_t>((volatile uint32_t *)&state_, 0, 1) == 0);
+  }
+
+  bool lock()
+  {
+    /*register*/ uint32_t pause_count = initial_pause; //'register' storage class specifier is deprecated and incompatible with C++1z
+    while (!trylock())
+    {
+      if (pause_count < max_pause)
+      {
+        for (/*register*/ uint32_t i = 0; i < pause_count; ++i) //'register' storage class specifier is deprecated and incompatible with C++1z
+        {
+          AsmVolatileCpuRelax();
+        }
+        pause_count += pause_count;
+      }
+      else
+      {
+        pause_count = initial_pause;
+        ::sched_yield();
+      }
+    }
+    return true;
+  }
+
+  bool unlock()
+  {
+    AtomicSyncStore<uint32_t>((volatile uint32_t *)&state_, 0);
+    return true;
+  }
+
+  uint32_t *internal() { return &state_; }
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(SpinFreeLock);
+};
+
+//
+// SpinMutex has very low overhead for low-contention cases.  Method names
+// are chosen so you can use std::unique_lock or std::lock_guard with it.
+//
+class SpinMutex
+{
+public:
+  SpinMutex() : locked_(false) {}
+
+  bool try_lock()
+  {
+    auto currently_locked = locked_.load(std::memory_order_relaxed);
+    return !currently_locked &&
+           locked_.compare_exchange_weak(currently_locked, true,
+                                         std::memory_order_acquire,
+                                         std::memory_order_relaxed);
+  }
+
+  void lock()
+  {
+    for (uint64_t tries = 0;; ++tries)
+    {
+      if (try_lock())
+      {
+        // success
+        break;
+      }
+      AsmVolatilePause();
+      if (tries > 100)
+      {
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  void unlock() { locked_.store(false, std::memory_order_release); }
+
+private:
+  std::atomic<bool> locked_;
+};
+
+/*
+ * A simple, small (4-bytes), but unfair rwlock.  Use it when you want
+ * a nice writer and don't expect a lot of write/read contention, or
+ * when you need small rwlocks since you are creating a large number
+ * of them.
+ *
+ * Note that the unfairness here is extreme: if the lock is
+ * continually accessed for read, writers will never get a chance.  If
+ * the lock can be that highly contended this class is probably not an
+ * ideal choice anyway.
+ *
+ * It currently implements most of the Lockable, SharedLockable and
+ * UpgradeLockable concepts except the TimedLockable related locking/unlocking
+ * interfaces.
+ */
+class RWSpinLock
+{
+  enum : int32_t
+  {
+    READER = 4,
+    UPGRADED = 2,
+    WRITER = 1
+  };
+
+public:
+  RWSpinLock() : bits_(0) {}
+
+  // Lockable Concept
+  void lock()
+  {
+    uint_fast32_t count = 0;
+    while (!LIKELY(try_lock()))
+    {
+      if (++count > 1000)
+      {
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  // Writer is responsible for clearing up both the UPGRADED and WRITER bits.
+  void unlock()
+  {
+    static_assert(READER > WRITER + UPGRADED, "wrong bits!");
+    bits_.fetch_and(~(WRITER | UPGRADED), std::memory_order_release);
+  }
+
+  // SharedLockable Concept
+  void lock_shared()
+  {
+    uint_fast32_t count = 0;
+    while (!LIKELY(try_lock_shared()))
+    {
+      if (++count > 1000)
+      {
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  void unlock_shared()
+  {
+    bits_.fetch_add(-READER, std::memory_order_release);
+  }
+
+  // Downgrade the lock from writer status to reader status.
+  void unlock_and_lock_shared()
+  {
+    bits_.fetch_add(READER, std::memory_order_acquire);
+    unlock();
+  }
+
+  // UpgradeLockable Concept
+  void lock_upgrade()
+  {
+    uint_fast32_t count = 0;
+    while (!try_lock_upgrade())
+    {
+      if (++count > 1000)
+      {
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  void unlock_upgrade()
+  {
+    bits_.fetch_add(-UPGRADED, std::memory_order_acq_rel);
+  }
+
+  // unlock upgrade and try to acquire write lock
+  void unlock_upgrade_and_lock()
+  {
+    int64_t count = 0;
+    while (!try_unlock_upgrade_and_lock())
+    {
+      if (++count > 1000)
+      {
+        std::this_thread::yield();
+      }
+    }
+  }
+
+  // unlock upgrade and read lock atomically
+  void unlock_upgrade_and_lock_shared()
+  {
+    bits_.fetch_add(READER - UPGRADED, std::memory_order_acq_rel);
+  }
+
+  // write unlock and upgrade lock atomically
+  void unlock_and_lock_upgrade()
+  {
+    // need to do it in two steps here -- as the UPGRADED bit might be OR-ed at
+    // the same time when other threads are trying do try_lock_upgrade().
+    bits_.fetch_or(UPGRADED, std::memory_order_acquire);
+    bits_.fetch_add(-WRITER, std::memory_order_release);
+  }
+
+  // Attempt to acquire writer permission. Return false if we didn't get it.
+  bool try_lock()
+  {
+    int32_t expect = 0;
+    return bits_.compare_exchange_strong(expect, WRITER,
+                                         std::memory_order_acq_rel);
+  }
+
+  // Try to get reader permission on the lock. This can fail if we
+  // find out someone is a writer or upgrader.
+  // Setting the UPGRADED bit would allow a writer-to-be to indicate
+  // its intention to write and block any new readers while waiting
+  // for existing readers to finish and release their read locks. This
+  // helps avoid starving writers (promoted from upgraders).
+  bool try_lock_shared()
+  {
+    // fetch_add is considerably (100%) faster than compare_exchange,
+    // so here we are optimizing for the common (lock success) case.
+    int32_t value = bits_.fetch_add(READER, std::memory_order_acquire);
+    if (UNLIKELY(value & (WRITER | UPGRADED)))
+    {
+      bits_.fetch_add(-READER, std::memory_order_release);
+      return false;
+    }
+    return true;
+  }
+
+  // try to unlock upgrade and write lock atomically
+  bool try_unlock_upgrade_and_lock()
+  {
+    int32_t expect = UPGRADED;
+    return bits_.compare_exchange_strong(expect, WRITER,
+                                         std::memory_order_acq_rel);
+  }
+
+  // try to acquire an upgradable lock.
+  bool try_lock_upgrade()
+  {
+    int32_t value = bits_.fetch_or(UPGRADED, std::memory_order_acquire);
+
+    // Note: when failed, we cannot flip the UPGRADED bit back,
+    // as in this case there is either another upgrade lock or a write lock.
+    // If it's a write lock, the bit will get cleared up when that lock's done
+    // with unlock().
+    return ((value & (UPGRADED | WRITER)) == 0);
+  }
+
+private:
+  std::atomic<int32_t> bits_;
+
+  DISALLOW_COPY_AND_ASSIGN(RWSpinLock);
+};
+
+class ReadSpinLockHolder
+{
+public:
+  explicit ReadSpinLockHolder(RWSpinLock *lock) : lock_(lock)
+  {
+    if (lock_)
+    {
+      lock_->lock_shared();
+    }
+  }
+
+  ~ReadSpinLockHolder()
+  {
+    if (lock_)
+    {
+      lock_->unlock_shared();
+    }
+  }
+
+  void reset(RWSpinLock *lock = nullptr)
+  {
+    if (lock == lock_)
+    {
+      return;
+    }
+    if (lock_)
+    {
+      lock_->unlock_shared();
+    }
+    lock_ = lock;
+    if (lock_)
+    {
+      lock_->lock_shared();
+    }
+  }
+
+  void swap(ReadSpinLockHolder *other)
+  {
+    std::swap(lock_, other->lock_);
+  }
+
+private:
+  RWSpinLock *lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(ReadSpinLockHolder);
+};
+
+class WriteSpinLockHolder
+{
+public:
+  explicit WriteSpinLockHolder(RWSpinLock *lock) : lock_(lock)
+  {
+    if (lock_)
+    {
+      lock_->lock();
+    }
+  }
+
+  ~WriteSpinLockHolder()
+  {
+    if (lock_)
+    {
+      lock_->unlock();
+    }
+  }
+
+  void reset(RWSpinLock *lock = nullptr)
+  {
+    if (lock == lock_)
+    {
+      return;
+    }
+    if (lock_)
+    {
+      lock_->unlock();
+    }
+    lock_ = lock;
+    if (lock_)
+    {
+      lock_->lock();
+    }
+  }
+
+  void swap(WriteSpinLockHolder *other)
+  {
+    using std::swap;
+    swap(lock_, other->lock_);
+  }
+
+private:
+  RWSpinLock *lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(WriteSpinLockHolder);
+};
+
+//---------------------------------------------------------
+// LightSemaphore
+//---------------------------------------------------------
+class LightSemaphore
+{
+public:
+  // The underlying semaphores are limited to int-sized counts,
+  // but there's no reason we can't scale higher on platforms with
+  // a wider size_t than int -- the only counts we pass on to the
+  // underlying semaphores are the number of waiting threads, which
+  // will always fit in an int for all platforms regardless of our
+  // high-level count.
+  typedef std::make_signed<uint64_t>::type int64_t;
+
+private:
+  std::atomic<int64_t> m_count;
+  Semaphore m_sema;
+
+  void waitWithPartialSpinning()
+  {
+    int64_t oldCount;
+    // Is there a better way to set the initial spin count?
+    // If we lower it to 1000, testBenaphore becomes 15x slower on my Core i7-5930K Windows PC,
+    // as threads start hitting the kernel semaphore.
+    int spin = 10000;
+    while (spin--)
+    {
+      oldCount = m_count.load(std::memory_order_relaxed);
+      if ((oldCount > 0) && m_count.compare_exchange_strong(oldCount, oldCount - 1, std::memory_order_acquire, std::memory_order_relaxed))
+        return;
+      std::atomic_signal_fence(std::memory_order_acquire); // Prevent the compiler from collapsing the loop.
+    }
+    oldCount = m_count.fetch_sub(1, std::memory_order_acquire);
+    if (oldCount <= 0)
+    {
+      m_sema.wait();
+    }
+  }
+
+  int64_t waitManyWithPartialSpinning(int64_t max)
+  {
+    assert(max > 0);
+    int64_t oldCount;
+    int spin = 10000;
+    while (spin--)
+    {
+      oldCount = m_count.load(std::memory_order_relaxed);
+      if (oldCount > 0)
+      {
+        int64_t newCount = oldCount > max ? oldCount - max : 0;
+        if (m_count.compare_exchange_strong(oldCount, newCount, std::memory_order_acquire, std::memory_order_relaxed))
+          return oldCount - newCount;
+      }
+      std::atomic_signal_fence(std::memory_order_acquire);
+    }
+    oldCount = m_count.fetch_sub(1, std::memory_order_acquire);
+    if (oldCount <= 0)
+      m_sema.wait();
+    if (max > 1)
+      return 1 + tryWaitMany(max - 1);
+    return 1;
+  }
+
+public:
+  LightSemaphore(int64_t initialCount = 0) : m_count(initialCount)
+  {
+    assert(initialCount >= 0);
+  }
+
+  bool tryWait()
+  {
+    int64_t oldCount = m_count.load(std::memory_order_relaxed);
+    while (oldCount > 0)
+    {
+      if (m_count.compare_exchange_weak(oldCount, oldCount - 1, std::memory_order_acquire, std::memory_order_relaxed))
+        return true;
+    }
+    return false;
+  }
+
+  void wait()
+  {
+    if (!tryWait())
+      waitWithPartialSpinning();
+  }
+
+  // Acquires between 0 and (greedily) max, inclusive
+  int64_t tryWaitMany(int64_t max)
+  {
+    assert(max >= 0);
+    int64_t oldCount = m_count.load(std::memory_order_relaxed);
+    while (oldCount > 0)
+    {
+      int64_t newCount = oldCount > max ? oldCount - max : 0;
+      if (m_count.compare_exchange_weak(oldCount, newCount, std::memory_order_acquire, std::memory_order_relaxed))
+        return oldCount - newCount;
+    }
+    return 0;
+  }
+
+  // Acquires at least one, and (greedily) at most max
+  int64_t waitMany(int64_t max)
+  {
+    assert(max >= 0);
+    int64_t result = tryWaitMany(max);
+    if (result == 0 && max > 0)
+      result = waitManyWithPartialSpinning(max);
+    return result;
+  }
+
+  void signal(int64_t count = 1)
+  {
+    assert(count >= 0);
+    int64_t oldCount = m_count.fetch_add(count, std::memory_order_release);
+    int64_t toRelease = -oldCount < count ? -oldCount : count;
+    if (toRelease > 0)
+    {
+      m_sema.post((uint32_t)toRelease);
+    }
+  }
+
+  int64_t availableApprox() const
+  {
+    int64_t count = m_count.load(std::memory_order_relaxed);
+    return count > 0 ? count : 0;
+  }
+};
+
+//---------------------------------------------------------
+// AutoResetFreeEvent
+//---------------------------------------------------------
+class AutoResetFreeEvent
+{
+private:
+  // m_status == 1: Event object is signaled.
+  // m_status == 0: Event object is reset and no threads are waiting.
+  // m_status == -N: Event object is reset and N threads are waiting.
+  std::atomic<int32_t> m_status;
+  LightSemaphore m_sema;
+
+public:
+  AutoResetFreeEvent(int32_t initialStatus = 0)
+      : m_status(initialStatus)
+  {
+    assert(initialStatus >= 0 && initialStatus <= 1);
+  }
+
+  void signal()
+  {
+    int32_t oldStatus = m_status.load(std::memory_order_relaxed);
+    for (;;) // Increment m_status atomically via CAS loop.
+    {
+      assert(oldStatus <= 1);
+      if (oldStatus == 1)
+        return; // Event object is already signaled.
+      int32_t newStatus = oldStatus + 1;
+      if (m_status.compare_exchange_weak(oldStatus,
+                                         newStatus,
+                                         std::memory_order_release,
+                                         std::memory_order_relaxed))
+        break;
+      // The compare-exchange failed, likely because another thread changed m_status.
+      // oldStatus has been updated. Retry the CAS loop.
+    }
+    if (oldStatus < 0)
+      m_sema.signal(); // Release one waiting thread.
+  }
+
+  void wait()
+  {
+    int32_t oldStatus = m_status.fetch_sub(1, std::memory_order_acquire);
+    assert(oldStatus <= 1);
+    if (oldStatus < 1)
+    {
+      m_sema.wait();
+    }
+  }
 };
 
 } // namespace util

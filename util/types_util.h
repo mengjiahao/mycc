@@ -94,6 +94,22 @@ namespace port
 
 constexpr bool kLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 
+//  Memory locations within the same cache line are subject to destructive
+  //  interference, also known as false sharing, which is when concurrent
+  //  accesses to these different memory locations from different cores, where at
+  //  least one of the concurrent accesses is or involves a store operation,
+  //  induce contention and harm performance.
+  //
+  //  Microbenchmarks indicate that pairs of cache lines also see destructive
+  //  interference under heavy use of atomic operations, as observed for atomic
+  //  increment on Sandy Bridge.
+  //
+  //  We assume a cache line size of 64, so we use a cache line pair size of 128
+  //  to avoid destructive interference.
+  //
+  //  mimic: std::hardware_destructive_interference_size, C++17
+constexpr uint64_t k_hardware_destructive_interference_size = 128;
+
 // Prefetching support
 //
 // Defined behavior on some of the uarchs:

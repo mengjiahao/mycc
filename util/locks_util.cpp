@@ -503,9 +503,26 @@ bool Semaphore::timeWait(struct timespec *ts)
   return (0 == sem_timedwait(&m->sem, ts));
 }
 
-void Semaphore::wait() { sem_wait(&m->sem); }
+void Semaphore::wait()
+{
+  // errno == EINTR ?
+  sem_wait(&m->sem);
+}
 
-void Semaphore::post() { sem_post(&m->sem); }
+void Semaphore::post()
+{
+  sem_post(&m->sem);
+}
+
+void Semaphore::post(uint32_t count)
+{
+  while (count-- > 0)
+  {
+    sem_post(&m->sem);
+  }
+}
+
+////////////////////// TCSem /////////////////////////////
 
 struct sembuf g_sem_lock = {0, -1, SEM_UNDO};
 struct sembuf g_sem_unlock = {0, 1, SEM_UNDO | IPC_NOWAIT};

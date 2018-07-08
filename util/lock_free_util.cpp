@@ -1,6 +1,7 @@
 
 #include "lock_free_util.h"
 #include <assert.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <stdio.h>
 
