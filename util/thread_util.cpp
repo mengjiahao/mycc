@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include "atomic_util.h"
 #include "math_util.h"
 #include "string_util.h"
 #include "time_util.h"
@@ -36,7 +37,7 @@ __thread const char *t_threadName = "unknown";
 void *StartPthreadWrapper(void *arg)
 {
   PosixThread *data = reinterpret_cast<PosixThread *>(arg);
-  data->set_is_running(true);
+  data->setIsRunning(true);
   try
   {
     if (data->is_std_func())
@@ -60,10 +61,13 @@ void *StartPthreadWrapper(void *arg)
             (uint64_t)data->thread_id());
     throw; // rethrow
   }
-  data->set_is_running(false);
-  // resource reclaim
-  data->clearThreadId();
+  data->setIsRunning(false);
   return NULL;
+}
+
+void PosixThread::ClearPthreadId(pthread_t *tid)
+{
+  memset(tid, 0, sizeof(pthread_t));
 }
 
 uint64_t PosixThread::GetTID()
@@ -74,29 +78,36 @@ uint64_t PosixThread::GetTID()
 
 uint64_t PosixThread::PthreadIdInt()
 {
-  pthread_t tid = pthread_self();
+  pthread_t tid = ::pthread_self();
   return (uint64_t)tid;
 }
 
-pthread_t PosixThread::ThisThreadId()
+pthread_t PosixThread::ThisPthreadId()
 {
-  return pthread_self();
+  return ::pthread_self();
 }
 
-bool PosixThread::IsThreadIdEqual(pthread_t &a, pthread_t &b)
+bool PosixThread::IsPthreadIdEqual(const pthread_t &a, const pthread_t &b)
 {
-  return pthread_equal(a, b) == 0;
+  return ::pthread_equal(a, b) == 0;
 }
 
-void PosixThread::SetThisThreadName(string &name)
+void PosixThread::SetThisThreadName(const string &name)
 {
   //::prctl(PR_SET_NAME, name.c_str());
-  pthread_setname_np(pthread_self(), name.c_str());
+  ::pthread_setname_np(pthread_self(), name.c_str());
+}
+
+bool PosixThread::DetachThisThread()
+{
+  bool ret = false;
+  ret = PthreadCall("pthread_detach", ::pthread_detach(::pthread_self()));
+  return ret;
 }
 
 void PosixThread::ExitThisThread()
 {
-  pthread_exit(NULL);
+  ::pthread_exit(NULL);
 }
 
 void PosixThread::YieldThisThread()
@@ -163,7 +174,7 @@ PosixThread::PosixThread(std::function<void()> func)
       user_std_func_(func),
       is_running_(false)
 {
-  clearThreadId();
+  ClearPthreadId(&tid_);
 }
 
 PosixThread::PosixThread(void (*func)(void *arg), void *arg)
@@ -172,7 +183,7 @@ PosixThread::PosixThread(void (*func)(void *arg), void *arg)
       is_std_func_(false),
       is_running_(false)
 {
-  clearThreadId();
+  ClearPthreadId(&tid_);
 }
 
 string PosixThread::toString()
@@ -183,23 +194,26 @@ string PosixThread::toString()
   return result;
 }
 
-void PosixThread::clearThreadId()
+bool PosixThread::isRunning()
 {
-  memset(&tid_, 0, sizeof(tid_));
+  return AtomicLoadN<bool>(&is_running_);
 }
 
-bool PosixThread::isRuning()
+void PosixThread::setIsRunning(bool is_running)
 {
-  return is_running_;
+  AtomicStoreN<bool>(&is_running_, is_running);
+}
+
+bool PosixThread::isStarted()
+{
+  pthread_t t;
+  ClearPthreadId(&t);
+  return IsPthreadIdEqual(tid_, t);
 }
 
 bool PosixThread::start()
 {
   bool ret = false;
-  if (isRuning())
-  {
-    return false;
-  }
   // The child thread will inherit our signal mask.  Set our signal mask to
   // the set of signals we want to block.  (It's ok to block signals more
   // signals than usual for a little while-- they will just be delivered to
@@ -209,7 +223,6 @@ bool PosixThread::start()
   // BlockSignals(to_block, &old_sigset);
   // pthread_create()...
   // RestoreSigset(&old_sigset);
-
   ret = PthreadCall("pthread_create",
                     pthread_create(&tid_, NULL, &StartPthreadWrapper, this));
   return ret;
@@ -217,31 +230,39 @@ bool PosixThread::start()
 
 bool PosixThread::join()
 {
+  bool ret = false;
   if (amSelf())
+  {
     return false;
-  if (isRuning())
-  {
-    return PthreadCall("pthread_join", pthread_join(tid_, NULL));
   }
-  return true;
-}
-
-bool PosixThread::kill(int32_t signal_val)
-{
-  if (isRuning())
+  if (!isStarted())
   {
-    return PthreadCall("pthread_kill", pthread_kill(tid_, signal_val));
+    return false;
   }
-  return true;
+  ret = PthreadCall("pthread_join", pthread_join(tid_, NULL));
+  return ret;
 }
 
 bool PosixThread::detach()
 {
-  if (isRuning())
+  bool ret = false;
+  if (!isStarted())
   {
-    return PthreadCall("pthread_detach", pthread_detach(tid_));
+    return false;
   }
-  return true;
+  ret = PthreadCall("pthread_detach", pthread_detach(tid_));
+  return ret;
+}
+
+bool PosixThread::kill(int32_t signal_val)
+{
+  bool ret = false;
+  if (!isStarted())
+  {
+    return false;
+  }
+  ret = PthreadCall("pthread_kill", pthread_kill(tid_, signal_val));
+  return ret;
 }
 
 ////////////////////////// BGThread //////////////////////////////
@@ -348,7 +369,10 @@ StdThreadGroup::~StdThreadGroup()
 {
   for (uint64_t i = 0; i < m_threads.size(); ++i)
   {
-    m_threads[i].join();
+    if (m_threads[i].joinable())
+    {
+      m_threads[i].join();
+    }
   }
   m_threads.clear();
 }
@@ -366,7 +390,10 @@ void StdThreadGroup::Join()
 {
   for (uint64_t i = 0; i < m_threads.size(); ++i)
   {
-    m_threads[i].join();
+    if (m_threads[i].joinable())
+    {
+      m_threads[i].join();
+    }
   }
 }
 

@@ -31,11 +31,13 @@ public:
   typedef void (*UserFunctionType)(void *);
   typedef std::function<void()> UserStdFunctionType;
 
+  static void ClearPthreadId(pthread_t *tid);
   static uint64_t GetTID();
   static uint64_t PthreadIdInt();
-  static pthread_t ThisThreadId();
-  static bool IsThreadIdEqual(pthread_t &a, pthread_t &b);
-  static void SetThisThreadName(string &name);
+  static pthread_t ThisPthreadId();
+  static bool IsPthreadIdEqual(const pthread_t &a, const pthread_t &b);
+  static void SetThisThreadName(const string &name);
+  static bool DetachThisThread();
   static void ExitThisThread();
   static void YieldThisThread();
   static void UsleepThisThread(uint32_t micros);
@@ -49,24 +51,25 @@ public:
   ~PosixThread(){};
 
   string toString();
-  void clearThreadId();
   pthread_t thread_id() const { return tid_; }
+  UserFunctionType user_func() { return user_func_; }
+  void *user_arg() { return user_arg_; }
+  bool is_std_func() { return is_std_func_; }
+  UserStdFunctionType user_std_func() { return user_std_func_; }
   bool amSelf() const
   {
     return (pthread_self() == tid_);
   }
 
-  bool isRuning();
+  bool isRunning();
+  void setIsRunning(bool is_running);
+  bool isStarted();
   bool start();
+  // make sure thread is joinable
   bool join();
-  bool kill(int32_t signal_val);
+  // only use datach() after start() in parent thread
   bool detach();
-
-  UserFunctionType user_func() { return user_func_; }
-  void *user_arg() { return user_arg_; }
-  bool is_std_func() { return is_std_func_; }
-  UserStdFunctionType user_std_func() { return user_std_func_; }
-  void set_is_running(bool running) { is_running_ = running; }
+  bool kill(int32_t signal_val);
 
 private:
   UserFunctionType user_func_;
