@@ -42,26 +42,26 @@ bool pipe2_cloexec(int pipefd[2]);
  * These retry on EINTR, and on error return -errno instead of returning
  * -1 and setting errno).
  */
-ssize_t safe_read(int fd, void *buf, uint64_t count);
-ssize_t safe_write(int fd, const void *buf, uint64_t count);
-ssize_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset);
-ssize_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset);
+int64_t safe_read(int fd, void *buf, uint64_t count);
+int64_t safe_write(int fd, const void *buf, uint64_t count);
+int64_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset);
+int64_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset);
 
 /*
  * Similar to the above (non-exact version) and below (exact version).
  * See splice(2) for parameter descriptions.
  */
-ssize_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
+int64_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
                     uint64_t len, unsigned int flags);
-ssize_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
+int64_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
                           int64_t *off_out, uint64_t len, unsigned int flags);
 
 /*
  * Same as the above functions, but return -EDOM unless exactly the requested
  * number of bytes can be read.
  */
-ssize_t safe_read_exact(int fd, void *buf, uint64_t count);
-ssize_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset);
+int64_t safe_read_exact(int fd, void *buf, uint64_t count);
+int64_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset);
 
 /*
  * Safe functions to read and write an entire file.
@@ -283,14 +283,14 @@ public:
 
   void close_file();
   void sync_file();
-  bool open_file(const char *file_name, int64_t create_length = 0);
+  bool open_file(const char *file_name, uint64_t create_length = 0);
 
   void *get_data() const
   {
     return data;
   }
 
-  int64_t get_size() const
+  uint64_t get_size() const
   {
     return size;
   }
@@ -310,8 +310,237 @@ private:
   FileMapper &operator=(const FileMapper &);
 
   void *data;
-  int64_t size;
+  uint64_t size;
   int fd;
+};
+
+class MmapFile
+{
+public:
+  static const uint64_t MB_SIZE = (1 << 20);
+
+  MmapFile()
+  {
+    data = NULL;
+    max_size = 0;
+    size = 0;
+    fd = -1;
+  }
+
+  MmapFile(uint64_t size, int fd)
+  {
+    max_size = size;
+    this->fd = fd;
+    data = NULL;
+    this->size = 0;
+  }
+
+  ~MmapFile()
+  {
+    if (data)
+    {
+      msync(data, size, MS_SYNC); // make sure synced
+      munmap(data, size);
+      //log_debug("mmap unmapped, size is: [%lu]", size);
+      data = NULL;
+      size = 0;
+      fd = -1;
+    }
+  }
+
+  bool sync_file()
+  {
+    if (data != NULL && size > 0)
+    {
+      return msync(data, size, MS_ASYNC) == 0;
+    }
+    return true;
+  }
+
+  bool map_file(bool write = false)
+  {
+    int flags = PROT_READ;
+
+    if (write)
+      flags |= PROT_WRITE;
+
+    if (fd < 0)
+      return false;
+
+    if (0 == max_size)
+      return false;
+
+    if (max_size <= (1024 * MB_SIZE))
+    {
+      size = max_size;
+    }
+    else
+    {
+      size = 1 * MB_SIZE;
+    }
+
+    if (!ensure_file_size(size))
+    {
+      //log_error("ensure file size failed");
+      return false;
+    }
+
+    data = mmap(0, size, flags, MAP_SHARED, fd, 0);
+
+    if (data == MAP_FAILED)
+    {
+      //log_error("map file failed: %s", strerror(errno));
+      fd = -1;
+      data = NULL;
+      size = 0;
+      return false;
+    }
+
+    //log_info("mmap file successed, maped size is: [%lu]", size);
+    return true;
+  }
+
+  bool remap()
+  {
+    if (fd < 0 || data == NULL)
+    {
+      //log_error("mremap not mapped yet");
+      return false;
+    }
+
+    if (size == max_size)
+    {
+      //log_info("already mapped max size, currSize: [%lu], maxSize: [%lu]",
+      //         size, max_size);
+      return false;
+    }
+
+    uint64_t new_size = size * 2;
+    if (new_size > max_size)
+      new_size = max_size;
+
+    if (!ensure_file_size(new_size))
+    {
+      //log_error("ensure file size failed in mremap");
+      return false;
+    }
+
+    //void *newMapData = mremap(m_data, m_size, newSize, MREMAP_MAYMOVE);
+    void *new_map_data = mremap(data, size, new_size, 0);
+    if (new_map_data == MAP_FAILED)
+    {
+      //log_error("mremap file failed: %s", strerror(errno));
+      return false;
+    }
+    else
+    {
+      //log_info("remap success, oldSize: [%lu], newSize: [%lu]", size,
+      //         new_size);
+    }
+
+    //log_info("mremap successed, new size: [%lu]", new_size);
+    data = new_map_data;
+    size = new_size;
+    return true;
+  }
+
+  void *get_data()
+  {
+    return data;
+  }
+
+  uint64_t get_size()
+  {
+    return size;
+  }
+
+private:
+  bool ensure_file_size(uint64_t size)
+  {
+    struct stat s;
+    if (fstat(fd, &s) < 0)
+    {
+      //log_error("fstat error, {%s}", strerror(errno));
+      return false;
+    }
+    if (s.st_size < (int32_t)size)
+    {
+      if (ftruncate(fd, size) < 0)
+      {
+        //log_error("ftruncate file to size: [%u] failed. {%s}", size,
+        //          strerror(errno));
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+private:
+  uint64_t max_size;
+  uint64_t size;
+  int fd;
+  void *data;
+};
+
+class FileMapperOperation
+{
+public:
+  FileMapperOperation();
+  ~FileMapperOperation();
+
+  bool open(char *file_name, int flag, int mode);
+  bool close(void);
+  bool is_opened()
+  {
+    return fd >= 0;
+  }
+  bool lock(int64_t offset, uint64_t size, bool write = false);
+  bool unlock(int64_t offset, uint64_t size);
+  //bool read(char *buffer, uint64_t size);
+  bool pread(void *buffer, uint64_t size, int64_t offset);
+  int64_t read(void *buffer, uint64_t size, int64_t offset);
+  bool write(void *buffer, uint64_t size);
+  bool pwrite(void *buffer, uint64_t size, int64_t offset = -1);
+  bool rename(char *new_name);
+  bool append_name(char *app_str);
+  bool set_position(int64_t position)
+  {
+    int64_t p = lseek(fd, position, SEEK_SET);
+
+    return p == position;
+  }
+  int64_t get_position()
+  {
+    return lseek(fd, 0, SEEK_CUR);
+  }
+
+  uint64_t get_size();
+  bool is_empty()
+  {
+    return get_size() == 0;
+  }
+  bool remove();
+  bool sync(void);
+  bool mmap(uint64_t map_size);
+  void *get_map_data();
+  char *get_file_name()
+  {
+    return file_name;
+  }
+  uint64_t get_maped_size()
+  {
+    if (is_mapped)
+      return map_file->get_size();
+    return 0;
+  }
+  bool truncate(int64_t size);
+
+private:
+  int fd;
+  char *file_name;
+  bool is_mapped;
+  MmapFile *map_file;
 };
 
 // Example:

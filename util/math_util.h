@@ -661,7 +661,7 @@ inline uint8_t Count1Bits(uint8_t i)
   static const uint8_t kBitCountTable[] = {0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4};
   uint8_t count = 0;
   count += kBitCountTable[i & 0xf];
-  count += kBitCountTable[(i >> 1) & 0xf];
+  count += kBitCountTable[(i >> 4) & 0xf];
   return count;
 }
 

@@ -106,13 +106,13 @@ bool pipe2_cloexec(int pipefd[2])
   return (0 == ret);
 }
 
-ssize_t safe_read(int fd, void *buf, uint64_t count)
+int64_t safe_read(int fd, void *buf, uint64_t count)
 {
   uint64_t cnt = 0;
 
   while (cnt < count)
   {
-    ssize_t r = read(fd, buf, count - cnt);
+    int64_t r = read(fd, buf, count - cnt);
     if (r <= 0)
     {
       if (r == 0)
@@ -130,9 +130,9 @@ ssize_t safe_read(int fd, void *buf, uint64_t count)
   return cnt;
 }
 
-ssize_t safe_read_exact(int fd, void *buf, uint64_t count)
+int64_t safe_read_exact(int fd, void *buf, uint64_t count)
 {
-  ssize_t ret = safe_read(fd, buf, count);
+  int64_t ret = safe_read(fd, buf, count);
   if (ret < 0)
     return ret;
   if ((uint64_t)ret != count)
@@ -140,11 +140,11 @@ ssize_t safe_read_exact(int fd, void *buf, uint64_t count)
   return 0;
 }
 
-ssize_t safe_write(int fd, const void *buf, uint64_t count)
+int64_t safe_write(int fd, const void *buf, uint64_t count)
 {
   while (count > 0)
   {
-    ssize_t r = write(fd, buf, count);
+    int64_t r = write(fd, buf, count);
     if (r < 0)
     {
       if (errno == EINTR)
@@ -157,14 +157,14 @@ ssize_t safe_write(int fd, const void *buf, uint64_t count)
   return 0;
 }
 
-ssize_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset)
+int64_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset)
 {
   uint64_t cnt = 0;
   char *b = (char *)buf;
 
   while (cnt < count)
   {
-    ssize_t r = pread(fd, b + cnt, count - cnt, offset + cnt);
+    int64_t r = pread(fd, b + cnt, count - cnt, offset + cnt);
     if (r <= 0)
     {
       if (r == 0)
@@ -182,9 +182,9 @@ ssize_t safe_pread(int fd, void *buf, uint64_t count, int64_t offset)
   return cnt;
 }
 
-ssize_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset)
+int64_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset)
 {
-  ssize_t ret = safe_pread(fd, buf, count, offset);
+  int64_t ret = safe_pread(fd, buf, count, offset);
   if (ret < 0)
     return ret;
   if ((uint64_t)ret != count)
@@ -192,11 +192,11 @@ ssize_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset)
   return 0;
 }
 
-ssize_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset)
+int64_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset)
 {
   while (count > 0)
   {
-    ssize_t r = pwrite(fd, buf, count, offset);
+    int64_t r = pwrite(fd, buf, count, offset);
     if (r < 0)
     {
       if (errno == EINTR)
@@ -210,14 +210,14 @@ ssize_t safe_pwrite(int fd, const void *buf, uint64_t count, int64_t offset)
   return 0;
 }
 
-ssize_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
+int64_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
                     uint64_t len, unsigned int flags)
 {
   uint64_t cnt = 0;
 
   while (cnt < len)
   {
-    ssize_t r = splice(fd_in, off_in, fd_out, off_out, len - cnt, flags);
+    int64_t r = splice(fd_in, off_in, fd_out, off_out, len - cnt, flags);
     if (r <= 0)
     {
       if (r == 0)
@@ -236,10 +236,10 @@ ssize_t safe_splice(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
   return cnt;
 }
 
-ssize_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
+int64_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
                           int64_t *off_out, uint64_t len, unsigned int flags)
 {
-  ssize_t ret = safe_splice(fd_in, off_in, fd_out, off_out, len, flags);
+  int64_t ret = safe_splice(fd_in, off_in, fd_out, off_out, len, flags);
   if (ret < 0)
     return ret;
   if ((uint64_t)ret != len)
@@ -943,7 +943,7 @@ int FileOperation::rename_file(const char *new_name)
   int ret = -1;
   if (NULL != new_name || new_name[0] != '\0')
   {
-    size_t new_name_len = strlen(new_name);
+    uint64_t new_name_len = strlen(new_name);
     if (strlen(file_name_) != new_name_len || memcmp(new_name, file_name_, new_name_len) != 0)
     {
       if (fd_ > 0)
@@ -1011,7 +1011,7 @@ void FileMapper::sync_file()
 }
 
 // createLength == 0 means read only
-bool FileMapper::open_file(const char *file_name, int64_t create_length)
+bool FileMapper::open_file(const char *file_name, uint64_t create_length)
 {
   int flags = PROT_READ;
   if (create_length > 0)
@@ -1059,6 +1059,291 @@ bool FileMapper::open_file(const char *file_name, int64_t create_length)
   }
   return true;
 }
+
+FileMapperOperation::FileMapperOperation()
+{
+  file_name = NULL;
+  is_mapped = false;
+  map_file = NULL;
+  fd = -1;
+}
+
+FileMapperOperation::~FileMapperOperation()
+{
+  if (map_file != NULL)
+  {
+    delete map_file;
+    map_file = NULL;
+  }
+  close();
+  if (file_name != NULL)
+  {
+    free(file_name);
+    file_name = NULL;
+  }
+}
+
+bool FileMapperOperation::open(char *file_nname, int flag, int mode)
+{
+  //assert(m_fd < 0);
+  if (file_name != NULL)
+  {
+    free(file_name);
+    file_name = NULL;
+  }
+
+  file_name = strdup(file_nname);
+
+  fd = ::open(file_name, flag, mode);
+  if (fd < 0)
+  {
+    //log_error("open file [%s] failed: %s", file_name, strerror(errno));
+    return false;
+  }
+
+  return true;
+}
+
+bool FileMapperOperation::close()
+{
+  if (!is_opened())
+  {
+    //log_info("file [%s] not opened, need not close", file_name);
+    return true;
+  }
+
+  if (::close(fd) == -1)
+  {
+    //log_error("close file [%s] failed: %s", file_name, strerror(errno));
+    return false;
+  }
+
+  return true;
+}
+
+uint64_t FileMapperOperation::get_size()
+{
+  uint64_t size = -1;
+  struct stat s;
+  if (fstat(fd, &s) == 0)
+    size = s.st_size;
+  return size;
+}
+
+bool FileMapperOperation::lock(int64_t offset, uint64_t size, bool write)
+{
+  if (!is_opened())
+    return false;
+
+  bool rc = false;
+  struct flock lock;
+  memset(&lock, 0, sizeof(lock));
+
+  lock.l_start = offset;
+  lock.l_len = size;
+  lock.l_pid = 0;
+  lock.l_whence = SEEK_SET;
+  lock.l_type = write ? F_WRLCK : F_RDLCK;
+
+  rc = (fcntl(fd, F_SETLK, &lock) != -1);
+
+  return rc;
+}
+
+bool FileMapperOperation::unlock(int64_t offset, uint64_t length)
+{
+  if (!is_opened())
+    return false;
+
+  bool rc = false;
+  struct flock lock;
+  memset(&lock, 0, sizeof(lock));
+
+  lock.l_start = offset;
+  lock.l_len = length;
+  lock.l_pid = 0;
+  lock.l_whence = SEEK_SET;
+  lock.l_type = F_UNLCK;
+
+  rc = (fcntl(fd, F_SETLK, &lock) != -1);
+
+  return rc;
+}
+
+bool FileMapperOperation::pread(void *buffer, uint64_t size, int64_t offset)
+{
+  if (!is_opened())
+    return false;
+
+  if (is_mapped && (offset + size) > map_file->get_size())
+    map_file->remap();
+
+  if (is_mapped && (offset + size) <= map_file->get_size())
+  {
+    // use mmap first
+    //log_debug("read data from mmap[%s], offset [%lu], size [%lu]",
+    //          file_name, offset, size);
+    memcpy(buffer, (char *)map_file->get_data() + offset, size);
+    return true;
+  }
+
+  //log_debug("read from [%s], offset: [%lu], size: [%lu]", file_name,
+  //          offset, size);
+  return ::pread(fd, buffer, size, offset) == (int64_t)size;
+}
+
+bool FileMapperOperation::sync(void)
+{
+  if (!is_opened())
+    return false;
+
+  if (is_mapped)
+  {
+    return map_file->sync_file();
+  }
+  else
+  {
+    return fsync(fd) == 0;
+  }
+}
+
+int64_t FileMapperOperation::read(void *buffer, uint64_t size, int64_t offset)
+{
+  if (!is_opened())
+    return false;
+  if (is_mapped && (offset + size) > map_file->get_size())
+    map_file->remap();
+
+  if (is_mapped && (offset + size) <= map_file->get_size())
+  {
+    // use mmap first
+    //log_debug("read data from mmap[%s], offset [%lu], size [%lu]",
+    //          file_name, offset, size);
+    memcpy(buffer, (char *)map_file->get_data() + offset, size);
+    return size;
+  }
+  //log_debug("read from [%s], offset: [%lu], size: [%lu]", file_name,
+  //          offset, size);
+  return ::pread(fd, buffer, size, offset);
+}
+
+bool FileMapperOperation::write(void *buffer, uint64_t size)
+{
+  if (!is_opened())
+    return false;
+
+  //log_debug("write data into with size of [%lu] at offset [%lu]", size,
+  //          get_position());
+
+  int64_t offset = get_position();
+  if (is_mapped && (offset + size) > map_file->get_size())
+  {
+    map_file->remap();
+  }
+
+  if (is_mapped && (offset + size) <= map_file->get_size())
+  {
+    //log_debug("write data use mmap at offset [%lu] with size [%lu]",
+    //          offset, size);
+    memcpy((char *)map_file->get_data() + offset, buffer, size);
+    return true;
+  }
+
+  return ::write(fd, buffer, size) == (int64_t)size;
+}
+
+bool FileMapperOperation::pwrite(void *buffer, uint64_t size, int64_t offset)
+{
+  if (!is_opened())
+    return false;
+
+  if (offset < 0)
+    offset = get_position();
+
+  //log_debug("sizeof(int64_t): %lu, write[%s]: size [%lu] at offset [%lu]",
+  //          sizeof(int64_t), file_name, size, offset);
+
+  if (is_mapped && (offset + size) > map_file->get_size())
+  {
+    map_file->remap();
+  }
+
+  if (is_mapped && (offset + size) <= map_file->get_size())
+  {
+    // use mmap first
+    //log_debug("pwrite data use mmap at offset [%lu] with size [%lu]",
+    //          offset, size);
+    memcpy((char *)map_file->get_data() + offset, buffer, size);
+    return true;
+  }
+
+  return ::pwrite(fd, buffer, size, offset) == (int64_t)size;
+}
+
+bool FileMapperOperation::rename(char *new_name)
+{
+  if (::rename(file_name, new_name) == 0)
+  {
+    //log_warn("filename renamed from [%s] to [%s]", file_name, new_name);
+    return true;
+  }
+  return false;
+}
+
+bool FileMapperOperation::remove()
+{
+  close();
+  if (::remove(file_name) == 0)
+  {
+    //log_warn("remove file [%s]", file_name);
+    return true;
+  }
+  return false;
+}
+
+bool FileMapperOperation::append_name(char *app_str)
+{
+  char new_name[256];
+  snprintf(new_name, 256, "%s.%s", file_name, app_str);
+  new_name[255] = '\0';
+  return rename(new_name);
+}
+
+bool FileMapperOperation::mmap(uint64_t map_size)
+{
+  if (map_size == 0)
+    return true;
+
+  if (!is_opened())
+  {
+    //log_warn("file not opened");
+    return false;
+  }
+
+  if (!is_mapped)
+  {
+    // do map if not mapped yet
+    map_file = new MmapFile(map_size, fd);
+    is_mapped = map_file->map_file(true);
+  }
+
+  return is_mapped;
+}
+
+void *FileMapperOperation::get_map_data()
+{
+  if (is_mapped)
+    return map_file->get_data();
+
+  return NULL;
+}
+
+bool FileMapperOperation::truncate(int64_t size)
+{
+  return ::ftruncate(fd, size) == 0;
+}
+
+////////////////////// FileWatcher //////////////////////
 
 static const FileWatcher::Timestamp NON_EXIST_TS =
     static_cast<FileWatcher::Timestamp>(-1);
