@@ -114,6 +114,7 @@ using ::std::string;
 namespace port
 {
 
+// constexpr bool kLittleEndian = __BYTE_ORDER == __ORDER_LITTLE_ENDIAN;
 constexpr bool kLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 
 //  Memory locations within the same cache line are subject to destructive

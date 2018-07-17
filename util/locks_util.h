@@ -796,7 +796,7 @@ private:
   bool fHaveGrant;
 
 public:
-  void Acquire()
+  void acquire()
   {
     if (fHaveGrant)
       return;
@@ -804,7 +804,7 @@ public:
     fHaveGrant = true;
   }
 
-  void Release()
+  void release()
   {
     if (!fHaveGrant)
       return;
@@ -812,16 +812,16 @@ public:
     fHaveGrant = false;
   }
 
-  bool TryAcquire()
+  bool tryAcquire()
   {
     if (!fHaveGrant && sem->try_wait())
       fHaveGrant = true;
     return fHaveGrant;
   }
 
-  void MoveTo(CondVarSemGrant &grant)
+  void moveTo(CondVarSemGrant &grant)
   {
-    grant.Release();
+    grant.release();
     grant.sem = sem;
     grant.fHaveGrant = fHaveGrant;
     fHaveGrant = false;
@@ -829,17 +829,18 @@ public:
 
   CondVarSemGrant() : sem(nullptr), fHaveGrant(false) {}
 
-  explicit CondVarSemGrant(CondVarSem &sema, bool fTry = false) : sem(&sema), fHaveGrant(false)
+  explicit CondVarSemGrant(CondVarSem &sema, bool fTry = false)
+      : sem(&sema), fHaveGrant(false)
   {
     if (fTry)
-      TryAcquire();
+      tryAcquire();
     else
-      Acquire();
+      acquire();
   }
 
   ~CondVarSemGrant()
   {
-    Release();
+    release();
   }
 
   operator bool() const
@@ -1608,6 +1609,81 @@ public:
     if (oldStatus < 1)
     {
       m_sema.wait();
+    }
+  }
+};
+
+/**
+ * A class that implements the future completion of a request.
+ */
+template <typename T>
+class FutureResult
+{
+private:
+  CountDownLatch latch_;
+  volatile int32_t error_; // 0 means no-error
+  volatile T result_;
+
+public:
+  FutureResult() : latch_(1), error_(0) {}
+
+  /**
+   * Mark this request as complete and unblock any threads waiting on its completion.
+   * @param result The result for this request
+   * @param error The error that occurred if there was one, or null.
+   */
+  void done(T result, int32_t error)
+  {
+    error_ = error;
+    result_ = result;
+    latch_.countDown();
+  }
+
+  /**
+   * Await the completion of this request
+   */
+  bool await(uint64_t timeout_ms)
+  {
+    return latch_.waitFor(timeout_ms);
+  }
+
+  T result() { return result_; }
+
+  int32_t error() { return error_; }
+
+  /**
+   * Has the request completed?
+   */
+  bool isDone()
+  {
+    return latch_.count() == 0L;
+  }
+
+  T get()
+  {
+    await();
+    return resultOrThrow();
+  }
+
+  T get(uint64_t timeout_ms)
+  {
+    bool occurred = await(timeout_ms);
+    if (!occurred)
+    {
+      throw std::runtime_error("FutureResult.get(timeout_ms) exception");
+    }
+    return resultOrThrow();
+  }
+
+  T resultOrThrow()
+  {
+    if (error() != 0)
+    {
+      throw std::runtime_error("FutureResult.resultOrThrow() exception");
+    }
+    else
+    {
+      return result();
     }
   }
 };

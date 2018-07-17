@@ -63,7 +63,6 @@ public:
 
   bool isRunning();
   void setIsRunning(bool is_running);
-  bool isStarted();
   bool start();
   // make sure thread is joinable
   bool join();

@@ -1,15 +1,168 @@
 
 #include "memory_pool.h"
 #include <string.h>
+#include <sys/mman.h>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include "bitmap.h"
 #include "math_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+/*-----------------------------------------------------------------------------
+ *  PageMemPoolImpl
+ *-----------------------------------------------------------------------------*/
+void PageMemPool::initialize(char *pool, int32_t page_size, int32_t total_pages,
+                             int32_t meta_len)
+{
+  assert(pool != 0);
+  assert(page_size >= (1 << 20));
+  assert(total_pages > 0);
+  assert(static_cast<int32_t>(sizeof(mem_pool_impl)) <=
+         PageMemPool::MEM_HASH_METADATA_START);
+
+  impl = reinterpret_cast<mem_pool_impl *>(pool);
+  impl->initialize(pool, page_size, total_pages, meta_len);
+}
+
+PageMemPool::~PageMemPool()
+{
+  if (impl->pool != NULL)
+  {
+    munmap(impl->pool, static_cast<int64_t>(impl->page_size) * impl->total_pages);
+  }
+}
+
+char *PageMemPool::alloc_page()
+{
+  int32_t index;
+  return impl->alloc_page(index);
+}
+
+char *PageMemPool::alloc_page(int32_t &index)
+{
+  return impl->alloc_page(index);
+}
+
+void PageMemPool::free_page(const char *page)
+{
+  impl->free_page(page);
+}
+
+void PageMemPool::free_page(int32_t index)
+{
+  impl->free_page(index);
+}
+
+char *PageMemPool::index_to_page(int32_t index)
+{
+  return impl->index_to_page(index);
+}
+
+int32_t PageMemPool::page_to_index(char *page)
+{
+  return impl->page_to_index(page);
+}
+
+/* man shm_open:The newly-allocated bytes of a shared memory object are automatically initialised to 0.*/
+void PageMemPool::mem_pool_impl::initialize(char *tpool, int32_t this_page_size,
+                                            int32_t this_total_pages, int32_t meta_len)
+{
+  assert(tpool != 0);
+  pool = tpool;
+  asm volatile("mfence" ::
+                   : "memory");
+  if (inited != 1)
+  {
+    page_size = this_page_size;
+    total_pages = this_total_pages;
+    memset((void *)&page_bitmap, 0, BITMAP_SIZE);
+    int32_t meta_pages = (meta_len + page_size - 1) / page_size;
+    for (int32_t i = 0; i < meta_pages; ++i)
+    {
+      easybit_setbit(page_bitmap, i);
+    }
+    free_pages = total_pages - meta_pages;
+    current_page = meta_pages;
+    assert(free_pages > 0);
+
+    inited = 1;
+  }
+}
+
+char *PageMemPool::mem_pool_impl::alloc_page(int32_t &index)
+{
+  assert(inited == 1);
+  if (free_pages == 0)
+  {
+    return 0; /* there are no pages to allocate */
+  }
+
+  /*
+     * find a free page index from bitmap
+     */
+  int32_t page_index;
+  for (;; ++current_page)
+  {
+    if (current_page == total_pages)
+    {
+      current_page = 0;
+    }
+    if (easybit_isset(page_bitmap, current_page) == 0)
+    { /* found */
+      page_index = current_page++;
+      break;
+    }
+  }
+  index = page_index;
+  --free_pages;
+  easybit_setbit(page_bitmap, index);
+  return index_to_page(index);
+}
+
+void PageMemPool::mem_pool_impl::free_page(int32_t index)
+{
+  assert(index > 0 && index < total_pages); /* page 0 is used to META DATA */
+  if (easybit_isset(page_bitmap, index) == 0)
+  { /* has already released */
+    return;
+  }
+  easybit_clrbit(page_bitmap, index);
+  ++free_pages;
+}
+
+void PageMemPool::mem_pool_impl::free_page(const char *page)
+{
+  assert(page != 0);
+  int32_t index = page_to_index(page);
+  free_page(index);
+}
+
+char *PageMemPool::mem_pool_impl::index_to_page(int32_t index)
+{
+  assert(index > 0 && index < total_pages);
+  uint64_t offset = static_cast<uint64_t>(index);
+  offset *= page_size;
+  return pool + offset;
+}
+
+int32_t PageMemPool::mem_pool_impl::page_to_index(const char *page)
+{
+  assert(page != 0);
+  uint64_t offset = page - pool;
+  return offset / static_cast<uint64_t>(page_size);
+}
+
+char *PageMemPool::mem_pool_impl::get_pool_addr()
+{
+  return pool;
+}
+
+/////////////////////// TCMemPool /////////////////////////////////
 
 TCMemChunk::TCMemChunk()
     : _pHead(NULL), _pData(NULL)

@@ -37,7 +37,6 @@ __thread const char *t_threadName = "unknown";
 void *StartPthreadWrapper(void *arg)
 {
   PosixThread *data = reinterpret_cast<PosixThread *>(arg);
-  data->setIsRunning(true);
   try
   {
     if (data->is_std_func())
@@ -204,16 +203,13 @@ void PosixThread::setIsRunning(bool is_running)
   AtomicStoreN<bool>(&is_running_, is_running);
 }
 
-bool PosixThread::isStarted()
-{
-  pthread_t t;
-  ClearPthreadId(&t);
-  return IsPthreadIdEqual(tid_, t);
-}
-
 bool PosixThread::start()
 {
   bool ret = false;
+  if (isRunning())
+  {
+    return false;
+  }
   // The child thread will inherit our signal mask.  Set our signal mask to
   // the set of signals we want to block.  (It's ok to block signals more
   // signals than usual for a little while-- they will just be delivered to
@@ -223,9 +219,16 @@ bool PosixThread::start()
   // BlockSignals(to_block, &old_sigset);
   // pthread_create()...
   // RestoreSigset(&old_sigset);
+
   ret = PthreadCall("pthread_create",
                     pthread_create(&tid_, NULL, &StartPthreadWrapper, this));
-  return ret;
+  if (ret)
+  {
+    // it is hard to know when pthread_create will start new thread.
+    setIsRunning(true);
+    return true;
+  }
+  return false;
 }
 
 bool PosixThread::join()
@@ -235,7 +238,7 @@ bool PosixThread::join()
   {
     return false;
   }
-  if (!isStarted())
+  if (!isRunning())
   {
     return false;
   }
@@ -246,7 +249,7 @@ bool PosixThread::join()
 bool PosixThread::detach()
 {
   bool ret = false;
-  if (!isStarted())
+  if (!isRunning())
   {
     return false;
   }
@@ -257,7 +260,7 @@ bool PosixThread::detach()
 bool PosixThread::kill(int32_t signal_val)
 {
   bool ret = false;
-  if (!isStarted())
+  if (!isRunning())
   {
     return false;
   }

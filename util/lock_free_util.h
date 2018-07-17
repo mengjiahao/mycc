@@ -198,7 +198,8 @@ private:
 
 //////////////////////////// URCU //////////////////////////////
 // User-Level Implementations of Read-Copy Update
-// https://www.efficios.com/pub/rcu/urcu-main.pdf
+// [2011] M.Desnoyers, P.McKenney, A.Stern, M.Dagenias, J.Walpole "User-Level Implementations of Read-Copy Update
+// http://www.dorsal.polymtl.ca/sites/www.dorsal.polymtl.ca/files/publications/desnoyers-ieee-urcu-submitted.pdf
 
 namespace urcu_easy
 {

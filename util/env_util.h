@@ -8,7 +8,7 @@
 #include <functional>
 #include <memory>
 #include <vector>
-#include "macros_util.h"
+#include "coding_util.h"
 #include "status.h"
 #include "stringpiece.h"
 #include "types_util.h"

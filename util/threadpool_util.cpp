@@ -638,9 +638,9 @@ void PosixFixedThreadPool::Pause()
   paused_ = true;
 }
 
-//////////// SimpleThreadPool ///////////////////
+//////////// BGThreadPool ///////////////////
 
-bool SimpleThreadPool::Start()
+bool BGThreadPool::Start()
 {
   MutexLock lock(&mutex_);
   if (tids_.size())
@@ -658,7 +658,7 @@ bool SimpleThreadPool::Start()
   return true;
 }
 
-bool SimpleThreadPool::Stop(bool wait)
+bool BGThreadPool::Stop(bool wait)
 {
   if (wait)
   {
@@ -681,7 +681,7 @@ bool SimpleThreadPool::Stop(bool wait)
   return true;
 }
 
-void SimpleThreadPool::AddTask(const Task &task)
+void BGThreadPool::AddTask(const Task &task)
 {
   MutexLock lock(&mutex_);
   if (stop_)
@@ -691,7 +691,7 @@ void SimpleThreadPool::AddTask(const Task &task)
   work_cv_.signal();
 }
 
-void SimpleThreadPool::AddPriorityTask(const Task &task)
+void BGThreadPool::AddPriorityTask(const Task &task)
 {
   MutexLock lock(&mutex_);
   if (stop_)
@@ -701,7 +701,7 @@ void SimpleThreadPool::AddPriorityTask(const Task &task)
   work_cv_.signal();
 }
 
-int64_t SimpleThreadPool::DelayTask(int64_t delay, const Task &task)
+int64_t BGThreadPool::DelayTask(int64_t delay, const Task &task)
 {
   MutexLock lock(&mutex_);
   if (stop_)
@@ -715,7 +715,7 @@ int64_t SimpleThreadPool::DelayTask(int64_t delay, const Task &task)
   return bg_item.id;
 }
 
-bool SimpleThreadPool::CancelTask(int64_t task_id, bool non_block, bool *is_running)
+bool BGThreadPool::CancelTask(int64_t task_id, bool non_block, bool *is_running)
 {
   if (task_id == 0)
   { // not delay task
@@ -757,7 +757,7 @@ bool SimpleThreadPool::CancelTask(int64_t task_id, bool non_block, bool *is_runn
   }
 }
 
-string SimpleThreadPool::ProfilingLog()
+string BGThreadPool::ProfilingLog()
 {
   int64_t schedule_cost_sum;
   int64_t schedule_count;
@@ -781,7 +781,7 @@ string SimpleThreadPool::ProfilingLog()
   return ss.str();
 }
 
-void SimpleThreadPool::ThreadProc()
+void BGThreadPool::ThreadProc()
 {
   while (true)
   {

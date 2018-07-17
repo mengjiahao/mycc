@@ -2,10 +2,12 @@
 #ifndef MYCC_UTIL_BUFFER_H_
 #define MYCC_UTIL_BUFFER_H_
 
+#include <stdlib.h>
+#include <string.h>
 #include <list>
 #include <vector>
-#include "env_util.h"
 #include "coding_util.h"
+#include "error_util.h"
 #include "math_util.h"
 #include "status.h"
 #include "stringpiece.h"
@@ -16,7 +18,7 @@ namespace mycc
 namespace util
 {
 
-template <int SIZE>
+template <int32_t SIZE>
 class FixedBuffer
 {
 public:
@@ -65,94 +67,478 @@ private:
   DISALLOW_COPY_AND_ASSIGN(FixedBuffer);
 };
 
-// An InputBuffer provides a buffer on top of a RandomAccessFile.
-// A given instance of an InputBuffer is NOT safe for concurrent use
-// by multiple threads
-class InputBuffer
+class DataBuffer
 {
 public:
-  // Create an InputBuffer for "file" with a buffer size of
-  // "buffer_bytes" bytes.  'file' must outlive *this.
-  InputBuffer(RandomAccessFile *file, uint64_t buffer_bytes);
-  ~InputBuffer();
+  static const int32_t MAX_BUFFER_SIZE = 2048;
+  DataBuffer()
+  {
+    _pend = _pfree = _pdata = _pstart = NULL;
+  }
 
-  // Read one text line of data into "*result" until end-of-file or a
-  // \n is read.  (The \n is not included in the result.)  Overwrites
-  // any existing data in *result.
-  //
-  // If successful, returns OK.  If we are already at the end of the
-  // file, we return an OUT_OF_RANGE error.  Otherwise, we return
-  // some other non-OK status.
-  Status ReadLine(string *result);
+  ~DataBuffer()
+  {
+    destroy();
+  }
 
-  // Reads bytes_to_read bytes into *result, overwriting *result.
-  //
-  // If successful, returns OK.  If we there are not enough bytes to
-  // read before the end of the file, we return an OUT_OF_RANGE error.
-  // Otherwise, we return some other non-OK status.
-  Status ReadNBytes(int64_t bytes_to_read, string *result);
+  void destroy()
+  {
+    if (_pstart)
+    {
+      free(_pstart);
+      _pend = _pfree = _pdata = _pstart = NULL;
+    }
+  }
 
-  // An overload that writes to char*.  Caller must ensure result[0,
-  // bytes_to_read) is valid to be overwritten.  Returns OK iff "*bytes_read ==
-  // bytes_to_read".
-  Status ReadNBytes(int64_t bytes_to_read, char *result, uint64_t *bytes_read);
+  char *getData()
+  {
+    return (char *)_pdata;
+  }
 
-  // Reads a single varint32.
-  Status ReadVarint32(uint32_t *result);
+  int32_t getDataLen()
+  {
+    return static_cast<int32_t>(_pfree - _pdata);
+  }
 
-  // Like ReadNBytes() without returning the bytes read.
-  Status SkipNBytes(int64_t bytes_to_skip);
+  char *getFree()
+  {
+    return (char *)_pfree;
+  }
 
-  // Seek to this offset within the file.
-  //
-  // If we seek to somewhere within our pre-buffered data, we will re-use what
-  // data we can.  Otherwise, Seek() throws out the current buffer and the next
-  // read will trigger a File::Read().
-  Status Seek(int64_t position);
+  int32_t getFreeLen()
+  {
+    return static_cast<int32_t>(_pend - _pfree);
+  }
 
-  // Returns the position in the file.
-  int64_t Tell() const { return file_pos_ - (limit_ - pos_); }
+  void drainData(int32_t len)
+  {
+    _pdata += len;
 
-  // Returns the underlying RandomAccessFile.
-  RandomAccessFile *file() const { return file_; }
+    if (_pdata >= _pfree)
+    {
+      clear();
+    }
+  }
+
+  void pourData(int32_t len)
+  {
+    assert(_pend - _pfree >= len);
+    _pfree += len;
+  }
+
+  void stripData(int32_t len)
+  {
+    assert(_pfree - _pdata >= len);
+    _pfree -= len;
+  }
+
+  void clear()
+  {
+    _pdata = _pfree = _pstart;
+  }
+
+  void shrink()
+  {
+    if (_pstart == NULL)
+    {
+      return;
+    }
+    if ((_pend - _pstart) <= MAX_BUFFER_SIZE || (_pfree - _pdata) > MAX_BUFFER_SIZE)
+    {
+      return;
+    }
+
+    int32_t dlen = static_cast<int32_t>(_pfree - _pdata);
+    if (dlen < 0)
+    {
+      dlen = 0;
+    }
+
+    unsigned char *newbuf = (unsigned char *)malloc(MAX_BUFFER_SIZE);
+    assert(newbuf != NULL);
+
+    if (dlen > 0)
+    {
+      memcpy(newbuf, _pdata, dlen);
+    }
+    free(_pstart);
+
+    _pdata = _pstart = newbuf;
+    _pfree = _pstart + dlen;
+    _pend = _pstart + MAX_BUFFER_SIZE;
+
+    return;
+  }
+
+  void writeInt8(uint8_t n)
+  {
+    expand(1);
+    *_pfree++ = (unsigned char)n;
+  }
+
+  void writeInt16(uint16_t n)
+  {
+    expand(2);
+    _pfree[1] = (unsigned char)n;
+    n = static_cast<uint16_t>(n >> 8);
+    _pfree[0] = (unsigned char)n;
+    _pfree += 2;
+  }
+
+  void writeInt32(uint32_t n)
+  {
+    expand(4);
+    _pfree[3] = (unsigned char)n;
+    n >>= 8;
+    _pfree[2] = (unsigned char)n;
+    n >>= 8;
+    _pfree[1] = (unsigned char)n;
+    n >>= 8;
+    _pfree[0] = (unsigned char)n;
+    _pfree += 4;
+  }
+
+  void writeInt64(uint64_t n)
+  {
+    expand(8);
+    _pfree[7] = (unsigned char)n;
+    n >>= 8;
+    _pfree[6] = (unsigned char)n;
+    n >>= 8;
+    _pfree[5] = (unsigned char)n;
+    n >>= 8;
+    _pfree[4] = (unsigned char)n;
+    n >>= 8;
+    _pfree[3] = (unsigned char)n;
+    n >>= 8;
+    _pfree[2] = (unsigned char)n;
+    n >>= 8;
+    _pfree[1] = (unsigned char)n;
+    n >>= 8;
+    _pfree[0] = (unsigned char)n;
+    _pfree += 8;
+  }
+
+  void writeBytes(const void *src, int32_t len)
+  {
+    expand(len);
+    memcpy(_pfree, src, len);
+    _pfree += len;
+  }
+
+  void fillInt8(unsigned char *dst, uint8_t n)
+  {
+    *dst = n;
+  }
+
+  void fillInt16(unsigned char *dst, uint16_t n)
+  {
+    dst[1] = (unsigned char)n;
+    n = static_cast<uint16_t>(n >> 8);
+    dst[0] = (unsigned char)n;
+  }
+
+  void fillInt32(unsigned char *dst, uint32_t n)
+  {
+    dst[3] = (unsigned char)n;
+    n >>= 8;
+    dst[2] = (unsigned char)n;
+    n >>= 8;
+    dst[1] = (unsigned char)n;
+    n >>= 8;
+    dst[0] = (unsigned char)n;
+  }
+
+  void fillInt64(unsigned char *dst, uint64_t n)
+  {
+    dst[7] = (unsigned char)n;
+    n >>= 8;
+    dst[6] = (unsigned char)n;
+    n >>= 8;
+    dst[5] = (unsigned char)n;
+    n >>= 8;
+    dst[4] = (unsigned char)n;
+    n >>= 8;
+    dst[3] = (unsigned char)n;
+    n >>= 8;
+    dst[2] = (unsigned char)n;
+    n >>= 8;
+    dst[1] = (unsigned char)n;
+    n >>= 8;
+    dst[0] = (unsigned char)n;
+  }
+
+  void writeString(const char *str)
+  {
+    int32_t len = (str ? static_cast<int32_t>(strlen(str)) : 0);
+    if (len > 0)
+    {
+      len++;
+    }
+    expand(static_cast<int32_t>(len + sizeof(uint32_t)));
+    writeInt32(len);
+    if (len > 0)
+    {
+      memcpy(_pfree, str, len);
+      _pfree += (len);
+    }
+  }
+
+  void writeString(const std::string &str)
+  {
+    writeString(str.c_str());
+  }
+
+  void writeVector(const std::vector<int32_t> &v)
+  {
+    const uint32_t iLen = static_cast<uint32_t>(v.size());
+    writeInt32(iLen);
+    for (uint32_t i = 0; i < iLen; ++i)
+    {
+      writeInt32(v[i]);
+    }
+  }
+
+  void writeVector(const std::vector<uint32_t> &v)
+  {
+    const uint32_t iLen = static_cast<uint32_t>(v.size());
+    writeInt32(iLen);
+    for (uint32_t i = 0; i < iLen; ++i)
+    {
+      writeInt32(v[i]);
+    }
+  }
+
+  void writeVector(const std::vector<int64_t> &v)
+  {
+    const uint32_t iLen = static_cast<uint32_t>(v.size());
+    writeInt32(iLen);
+    for (uint32_t i = 0; i < iLen; ++i)
+    {
+      writeInt64(v[i]);
+    }
+  }
+
+  void writeVector(const std::vector<uint64_t> &v)
+  {
+    const uint32_t iLen = static_cast<uint32_t>(v.size());
+    writeInt32(iLen);
+    for (uint32_t i = 0; i < iLen; ++i)
+    {
+      writeInt64(v[i]);
+    }
+  }
+
+  uint8_t readInt8()
+  {
+    return (*_pdata++);
+  }
+
+  uint16_t readInt16()
+  {
+    uint16_t n = _pdata[0];
+    n = static_cast<uint16_t>(n << 8);
+    n = static_cast<uint16_t>(n | _pdata[1]);
+    _pdata += 2;
+    return n;
+  }
+
+  uint32_t readInt32()
+  {
+    uint32_t n = _pdata[0];
+    n <<= 8;
+    n |= _pdata[1];
+    n <<= 8;
+    n |= _pdata[2];
+    n <<= 8;
+    n |= _pdata[3];
+    _pdata += 4;
+    assert(_pfree >= _pdata);
+    return n;
+  }
+
+  uint64_t readInt64()
+  {
+    uint64_t n = _pdata[0];
+    n <<= 8;
+    n |= _pdata[1];
+    n <<= 8;
+    n |= _pdata[2];
+    n <<= 8;
+    n |= _pdata[3];
+    n <<= 8;
+    n |= _pdata[4];
+    n <<= 8;
+    n |= _pdata[5];
+    n <<= 8;
+    n |= _pdata[6];
+    n <<= 8;
+    n |= _pdata[7];
+    _pdata += 8;
+    assert(_pfree >= _pdata);
+    return n;
+  }
+
+  bool readBytes(void *dst, int32_t len)
+  {
+    if (_pdata + len > _pfree)
+    {
+      return false;
+    }
+    memcpy(dst, _pdata, len);
+    _pdata += len;
+    assert(_pfree >= _pdata);
+    return true;
+  }
+
+  bool readString(char *&str, int32_t len)
+  {
+    if (_pdata + sizeof(int32_t) > _pfree)
+    {
+      return false;
+    }
+    int32_t slen = readInt32();
+    if (_pfree - _pdata < slen)
+    {
+      slen = static_cast<int32_t>(_pfree - _pdata);
+    }
+    if (str == NULL && slen > 0)
+    {
+      str = (char *)malloc(slen);
+      len = slen;
+    }
+    if (len > slen)
+    {
+      len = slen;
+    }
+    if (len > 0)
+    {
+      memcpy(str, _pdata, len);
+      str[len - 1] = '\0';
+    }
+    _pdata += slen;
+    assert(_pfree >= _pdata);
+    return true;
+  }
+
+  bool readVector(std::vector<int32_t> &v)
+  {
+    const uint32_t len = readInt32();
+    for (uint32_t i = 0; i < len; ++i)
+    {
+      v.push_back(readInt32());
+    }
+    return true;
+  }
+
+  bool readVector(std::vector<uint32_t> &v)
+  {
+    const uint32_t len = readInt32();
+    for (uint32_t i = 0; i < len; ++i)
+    {
+      v.push_back(readInt32());
+    }
+    return true;
+  }
+
+  bool readVector(std::vector<int64_t> &v)
+  {
+    const uint32_t len = readInt32();
+    for (uint32_t i = 0; i < len; ++i)
+    {
+      v.push_back(readInt64());
+    }
+    return true;
+  }
+
+  bool readVector(std::vector<uint64_t> &v)
+  {
+    const uint32_t len = readInt32();
+    for (uint32_t i = 0; i < len; ++i)
+    {
+      v.push_back(readInt64());
+    }
+    return true;
+  }
+
+  void ensureFree(int32_t len)
+  {
+    expand(len);
+  }
+
+  int32_t findBytes(const char *findstr, int32_t len)
+  {
+    int32_t dLen = static_cast<int32_t>(_pfree - _pdata - len + 1);
+    for (int32_t i = 0; i < dLen; i++)
+    {
+      if (_pdata[i] == findstr[0] && memcmp(_pdata + i, findstr, len) == 0)
+      {
+        return i;
+      }
+    }
+    return -1;
+  }
 
 private:
-  Status FillBuffer();
+  /*
+   * expand
+   */
+  inline void expand(int32_t need)
+  {
+    if (_pstart == NULL)
+    {
+      int32_t len = 256;
+      while (len < need)
+      {
+        len <<= 1;
+      }
+      _pfree = _pdata = _pstart = (unsigned char *)malloc(len);
+      _pend = _pstart + len;
+    }
+    else if (_pend - _pfree < need)
+    { // space not enough
+      int32_t flen = static_cast<int32_t>((_pend - _pfree) + (_pdata - _pstart));
+      int32_t dlen = static_cast<int32_t>(_pfree - _pdata);
 
-  // Internal slow-path routine used by ReadVarint32().
-  Status ReadVarint32Fallback(uint32_t *result);
+      if (flen < need || flen * 4 < dlen)
+      {
+        int32_t bufsize = static_cast<int32_t>((_pend - _pstart) * 2);
+        while (bufsize - dlen < need)
+        {
+          bufsize <<= 1;
+        }
 
-  RandomAccessFile *file_; // Not owned
-  int64_t file_pos_;       // Next position to read from in "file_"
-  uint64_t size_;          // Size of "buf_"
-  char *buf_;              // The buffer itself
-  // [pos_,limit_) hold the "limit_ - pos_" bytes just before "file_pos_"
-  char *pos_;   // Current position in "buf"
-  char *limit_; // Just past end of valid data in "buf"
+        unsigned char *newbuf = (unsigned char *)malloc(bufsize);
+        if (newbuf == NULL)
+        {
+          PANIC("expand data buffer failed, length: %d", bufsize);
+        }
+        assert(newbuf != NULL);
+        if (dlen > 0)
+        {
+          memcpy(newbuf, _pdata, dlen);
+        }
+        free(_pstart);
 
-  DISALLOW_COPY_AND_ASSIGN(InputBuffer);
+        _pdata = _pstart = newbuf;
+        _pfree = _pstart + dlen;
+        _pend = _pstart + bufsize;
+      }
+      else
+      {
+        memmove(_pstart, _pdata, dlen);
+        _pfree = _pstart + dlen;
+        _pdata = _pstart;
+      }
+    }
+  }
+
+private:
+  unsigned char *_pstart;
+  unsigned char *_pend;
+  unsigned char *_pfree;
+  unsigned char *_pdata;
 };
-
-// Implementation details.
-
-// Inlined for performance.
-inline Status InputBuffer::ReadVarint32(uint32_t *result)
-{
-  if (pos_ + kMaxVarint32Bytes <= limit_)
-  {
-    // Fast path: directly parse from buffered data.
-    // Reads strictly from the range [pos_, limit_).
-    const char *offset = GetVarint32Ptr(pos_, limit_, result);
-    if (offset == nullptr)
-      return Status::Error("Parsed past limit.");
-    pos_ = const_cast<char *>(offset);
-    return Status::OK();
-  }
-  else
-  {
-    return ReadVarint32Fallback(result);
-  }
-}
 
 class TCBuffer
 {
@@ -210,7 +596,7 @@ private:
   uint64_t _highWaterPercent;
 };
 
-struct TCSlice 
+struct TCSlice
 {
   explicit TCSlice(void *d = NULL, uint64_t ds = 0, uint64_t l = 0);
   void *data;
@@ -218,7 +604,7 @@ struct TCSlice
   uint64_t len;
 };
 
-class TCBufferPool 
+class TCBufferPool
 {
 public:
   TCBufferPool(uint64_t minBlock, uint64_t maxBlock);

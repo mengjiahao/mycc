@@ -100,6 +100,81 @@ private:
   time_t last_fire_time_;
 };
 
+class PageMemPool
+{
+public:
+  PageMemPool(char *pool, int32_t this_page_size, int32_t this_total_pages,
+              int32_t meta_len)
+  {
+    initialize(pool, this_page_size, this_total_pages, meta_len);
+  }
+  ~PageMemPool();
+
+  char *alloc_page();
+  char *alloc_page(int32_t &index);
+  void free_page(const char *page);
+  void free_page(int32_t index);
+  char *index_to_page(int32_t index);
+  int32_t page_to_index(char *page);
+  char *get_pool_addr()
+  {
+    return impl->get_pool_addr();
+  }
+  int32_t get_page_size()
+  {
+    return impl->get_page_size();
+  }
+  void display_statics()
+  {
+    impl->display_statics();
+  }
+  int32_t get_free_pages_num()
+  {
+    return impl->free_pages;
+  }
+  static const int32_t MAX_PAGES_NO = 65536;
+  static const int32_t MDB_VERSION_INFO_START = 12288;  //12k
+  static const int32_t MEM_HASH_METADATA_START = 16384; //16K
+  static const int32_t MDB_STATINFO_START = 32768;      //32K
+  static const int32_t MEM_POOL_METADATA_LEN = 524288;  // 512K
+private:
+  void initialize(char *pool, int32_t page_size, int32_t total_pages, int32_t meta_len);
+  static const int32_t BITMAP_SIZE = (MAX_PAGES_NO + 7) / 8;
+
+  struct mem_pool_impl
+  {
+    void initialize(char *tpool, int32_t page_size, int32_t total_pages,
+                    int32_t meta_len);
+    char *alloc_page(int32_t &index);
+    void free_page(const char *page);
+    void free_page(int32_t index);
+    char *index_to_page(int32_t index);
+    int32_t page_to_index(const char *page);
+    char *get_pool_addr();
+    int32_t get_page_size()
+    {
+      return page_size;
+    }
+
+    void display_statics()
+    {
+      printf("inited:%d,page_size:%d,total_pages:%d,"
+             "free_pages:%d,current_page:%d\n",
+             inited,
+             page_size, total_pages, free_pages, current_page);
+    }
+
+    int32_t inited;
+    int32_t page_size;
+    int32_t total_pages;
+    int32_t free_pages;
+    int32_t current_page;
+    uint8_t page_bitmap[BITMAP_SIZE];
+    char *pool;
+  };
+  mem_pool_impl *impl;
+};
+
 /*!
  * \brief A memory pool that allocate memory of fixed size and alignment.
  * \tparam size The size of each piece.
@@ -153,7 +228,7 @@ public:
 
 private:
   // page size of each member
-  static const int kPageSize = ((1 << 22) / size);
+  static const int32_t kPageSize = ((1 << 22) / size);
   // page to be requested.
   struct Page
   {
@@ -372,9 +447,9 @@ public:
 private:
   int64_t m_allocate_count;
   int64_t m_release_count;
-  int m_cached_count[kMaxCacheByte + 1];
+  int32_t m_cached_count[kMaxCacheByte + 1];
   char *m_cached_objects[kMaxCacheByte + 1][kMaxCacheCount];
-  int m_length;
+  int32_t m_length;
   char *m_buffer;
 };
 

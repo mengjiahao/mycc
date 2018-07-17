@@ -218,7 +218,7 @@ private:
  * \brief Helper trait class for easy allocation and deallocation.
  */
 template <typename T>
-struct ObjectPoolAllocatable
+struct SimpleObjectPoolAllocatable
 {
   /*!
    * \brief Create new object.
@@ -233,7 +233,7 @@ struct ObjectPoolAllocatable
    * Make sure the pointer to delete is allocated from this pool.
    */
   static void Delete(T *ptr);
-}; // struct ObjectPoolAllocatable
+}; // struct SimpleObjectPoolAllocatable
 
 template <typename T>
 SimpleObjectPool<T>::~SimpleObjectPool()
@@ -317,13 +317,13 @@ void SimpleObjectPool<T>::AllocateChunk()
 
 template <typename T>
 template <typename... Args>
-T *ObjectPoolAllocatable<T>::New(Args &&... args)
+T *SimpleObjectPoolAllocatable<T>::New(Args &&... args)
 {
   return SimpleObjectPool<T>::Get()->New(std::forward<Args>(args)...);
 }
 
 template <typename T>
-void ObjectPoolAllocatable<T>::Delete(T *ptr)
+void SimpleObjectPoolAllocatable<T>::Delete(T *ptr)
 {
   SimpleObjectPool<T>::Get()->Delete(ptr);
 }
