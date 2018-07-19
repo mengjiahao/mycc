@@ -289,33 +289,33 @@ ScopedRefCountedPtr<T> MakeScopedRefCountedPtr(T *t)
   return ScopedRefCountedPtr<T>(t);
 }
 
-////////////////////// Ref //////////////////////////////////////
+////////////////////// CCRef //////////////////////////////////////
 
-class Ref;
+class CCRef;
 
 /** 
-  * Interface that defines how to clone an Ref.
+  * Interface that defines how to clone an CCRef.
   */
-class RefClonable
+class CCRefClonable
 {
 public:
-  /** Returns a copy of the Ref. */
-  virtual RefClonable *clone() const = 0;
+  /** Returns a copy of the CCRef. */
+  virtual CCRefClonable *clone() const = 0;
 
-  virtual ~RefClonable(){};
+  virtual ~CCRefClonable(){};
 };
 
 /**
- * Ref is used for reference count management. If a class inherits from Ref,
+ * CCRef is used for reference count management. If a class inherits from CCRef,
  * then it is easy to be shared in different places.
  */
-class Ref
+class CCRef
 {
 public:
   /**
     * Retains the ownership.
     *
-    * This increases the Ref's reference count.
+    * This increases the CCRef's reference count.
     *
     * @see release, autorelease
     */
@@ -324,9 +324,9 @@ public:
   /**
     * Releases the ownership immediately.
     *
-    * This decrements the Ref's reference count.
+    * This decrements the CCRef's reference count.
     *
-    * If the reference count reaches 0 after the decrement, this Ref is
+    * If the reference count reaches 0 after the decrement, this CCRef is
     * destructed.
     *
     * @see retain, autorelease
@@ -336,51 +336,51 @@ public:
   /**
     * Releases the ownership sometime soon automatically.
     *
-    * This decrements the Ref's reference count at the end of current
+    * This decrements the CCRef's reference count at the end of current
     * autorelease pool block.
     *
-    * If the reference count reaches 0 after the decrement, this Ref is
+    * If the reference count reaches 0 after the decrement, this CCRef is
     * destructed.
     *
-    * @returns The Ref itself.
+    * @returns The CCRef itself.
     *
     * @see AutoreleasePool, retain, release
     */
-  Ref *autorelease();
+  CCRef *autorelease();
 
   /**
-    * Returns the Ref's current reference count.
+    * Returns the CCRef's current reference count.
     *
-    * @returns The Ref's reference count.
+    * @returns The CCRef's reference count.
     */
   uint32_t getReferenceCount() const;
 
 protected:
   /**
     * Constructor
-    * The Ref's reference count is 1 after construction.
+    * The CCRef's reference count is 1 after construction.
     */
-  Ref();
+  CCRef();
 
 public:
-  virtual ~Ref();
+  virtual ~CCRef();
 
 protected:
   /// count of references
   uint32_t _referenceCount;
 
-  friend class AutoreleasePool;
+  friend class CCRefAutoreleasePool;
 
   // Memory leak diagnostic data (only included when CC_REF_LEAK_DETECTION is defined and its value isn't zero)
 public:
   static void printLeaks();
 };
 
-class RefObjectFactory
+class CCRefObjectFactory
 {
 public:
-  typedef Ref *(*Instance)(void);
-  typedef std::function<Ref *(void)> InstanceFunc;
+  typedef CCRef *(*Instance)(void);
+  typedef std::function<CCRef *(void)> InstanceFunc;
   struct TInfo
   {
     TInfo(void);
@@ -395,19 +395,19 @@ public:
   };
   typedef std::unordered_map<string, TInfo> FactoryMap;
 
-  static RefObjectFactory *getInstance();
+  static CCRefObjectFactory *getInstance();
   static void destroyInstance();
-  Ref *createObject(const string &name);
+  CCRef *createObject(const string &name);
 
   void registerType(const TInfo &t);
   void removeAll();
 
 protected:
-  RefObjectFactory(void);
-  virtual ~RefObjectFactory(void);
+  CCRefObjectFactory(void);
+  virtual ~CCRefObjectFactory(void);
 
 private:
-  static RefObjectFactory *_sharedFactory;
+  static CCRefObjectFactory *_sharedFactory;
   FactoryMap _typeMap;
 };
 

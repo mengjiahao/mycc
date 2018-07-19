@@ -331,33 +331,33 @@ void SimpleObjectPoolAllocatable<T>::Delete(T *ptr)
 /**
  * A pool for managing autorelease objects.
  */
-class AutoreleasePool
+class CCRefAutoreleasePool
 {
 public:
   /**
    * @warning Don't create an autorelease pool in heap, create it in stack.
    */
-  AutoreleasePool();
+  CCRefAutoreleasePool();
 
   /**
    * Create an autorelease pool with specific name. This name is useful for debugging.
    * @warning Don't create an autorelease pool in heap, create it in stack.
    * @param name The name of created autorelease pool.
    */
-  AutoreleasePool(const string &name);
+  CCRefAutoreleasePool(const string &name);
 
-  ~AutoreleasePool();
+  ~CCRefAutoreleasePool();
 
   /**
    * Add a given object to this autorelease pool.
    *
    * The same object may be added several times to an autorelease pool. When the
-   * pool is destructed, the object's `Ref::release()` method will be called
+   * pool is destructed, the object's `CCRef::release()` method will be called
    * the same times as it was added.
    *
    * @param object    The object to be added into the autorelease pool.
    */
-  void addObject(Ref *object);
+  void addObject(CCRef *object);
 
   /**
    * Clear the autorelease pool.
@@ -380,7 +380,7 @@ public:
    * @param object The object to be checked.
    * @return True if the autorelease pool contains the object, false if not
    */
-  bool contains(Ref *object) const;
+  bool contains(CCRef *object) const;
 
   /**
    * Dump the objects that are put into the autorelease pool. It is used for debugging.
@@ -395,12 +395,12 @@ private:
    * The underlying array of object managed by the pool.
    *
    * Although Array retains the object once when an object is added, proper
-   * Ref::release() is called outside the array to make sure that the pool
+   * CCRef::release() is called outside the array to make sure that the pool
    * does not affect the managed object's reference count. So an object can
-   * be destructed properly by calling Ref::release() even if the object
+   * be destructed properly by calling CCRef::release() even if the object
    * is in the pool.
    */
-  std::vector<Ref *> _managedObjectArray;
+  std::vector<CCRef *> _managedObjectArray;
   string _name;
 
   /**
@@ -409,10 +409,10 @@ private:
   bool _isClearing;
 };
 
-class RefPoolManager
+class CCRefPoolManager
 {
 public:
-  static RefPoolManager *getInstance();
+  static CCRefPoolManager *getInstance();
 
   static void destroyInstance();
 
@@ -420,22 +420,22 @@ public:
    * Get current auto release pool, there is at least one auto release pool that created by engine.
    * You can create your own auto release pool at demand, which will be put into auto release pool stack.
    */
-  AutoreleasePool *getCurrentPool() const;
+  CCRefAutoreleasePool *getCurrentPool() const;
 
-  bool isObjectInPools(Ref *obj) const;
+  bool isObjectInPools(CCRef *obj) const;
 
-  friend class AutoreleasePool;
+  friend class CCRefAutoreleasePool;
 
 private:
-  RefPoolManager();
-  ~RefPoolManager();
+  CCRefPoolManager();
+  ~CCRefPoolManager();
 
-  void push(AutoreleasePool *pool);
+  void push(CCRefAutoreleasePool *pool);
   void pop();
 
-  static RefPoolManager *s_singleInstance;
+  static CCRefPoolManager *s_singleInstance;
 
-  std::vector<AutoreleasePool *> _releasePoolStack;
+  std::vector<CCRefAutoreleasePool *> _releasePoolStack;
 };
 
 } // namespace util

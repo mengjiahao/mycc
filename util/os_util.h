@@ -27,8 +27,7 @@ bool PopenCmd(const string cmd, string *ret_str);
 void Crash(const string &srcfile, int32_t srcline);
 
 Status LoadLibrary(const char *library_filename, void **handle);
-Status GetSymbolFromLibrary(void *handle, const char *symbol_name,
-                            void **symbol);
+Status GetSymbolFromLibrary(void *handle, const char *symbol_name, void **symbol);
 string FormatLibraryFileName(const string &name, const string &version);
 
 string GetSelfExeName();

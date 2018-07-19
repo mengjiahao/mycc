@@ -17,6 +17,10 @@ void UnblockAllSignals(sigset_t *old_sigset);
 void HookupSignalHandler();
 void UnhookSignalHandler();
 
+int32_t GetStackTrace(void **result, int32_t max_depth, int32_t skip_num);
+void FatalSignalHandler(int signum, siginfo_t *siginfo, void *ucontext);
+void InstallSignalHandler();
+
 } // namespace util
 } // namespace mycc
 

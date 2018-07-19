@@ -7,6 +7,9 @@ namespace mycc
 namespace util
 {
 
+const unsigned char BitSet::mask_[] =
+    {0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01};
+
 void Bitmap::Reset(uint64_t n)
 {
   const uint64_t num_words = NumWords(n);

@@ -28,6 +28,13 @@ Status::Status(int32_t code, const StringPiece &msg, const StringPiece &msg2)
   const uint64_t len1 = msg.size();
   const uint64_t len2 = msg2.size();
   const uint64_t size = len1 + (len2 ? (2 + len2) : 0);
+  if (1024 <= size)
+  {
+    state_ = std::unique_ptr<State>(new State);
+    state_->code = code;
+    state_->msg = "StatusTooLongMsg";
+    return;
+  }
   char result[1024]; // +1 for null terminator
   memcpy(result, msg.data(), len1);
   if (len2)

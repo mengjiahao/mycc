@@ -1,5 +1,6 @@
 
 #include "net_util.h"
+#include <stdio.h>
 
 namespace mycc
 {
@@ -161,6 +162,17 @@ uint64_t IPIntPortToInt(uint32_t ip, uint64_t port)
   ipport <<= 32;
   ipport |= ip;
   return ipport;
+}
+
+string GetLocalHostName()
+{
+  char str[kMaxHostNameSize + 1];
+  if (0 != gethostname(str, kMaxHostNameSize + 1))
+  {
+    return "";
+  }
+  string hostname(str);
+  return hostname;
 }
 
 } // namespace util

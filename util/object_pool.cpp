@@ -6,40 +6,40 @@ namespace mycc
 namespace util
 {
 
-AutoreleasePool::AutoreleasePool()
+CCRefAutoreleasePool::CCRefAutoreleasePool()
     : _name(""),
       _isClearing(false)
 {
   _managedObjectArray.reserve(150);
-  RefPoolManager::getInstance()->push(this);
+  CCRefPoolManager::getInstance()->push(this);
 }
 
-AutoreleasePool::AutoreleasePool(const string &name)
+CCRefAutoreleasePool::CCRefAutoreleasePool(const string &name)
     : _name(name),
       _isClearing(false)
 {
   _managedObjectArray.reserve(150);
-  RefPoolManager::getInstance()->push(this);
+  CCRefPoolManager::getInstance()->push(this);
 }
 
-AutoreleasePool::~AutoreleasePool()
+CCRefAutoreleasePool::~CCRefAutoreleasePool()
 {
-  //CCLOGINFO("deallocing AutoreleasePool: %p", this);
+  //CCLOGINFO("deallocing CCRefAutoreleasePool: %p", this);
   clear();
 
-  RefPoolManager::getInstance()->pop();
+  CCRefPoolManager::getInstance()->pop();
 }
 
-void AutoreleasePool::addObject(Ref *object)
+void CCRefAutoreleasePool::addObject(CCRef *object)
 {
   _managedObjectArray.push_back(object);
 }
 
-void AutoreleasePool::clear()
+void CCRefAutoreleasePool::clear()
 {
   _isClearing = true;
 
-  std::vector<Ref *> releasings;
+  std::vector<CCRef *> releasings;
   releasings.swap(_managedObjectArray);
   for (const auto &obj : releasings)
   {
@@ -49,7 +49,7 @@ void AutoreleasePool::clear()
   _isClearing = false;
 }
 
-bool AutoreleasePool::contains(Ref *object) const
+bool CCRefAutoreleasePool::contains(CCRef *object) const
 {
   for (const auto &obj : _managedObjectArray)
   {
@@ -59,7 +59,7 @@ bool AutoreleasePool::contains(Ref *object) const
   return false;
 }
 
-void AutoreleasePool::dump()
+void CCRefAutoreleasePool::dump()
 {
   //CCLOG("autorelease pool: %s, number of managed object %d\n", _name.c_str(), static_cast<int>(_managedObjectArray.size()));
   //CCLOG("%20s%20s%20s", "Object pointer", "Object id", "reference count");
@@ -71,52 +71,52 @@ void AutoreleasePool::dump()
 
 //--------------------------------------------------------------------
 //
-// RefPoolManager
+// CCRefPoolManager
 //
 //--------------------------------------------------------------------
 
-RefPoolManager *RefPoolManager::s_singleInstance = nullptr;
+CCRefPoolManager *CCRefPoolManager::s_singleInstance = nullptr;
 
-RefPoolManager *RefPoolManager::getInstance()
+CCRefPoolManager *CCRefPoolManager::getInstance()
 {
   if (s_singleInstance == nullptr)
   {
-    s_singleInstance = new (std::nothrow) RefPoolManager();
+    s_singleInstance = new (std::nothrow) CCRefPoolManager();
     // Add the first auto release pool
-    new AutoreleasePool("cocos2d autorelease pool");
+    new CCRefAutoreleasePool("cocos2d autorelease pool");
   }
   return s_singleInstance;
 }
 
-void RefPoolManager::destroyInstance()
+void CCRefPoolManager::destroyInstance()
 {
   delete s_singleInstance;
   s_singleInstance = nullptr;
 }
 
-RefPoolManager::RefPoolManager()
+CCRefPoolManager::CCRefPoolManager()
 {
   _releasePoolStack.reserve(10);
 }
 
-RefPoolManager::~RefPoolManager()
+CCRefPoolManager::~CCRefPoolManager()
 {
-  //CCLOGINFO("deallocing RefPoolManager: %p", this);
+  //CCLOGINFO("deallocing CCRefPoolManager: %p", this);
 
   while (!_releasePoolStack.empty())
   {
-    AutoreleasePool *pool = _releasePoolStack.back();
+    CCRefAutoreleasePool *pool = _releasePoolStack.back();
 
     delete pool;
   }
 }
 
-AutoreleasePool *RefPoolManager::getCurrentPool() const
+CCRefAutoreleasePool *CCRefPoolManager::getCurrentPool() const
 {
   return _releasePoolStack.back();
 }
 
-bool RefPoolManager::isObjectInPools(Ref *obj) const
+bool CCRefPoolManager::isObjectInPools(CCRef *obj) const
 {
   for (const auto &pool : _releasePoolStack)
   {
@@ -126,12 +126,12 @@ bool RefPoolManager::isObjectInPools(Ref *obj) const
   return false;
 }
 
-void RefPoolManager::push(AutoreleasePool *pool)
+void CCRefPoolManager::push(CCRefAutoreleasePool *pool)
 {
   _releasePoolStack.push_back(pool);
 }
 
-void RefPoolManager::pop()
+void CCRefPoolManager::pop()
 {
   assert(!_releasePoolStack.empty());
   _releasePoolStack.pop_back();

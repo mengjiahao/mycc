@@ -159,8 +159,7 @@ Status LoadLibrary(const char *library_filename, void **handle)
   return Status::OK();
 }
 
-Status GetSymbolFromLibrary(void *handle, const char *symbol_name,
-                            void **symbol)
+Status GetSymbolFromLibrary(void *handle, const char *symbol_name, void **symbol)
 {
   *symbol = dlsym(handle, symbol_name);
   if (!*symbol)

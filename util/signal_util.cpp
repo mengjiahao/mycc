@@ -1,8 +1,10 @@
 
 #include "signal_util.h"
+#include <stdio.h>
 #include <atomic>
 #include <sstream>
 #include "error_util.h"
+#include "time_util.h"
 
 namespace mycc
 { // namespace mycc
@@ -143,6 +145,101 @@ void UnhookSignalHandler()
   if (sigaction(SIGINT, &previousSigint, nullptr) == -1)
   {
     PANIC("Cannot uninstall SIGINT handler.");
+  }
+}
+
+static const struct
+{
+  int number;
+  const char *name;
+} g_failure_signals[] = {
+    {SIGSEGV, "SIGSEGV"},
+    {SIGILL, "SIGILL"},
+    {SIGFPE, "SIGFPE"},
+    {SIGABRT, "SIGABRT"},
+    {SIGBUS, "SIGBUS"},
+    {SIGTERM, "SIGTERM"}};
+
+static struct sigaction g_sigaction_bak[ARRAYSIZE_UNSAFE(g_failure_signals)];
+
+int32_t GetStackTrace(void **result, int32_t max_depth, int32_t skip_num)
+{
+  static const int32_t stack_len = 64;
+  void *stack[stack_len] = {0};
+
+  int32_t size = backtrace(stack, stack_len);
+
+  int32_t remain = size - (++skip_num);
+  if (remain < 0)
+  {
+    remain = 0;
+  }
+  if (remain > max_depth)
+  {
+    remain = max_depth;
+  }
+
+  for (int32_t i = 0; i < remain; i++)
+  {
+    result[i] = stack[i + skip_num];
+  }
+
+  return remain;
+}
+
+void FatalSignalHandler(int signum, siginfo_t *siginfo, void *ucontext)
+{
+  std::ostringstream oss;
+  oss << "[" << CurrentSystimeString() << "]";
+
+  const char *signame = "";
+  uint32_t i = 0;
+  for (; i < ARRAYSIZE_UNSAFE(g_failure_signals); i++)
+  {
+    if (g_failure_signals[i].number == signum)
+    {
+      signame = g_failure_signals[i].name;
+      break;
+    }
+  }
+  oss << "[(SIGNAL)(" << signame << ")][FATAL]";
+
+  void *stack[32] = {0};
+  int32_t depth = GetStackTrace(stack, ARRAYSIZE_UNSAFE(stack), 1);
+  char **symbols = backtrace_symbols(stack, depth);
+
+  oss << "\nstack trace:\n";
+  for (int32_t i = 0; i < depth; i++)
+  {
+    oss << "#" << i << " " << symbols[i] << "\n";
+  }
+  oss << "\n";
+
+  fprintf(stderr, "%s\n", oss.str().c_str());
+
+  // restore
+  sigaction(signum, &g_sigaction_bak[i], NULL);
+  kill(getpid(), signum);
+}
+
+void InstallSignalHandler()
+{
+  static bool _installed = false;
+  if (_installed)
+  {
+    return;
+  }
+  _installed = true;
+
+  struct sigaction sig_action;
+  memset(&sig_action, 0, sizeof(sig_action));
+  sigemptyset(&sig_action.sa_mask);
+  sig_action.sa_flags |= SA_SIGINFO;
+  sig_action.sa_sigaction = &FatalSignalHandler;
+
+  for (uint32_t i = 0; i < ARRAYSIZE_UNSAFE(g_failure_signals); i++)
+  {
+    sigaction(g_failure_signals[i].number, &sig_action, &g_sigaction_bak[i]);
   }
 }
 

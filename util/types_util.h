@@ -114,59 +114,23 @@ using ::std::string;
 namespace port
 {
 
-// constexpr bool kLittleEndian = __BYTE_ORDER == __ORDER_LITTLE_ENDIAN;
-constexpr bool kLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
+constexpr bool kLittleEndian = __BYTE_ORDER == __LITTLE_ENDIAN;
 
 //  Memory locations within the same cache line are subject to destructive
-  //  interference, also known as false sharing, which is when concurrent
-  //  accesses to these different memory locations from different cores, where at
-  //  least one of the concurrent accesses is or involves a store operation,
-  //  induce contention and harm performance.
-  //
-  //  Microbenchmarks indicate that pairs of cache lines also see destructive
-  //  interference under heavy use of atomic operations, as observed for atomic
-  //  increment on Sandy Bridge.
-  //
-  //  We assume a cache line size of 64, so we use a cache line pair size of 128
-  //  to avoid destructive interference.
-  //
-  //  mimic: std::hardware_destructive_interference_size, C++17
-constexpr uint64_t k_hardware_destructive_interference_size = 128;
-
-// Prefetching support
+//  interference, also known as false sharing, which is when concurrent
+//  accesses to these different memory locations from different cores, where at
+//  least one of the concurrent accesses is or involves a store operation,
+//  induce contention and harm performance.
 //
-// Defined behavior on some of the uarchs:
-// PREFETCH_HINT_T0:
-//   prefetch to all levels of the hierarchy (except on p4: prefetch to L2)
-// PREFETCH_HINT_NTA:
-//   p4: fetch to L2, but limit to 1 way (out of the 8 ways)
-//   core: skip L2, go directly to L1
-//   k8 rev E and later: skip L2, can go to either of the 2-ways in L1
-enum PrefetchHint
-{
-  PREFETCH_HINT_T0 = 3, // More temporal locality
-  PREFETCH_HINT_T1 = 2,
-  PREFETCH_HINT_T2 = 1, // Less temporal locality
-  PREFETCH_HINT_NTA = 0 // No temporal locality
-};
-template <PrefetchHint hint>
-void prefetch(const void *x);
-
-// ---------------------------------------------------------------------------
-// Inline implementation
-// ---------------------------------------------------------------------------
-template <PrefetchHint hint>
-inline void prefetch(const void *x)
-{
-// Check of COMPILER_GCC macro below is kept only for backward-compatibility
-// reasons. COMPILER_GCC3 is the macro that actually enables prefetch.
-#if defined(__llvm__) || defined(COMPILER_GCC) || defined(COMPILER_GCC3)
-  __builtin_prefetch(x, 0, hint);
-#else
-  // You get no effect.  Feel free to add more sections above.
-  static_assert(false, "prefetch unimplemented");
-#endif
-}
+//  Microbenchmarks indicate that pairs of cache lines also see destructive
+//  interference under heavy use of atomic operations, as observed for atomic
+//  increment on Sandy Bridge.
+//
+//  We assume a cache line size of 64, so we use a cache line pair size of 128
+//  to avoid destructive interference.
+//
+//  mimic: std::hardware_destructive_interference_size, C++17
+constexpr uint64_t k_hardware_destructive_interference_size = 128;
 
 } // namespace port
 

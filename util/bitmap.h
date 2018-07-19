@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <vector>
+#include "atomic_util.h"
 #include "math_util.h"
 #include "types_util.h"
 
@@ -177,6 +178,86 @@ private:
   std::vector<bool> set_;
 };
 
+class BitSet
+{
+public:
+  BitSet(char *data, int32_t count, int32_t cursor = 0)
+      : data_(data), count_(count), cursor_(cursor)
+  {
+  }
+
+  ~BitSet() {}
+
+  bool test(int32_t p)
+  {
+    return (data_[p / SLOT_SIZE] & mask_[p % SLOT_SIZE]) != 0;
+  }
+
+  void set(int32_t p)
+  {
+    data_[p / SLOT_SIZE] |= mask_[p % SLOT_SIZE];
+    // last set position
+    cursor_ = p;
+  }
+
+  void reset()
+  {
+    memset(data_, 0, byte_size());
+  }
+
+  void reset(int32_t p)
+  {
+    data_[p / SLOT_SIZE] &= ~mask_[p % SLOT_SIZE];
+  }
+
+  int32_t pick()
+  {
+    // we consider next position of last set() as un-set
+    int32_t i = (cursor_ + 1) % count_;
+    while (i != cursor_)
+    {
+      if (!test(i))
+      {
+        break;
+      }
+      i++;
+      if (i >= count_)
+      {
+        i = 0;
+      }
+    }
+    return (i == cursor_) ? -1 : i;
+  }
+
+  int32_t size()
+  {
+    return count_;
+  }
+
+  int32_t byte_size()
+  {
+    return byte_size(count_);
+  }
+
+  static int32_t byte_size(int32_t count)
+  {
+    return (count + count - 1) / SLOT_SIZE;
+  }
+
+  char *data()
+  {
+    return data_;
+  }
+
+private:
+  char *data_;
+  int32_t count_;
+  int32_t cursor_; // last set position
+
+  static const int32_t SLOT_SIZE = 8;
+  static const unsigned char mask_[SLOT_SIZE];
+};
+
 class Bitmap
 {
 public:
@@ -257,6 +338,80 @@ inline void Bitmap::clear(uint64_t i)
   //DCHECK_LT(i, nbits_);
   word_[i / kBits] &= ~Mask(i % kBits);
 }
+
+class StaticBitMap
+{
+public:
+  StaticBitMap(int32_t size)
+  {
+    size_ = size;
+    used_size_ = ((size + 0x07) >> 3) << 3;
+    bitmap_ = new unsigned char[used_size_];
+    memset(bitmap_, 0, sizeof(char) * used_size_);
+  }
+
+  ~StaticBitMap()
+  {
+    delete[] bitmap_;
+    bitmap_ = NULL;
+  }
+
+  inline bool test(int32_t index)
+  {
+    return (bitmap_[index >> 3] & (1 << (index & 0x07)));
+  }
+
+  inline void on(int32_t index)
+  {
+    unsigned char b = 0;
+    unsigned char c = 0;
+    int32_t idx = index >> 3;
+    int32_t offset = index & 0x07;
+    do
+    {
+      b = bitmap_[idx];
+      c = b | (1 << offset);
+    } while (b != atomic_compare_exchange(bitmap_ + idx, c, b));
+  }
+
+  inline void off(int32_t index)
+  {
+    unsigned char b = 0;
+    unsigned char c = 0;
+    int32_t idx = index >> 3;
+    unsigned char offset = index & 0x07;
+    do
+    {
+      b = bitmap_[idx];
+      c = b & ((~(1 << offset)) & 0xff);
+    } while (b != atomic_compare_exchange(bitmap_ + idx, c, b));
+  }
+
+  inline int32_t size()
+  {
+    return size_;
+  }
+
+  inline StaticBitMap *clone()
+  {
+    unsigned char *b = new unsigned char[used_size_];
+    memcpy(b, bitmap_, used_size_);
+    return new StaticBitMap(b, size_, used_size_);
+  }
+
+private:
+  StaticBitMap(unsigned char *b, int32_t size, int32_t used_size)
+  {
+    bitmap_ = b;
+    size_ = size;
+    used_size_ = used_size;
+  }
+
+private:
+  int32_t size_;
+  int32_t used_size_;
+  unsigned char *bitmap_;
+};
 
 } // namespace util
 } // namespace mycc

@@ -989,7 +989,7 @@ void TBLogger::rotateLog(const char *filename, const char *fmt)
       pthread_mutex_lock(&_fileIndexMutex);
       if (_fileList.size() >= _maxFileIndex)
       {
-        std::string oldFile = _fileList.front();
+        string oldFile = _fileList.front();
         _fileList.pop_front();
         unlink(oldFile.c_str());
       }
@@ -1002,7 +1002,7 @@ void TBLogger::rotateLog(const char *filename, const char *fmt)
       pthread_mutex_lock(&_fileIndexMutex);
       if (_wf_file_list.size() >= _maxFileIndex)
       {
-        std::string old_wf_file = _wf_file_list.front();
+        string old_wf_file = _wf_file_list.front();
         _wf_file_list.pop_front();
         unlink(old_wf_file.c_str());
       }

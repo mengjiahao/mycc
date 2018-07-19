@@ -373,8 +373,8 @@ public:
     uint64_t index = (h >> 8) & mask_; // Holds bucket num and index-in-bucket
     uint32_t bi = index & (kWidth - 1);
     Bucket *b = &array_[index >> kBase];
-    port::prefetch<port::PREFETCH_HINT_T0>(&b->marker[bi]);
-    port::prefetch<port::PREFETCH_HINT_T0>(&b->storage.key[bi]);
+    BUILTIN_PREFETCH(&b->marker[bi], 0, 3);
+    BUILTIN_PREFETCH(&b->storage.key[bi], 0, 3);
   }
 
   inline void MaybeResize()

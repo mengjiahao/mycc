@@ -16,6 +16,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <deque>
+#include <iostream>
 #include <new>
 #include <sstream>
 #include <string>
@@ -34,6 +35,46 @@ enum LogLevel
   WARNING = 8,
   ERROR = 16,
   FATAL = 32,
+};
+
+class DateLogger
+{
+public:
+  DateLogger() {}
+  const char *HumanDate()
+  {
+    time_t time_value = time(NULL);
+    struct tm *pnow;
+    struct tm now;
+    pnow = localtime_r(&time_value, &now);
+    snprintf(buffer_, sizeof(buffer_), "%02d:%02d:%02d",
+             pnow->tm_hour, pnow->tm_min, pnow->tm_sec);
+    return buffer_;
+  }
+
+private:
+  char buffer_[9];
+};
+
+class LogMessage
+{
+public:
+  LogMessage(const char *file, int line)
+      : log_stream_(std::cerr)
+  {
+    log_stream_ << "[" << pretty_date_.HumanDate() << "] " << file << ":"
+                << line << ": ";
+  }
+  ~LogMessage() { log_stream_ << '\n'; }
+  std::ostream &stream() { return log_stream_; }
+
+protected:
+  std::ostream &log_stream_;
+
+private:
+  DateLogger pretty_date_;
+  LogMessage(const LogMessage &);
+  void operator=(const LogMessage &);
 };
 
 ////////////////////// BD LOG ///////////////////////////
@@ -142,8 +183,8 @@ public:
   int _wf_level;
 
 private:
-  std::deque<std::string> _fileList;
-  std::deque<std::string> _wf_file_list;
+  std::deque<string> _fileList;
+  std::deque<string> _wf_file_list;
   static const char *const _errstr[];
   pthread_mutex_t _fileSizeMutex;
   pthread_mutex_t _fileIndexMutex;

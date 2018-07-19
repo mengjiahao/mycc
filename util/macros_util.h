@@ -3,6 +3,7 @@
 #define MYCC_UTIL_MACROS_UTIL_H_
 
 #include <assert.h>
+#include <float.h>
 #include <inttypes.h> // PRId64
 #include <stddef.h>   // For size_t.
 
@@ -74,6 +75,22 @@
 #define UNLIKELY(expr) (expr)
 #endif
 
+// Prefetching support
+//
+// Defined behavior on some of the uarchs:
+// PREFETCH_HINT_T0:
+//   prefetch to all levels of the hierarchy (except on p4: prefetch to L2)
+// PREFETCH_HINT_NTA:
+//   p4: fetch to L2, but limit to 1 way (out of the 8 ways)
+//   core: skip L2, go directly to L1
+//   k8 rev E and later: skip L2, can go to either of the 2-ways in L1
+// enum PrefetchHint
+// {
+//   PREFETCH_HINT_T0 = 3, // More temporal locality
+//   PREFETCH_HINT_T1 = 2,
+//   PREFETCH_HINT_T2 = 1, // Less temporal locality
+//   PREFETCH_HINT_NTA = 0 // No temporal locality
+// };
 #if defined(COMPILER_GCC)
 #define BUILTIN_PREFETCH(addr, rw, locality) __builtin_prefetch(addr, rw, locality)
 #else
@@ -279,6 +296,9 @@ private:                                               \
 
 #define BASE_VERSION_CHECK(major, minor, patch) ((major << 16) | (minor << 8) | (patch))
 
+#define PRId64_FORMAT "%" PRId64
+#define PRIu64_FORMAT "%" PRIu64
+
 // Concatenate numbers in c/c++ macros.
 #ifndef BASE_CONCAT
 #define BASE_CONCAT(a, b) BASE_CONCAT_HELPER(a, b)
@@ -314,9 +334,6 @@ private:                                               \
 #define CONTAINER_OF(address, type, field) \
   ((type *)((char *)(address)-FIELD_OFFSET(type, field)))
 #endif
-
-#define PRId64_FORMAT "%" PRId64
-#define PRIu64_FORMAT "%" PRIu64
 
 #define BASE_SAFE_DELETE(p) \
   do                        \
@@ -363,6 +380,20 @@ private:                                               \
   eintr_wrapper_result;                                   \
 })
 
+#define IGNORE_EINTR(x) ({                            \
+  BASE_TYPEOF(x)                                      \
+  eintr_wrapper_result;                               \
+  do                                                  \
+  {                                                   \
+    eintr_wrapper_result = (x);                       \
+    if (eintr_wrapper_result == -1 && errno == EINTR) \
+    {                                                 \
+      eintr_wrapper_result = 0;                       \
+    }                                                 \
+  } while (0);                                        \
+  eintr_wrapper_result;                               \
+})
+
 // Round down 'x' to the nearest 'align' boundary
 #define ALIGN_DOWN(x, align) ((x) & (~(align) + 1))
 
@@ -370,5 +401,18 @@ private:                                               \
 #define ALIGN_UP(x, align) (((x) + ((align)-1)) & (~(align) + 1))
 
 #define IS_SIGNED_TYPE(type) ((type)-1 < (type)0)
+
+#define BASE_SWAP(x, y, type) \
+  {                           \
+    type temp = (x);          \
+    x = y;                    \
+    y = temp;                 \
+  }
+
+// new callbacks based on C++11
+#define BASE_CALLBACK_0(__selector__, __target__, ...) std::bind(&__selector__, __target__, ##__VA_ARGS__)
+#define BASE_CALLBACK_1(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, ##__VA_ARGS__)
+#define BASE_CALLBACK_2(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, ##__VA_ARGS__)
+#define BASE_CALLBACK_3(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, ##__VA_ARGS__)
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_
