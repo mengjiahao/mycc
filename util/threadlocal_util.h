@@ -28,13 +28,18 @@ template <class T>
 class PthreadTLS
 {
 public:
-  PthreadTLS()
+  typedef void (*CleanupFuncType)(void *);
+
+  PthreadTLS(CleanupFuncType cleanup = NULL)
   {
-    pthread_key_create(&key, NULL);
+    pthread_key_create(&key, cleanup);
   }
-  virtual ~PthreadTLS() {}
+  ~PthreadTLS()
+  {
+    pthread_key_delete(key);
+  }
   T get() { return (T)pthread_getspecific(key); }
-  void set(T data) { pthread_setspecific(key, (void *)data); }
+  void set(T value) { pthread_setspecific(key, (void *)value); }
 
 private:
   pthread_key_t key;

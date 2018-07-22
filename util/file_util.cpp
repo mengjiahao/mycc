@@ -18,8 +18,8 @@
 #include <iostream>
 #include <new> // placement new
 #include <sstream>
-
 #include <linux/limits.h> // PATH_MAX
+#include "math_util.h"
 
 namespace mycc
 {
@@ -247,10 +247,10 @@ int64_t safe_splice_exact(int fd_in, int64_t *off_in, int fd_out,
   return 0;
 }
 
-int safe_write_file(const char *base, const char *file,
-                    const char *val, uint64_t vallen)
+int32_t safe_write_file(const char *base, const char *file,
+                        const char *val, uint64_t vallen)
 {
-  int ret;
+  int32_t ret;
   char fn[PATH_MAX];
   char tmp[PATH_MAX];
   int fd;
@@ -258,7 +258,7 @@ int safe_write_file(const char *base, const char *file,
   // does the file already have correct content?
   char oldval[80];
   ret = safe_read_file(base, file, oldval, sizeof(oldval));
-  if (ret == (int)vallen && memcmp(oldval, val, vallen) == 0)
+  if (ret == (int32_t)vallen && memcmp(oldval, val, vallen) == 0)
     return 0; // yes.
 
   snprintf(fn, sizeof(fn), "%s/%s", base, file);
@@ -307,11 +307,12 @@ int safe_write_file(const char *base, const char *file,
   return ret;
 }
 
-int safe_read_file(const char *base, const char *file,
-                   char *val, uint64_t vallen)
+int32_t safe_read_file(const char *base, const char *file,
+                       char *val, uint64_t vallen)
 {
   char fn[PATH_MAX];
-  int fd, len;
+  int fd;
+  int32_t len;
 
   snprintf(fn, sizeof(fn), "%s/%s", base, file);
   fd = open(fn, O_RDONLY);
@@ -330,7 +331,7 @@ int safe_read_file(const char *base, const char *file,
   return len;
 }
 
-int make_dir(const string &path)
+int32_t make_dir(const string &path)
 {
   if (path.empty())
   {
@@ -349,7 +350,7 @@ int make_dir(const string &path)
   return 0;
 }
 
-int make_dir_p(const string &path)
+int32_t make_dir_p(const string &path)
 {
   if (path.empty())
   {
@@ -360,11 +361,11 @@ int make_dir_p(const string &path)
     return -1;
   }
 
-  int len = path.length();
+  int32_t len = path.length();
   char tmp[PATH_MAX] = {0};
   snprintf(tmp, sizeof(tmp), "%s", path.c_str());
 
-  for (int i = 1; i < len; i++)
+  for (int32_t i = 1; i < len; i++)
   {
     if (tmp[i] != '/')
     {
@@ -1585,6 +1586,275 @@ int TempFile::save_bin(const void *buf, uint64_t count)
     return -1;
   }
   return 0;
+}
+
+RollFile::RollFile() : m_path("./log"), m_name("roll.log")
+{
+  m_last_error[0] = 0;
+  m_file_size = 10 * 1024 * 1024;
+  m_roll_num = 10;
+  m_file = NULL;
+}
+
+RollFile::RollFile(const string &path, const string &name)
+    : m_path(path), m_name(name)
+{
+  m_last_error[0] = 0;
+  m_file_size = 10 * 1024 * 1024;
+  m_roll_num = 10;
+  m_file = NULL;
+}
+
+RollFile::~RollFile()
+{
+  if (m_file)
+  {
+    fclose(m_file);
+  }
+}
+
+FILE *RollFile::GetFile()
+{
+  if (m_file != NULL)
+  {
+    long size = ftell(m_file);
+    // ftell fail, restart roll
+    if (size < 0 || size > m_file_size)
+    {
+      Roll();
+    }
+  }
+  else
+  {
+    if (make_dir_p(m_path) != 0)
+    {
+      //_PEBBLE_LOG_LAST_ERROR("mkdir %s failed %s", m_path.c_str(), DirUtil::GetLastError());
+      return NULL;
+    }
+
+    string filename(m_path);
+    filename.append("/");
+    filename.append(m_name);
+    m_file = fopen(filename.c_str(), "a+");
+  }
+  return m_file;
+}
+
+int32_t RollFile::SetFileName(const string &name)
+{
+  if (name.empty())
+  {
+    //_PEBBLE_LOG_LAST_ERROR("name is empty");
+    return -1;
+  }
+  m_name = name;
+  return 0;
+}
+
+int32_t RollFile::SetFilePath(const string &path)
+{
+  if (path.empty())
+  {
+    //_PEBBLE_LOG_LAST_ERROR("path is empty");
+    return -1;
+  }
+
+  int32_t ret = make_dir_p(path);
+  if (ret != 0)
+  {
+    //_PEBBLE_LOG_LAST_ERROR("mkdir %s failed %s", m_path.c_str(), DirUtil::GetLastError());
+    return -1;
+  }
+
+  m_path.assign(path);
+  return 0;
+}
+
+int32_t RollFile::SetFileSize(uint32_t file_size)
+{
+  if (0 == file_size)
+  {
+    //_PEBBLE_LOG_LAST_ERROR("file size = 0");
+    return -1;
+  }
+  m_file_size = file_size;
+  return 0;
+}
+
+int32_t RollFile::SetRollNum(uint32_t roll_num)
+{
+  if (0 == roll_num)
+  {
+    //_PEBBLE_LOG_LAST_ERROR("roll num = 0");
+    return -1;
+  }
+  m_roll_num = roll_num;
+  return 0;
+}
+
+void RollFile::Roll()
+{
+  if (m_file != NULL)
+  {
+    fclose(m_file);
+  }
+
+  uint32_t pos = 0;
+  struct stat file_info;
+  int64_t min_timestamp = INT64_MAX;
+  for (uint32_t i = 1; i < m_roll_num; i++)
+  {
+    std::ostringstream oss;
+    oss << m_path << "/" << m_name << "." << i;
+
+    if (stat(oss.str().c_str(), &file_info) == 0)
+    {
+      if (file_info.st_mtime < min_timestamp)
+      {
+        min_timestamp = file_info.st_mtime;
+        pos = i;
+      }
+    }
+    else
+    {
+      pos = i;
+      break;
+    }
+  }
+
+  std::ostringstream oss;
+  oss << m_path << "/" << m_name;
+  string f0(oss.str());
+  if (pos > 0)
+  {
+    oss << "." << pos;
+    string fn(oss.str());
+    remove(fn.c_str());             // rm fn
+    rename(f0.c_str(), fn.c_str()); // mv f0 fn
+  }
+  m_file = fopen(f0.c_str(), "w+");
+}
+
+void RollFile::Close()
+{
+  if (m_file)
+  {
+    fclose(m_file);
+    m_file = NULL;
+  }
+}
+
+void RollFile::Flush()
+{
+  if (m_file)
+  {
+    fflush(m_file);
+  }
+}
+
+ReadSmallFile::ReadSmallFile(const string &filename)
+    : fd_(::open(filename.c_str(), O_RDONLY | O_CLOEXEC)),
+      err_(0)
+{
+  buf_[0] = '\0';
+  if (fd_ < 0)
+  {
+    err_ = errno;
+  }
+}
+
+ReadSmallFile::~ReadSmallFile()
+{
+  if (fd_ >= 0)
+  {
+    ::close(fd_); // FIXME: check EINTR
+  }
+}
+
+// return errno
+int ReadSmallFile::readToString(int32_t maxSize,
+                                string *content,
+                                int64_t *fileSize,
+                                int64_t *modifyTime,
+                                int64_t *createTime)
+{
+  static_assert(sizeof(off_t) == 8, "");
+  assert(content != NULL);
+  int err = err_;
+  if (fd_ >= 0)
+  {
+    content->clear();
+
+    if (fileSize)
+    {
+      struct stat statbuf;
+      if (::fstat(fd_, &statbuf) == 0)
+      {
+        if (S_ISREG(statbuf.st_mode))
+        {
+          *fileSize = statbuf.st_size;
+          content->reserve(static_cast<int32_t>(MATH_MIN((int64_t)(maxSize), *fileSize)));
+        }
+        else if (S_ISDIR(statbuf.st_mode))
+        {
+          err = EISDIR;
+        }
+        if (modifyTime)
+        {
+          *modifyTime = statbuf.st_mtime;
+        }
+        if (createTime)
+        {
+          *createTime = statbuf.st_ctime;
+        }
+      }
+      else
+      {
+        err = errno;
+      }
+    }
+
+    while (content->size() < (uint64_t)(maxSize))
+    {
+      uint64_t toRead = MATH_MIN((uint64_t)(maxSize)-content->size(), sizeof(buf_));
+      ssize_t n = ::read(fd_, buf_, toRead);
+      if (n > 0)
+      {
+        content->append(buf_, n);
+      }
+      else
+      {
+        if (n < 0)
+        {
+          err = errno;
+        }
+        break;
+      }
+    }
+  }
+  return err;
+}
+
+int ReadSmallFile::readToBuffer(int32_t *size)
+{
+  int err = err_;
+  if (fd_ >= 0)
+  {
+    ssize_t n = ::pread(fd_, buf_, sizeof(buf_) - 1, 0);
+    if (n >= 0)
+    {
+      if (size)
+      {
+        *size = static_cast<int32_t>(n);
+      }
+      buf_[n] = '\0';
+    }
+    else
+    {
+      err = errno;
+    }
+  }
+  return err;
 }
 
 } // namespace util

@@ -852,5 +852,8 @@ void BGThreadPool::ThreadProc()
   }
 }
 
+std::unique_ptr<TaskAsyncThreadPool> TaskAsyncThreadPool::threadpool(nullptr);
+std::once_flag TaskAsyncThreadPool::init_flag;
+
 } // namespace util
 } // namespace mycc

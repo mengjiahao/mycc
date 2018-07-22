@@ -14,13 +14,12 @@ namespace util
 
 const VariantVector VariantVectorNull;
 const VariantMap VariantMapNull;
-const VariantMapIntKey VariantMapIntKeyNull;
-
+const VariantMapInt32Key VariantMapInt32KeyNull;
 const Variant Variant::Null;
 
 static const uint32_t MAX_ITOA_BUFFER_SIZE = 256;
 
-double atof(const char *str)
+static double atof(const char *str)
 {
   if (str == nullptr)
   {
@@ -53,15 +52,15 @@ Variant::Variant(unsigned char v)
 }
 
 Variant::Variant(int32_t v)
-    : _type(Type::INTEGER)
+    : _type(Type::INT32)
 {
-  _field.intVal = v;
+  _field.int32Val = v;
 }
 
 Variant::Variant(uint32_t v)
-    : _type(Type::UNSIGNED)
+    : _type(Type::UINT32)
 {
-  _field.unsignedVal = v;
+  _field.unsigned32Val = v;
 }
 
 Variant::Variant(float v)
@@ -127,18 +126,18 @@ Variant::Variant(VariantMap &&v)
   *_field.mapVal = std::move(v);
 }
 
-Variant::Variant(const VariantMapIntKey &v)
-    : _type(Type::INT_KEY_MAP)
+Variant::Variant(const VariantMapInt32Key &v)
+    : _type(Type::INT32_KEY_MAP)
 {
-  _field.intKeyMapVal = new (std::nothrow) VariantMapIntKey();
-  *_field.intKeyMapVal = v;
+  _field.int32KeyMapVal = new (std::nothrow) VariantMapInt32Key();
+  *_field.int32KeyMapVal = v;
 }
 
-Variant::Variant(VariantMapIntKey &&v)
-    : _type(Type::INT_KEY_MAP)
+Variant::Variant(VariantMapInt32Key &&v)
+    : _type(Type::INT32_KEY_MAP)
 {
-  _field.intKeyMapVal = new (std::nothrow) VariantMapIntKey();
-  *_field.intKeyMapVal = std::move(v);
+  _field.int32KeyMapVal = new (std::nothrow) VariantMapInt32Key();
+  *_field.int32KeyMapVal = std::move(v);
 }
 
 Variant::Variant(const Variant &other)
@@ -169,11 +168,11 @@ Variant &Variant::operator=(const Variant &other)
     case Type::BYTE:
       _field.byteVal = other._field.byteVal;
       break;
-    case Type::INTEGER:
-      _field.intVal = other._field.intVal;
+    case Type::INT32:
+      _field.int32Val = other._field.int32Val;
       break;
-    case Type::UNSIGNED:
-      _field.unsignedVal = other._field.unsignedVal;
+    case Type::UINT32:
+      _field.unsigned32Val = other._field.unsigned32Val;
       break;
     case Type::FLOAT:
       _field.floatVal = other._field.floatVal;
@@ -205,12 +204,12 @@ Variant &Variant::operator=(const Variant &other)
       }
       *_field.mapVal = *other._field.mapVal;
       break;
-    case Type::INT_KEY_MAP:
-      if (_field.intKeyMapVal == nullptr)
+    case Type::INT32_KEY_MAP:
+      if (_field.int32KeyMapVal == nullptr)  
       {
-        _field.intKeyMapVal = new (std::nothrow) VariantMapIntKey();
+        _field.int32KeyMapVal = new (std::nothrow) VariantMapInt32Key();
       }
-      *_field.intKeyMapVal = *other._field.intKeyMapVal;
+      *_field.int32KeyMapVal = *other._field.int32KeyMapVal;
       break;
     default:
       break;
@@ -229,11 +228,11 @@ Variant &Variant::operator=(Variant &&other)
     case Type::BYTE:
       _field.byteVal = other._field.byteVal;
       break;
-    case Type::INTEGER:
-      _field.intVal = other._field.intVal;
+    case Type::INT32:
+      _field.int32Val = other._field.int32Val;
       break;
-    case Type::UNSIGNED:
-      _field.unsignedVal = other._field.unsignedVal;
+    case Type::UINT32:
+      _field.unsigned32Val = other._field.unsigned32Val;
       break;
     case Type::FLOAT:
       _field.floatVal = other._field.floatVal;
@@ -253,8 +252,8 @@ Variant &Variant::operator=(Variant &&other)
     case Type::MAP:
       _field.mapVal = other._field.mapVal;
       break;
-    case Type::INT_KEY_MAP:
-      _field.intKeyMapVal = other._field.intKeyMapVal;
+    case Type::INT32_KEY_MAP:
+      _field.int32KeyMapVal = other._field.int32KeyMapVal;
       break;
     default:
       break;
@@ -277,15 +276,15 @@ Variant &Variant::operator=(unsigned char v)
 
 Variant &Variant::operator=(int32_t v)
 {
-  reset(Type::INTEGER);
-  _field.intVal = v;
+  reset(Type::INT32); 
+  _field.int32Val = v;
   return *this;
 }
 
 Variant &Variant::operator=(uint32_t v)
 {
-  reset(Type::UNSIGNED);
-  _field.unsignedVal = v;
+  reset(Type::UINT32); 
+  _field.unsigned32Val = v;
   return *this;
 }
 
@@ -352,17 +351,17 @@ Variant &Variant::operator=(VariantMap &&v)
   return *this;
 }
 
-Variant &Variant::operator=(const VariantMapIntKey &v)
+Variant &Variant::operator=(const VariantMapInt32Key &v) 
 {
-  reset(Type::INT_KEY_MAP);
-  *_field.intKeyMapVal = v;
+  reset(Type::INT32_KEY_MAP);
+  *_field.int32KeyMapVal = v;
   return *this;
 }
 
-Variant &Variant::operator=(VariantMapIntKey &&v)
+Variant &Variant::operator=(VariantMapInt32Key &&v)
 {
-  reset(Type::INT_KEY_MAP);
-  *_field.intKeyMapVal = std::move(v);
+  reset(Type::INT32_KEY_MAP);
+  *_field.int32KeyMapVal = std::move(v);
   return *this;
 }
 
@@ -392,10 +391,10 @@ bool Variant::operator==(const Variant &v) const
   {
   case Type::BYTE:
     return v._field.byteVal == this->_field.byteVal;
-  case Type::INTEGER:
-    return v._field.intVal == this->_field.intVal;
-  case Type::UNSIGNED:
-    return v._field.unsignedVal == this->_field.unsignedVal;
+  case Type::INT32:
+    return v._field.int32Val == this->_field.int32Val;
+  case Type::UINT32:
+    return v._field.unsigned32Val == this->_field.unsigned32Val;
   case Type::BOOLEAN:
     return v._field.boolVal == this->_field.boolVal;
   case Type::STRING:
@@ -434,10 +433,10 @@ bool Variant::operator==(const Variant &v) const
     }
     return true;
   }
-  case Type::INT_KEY_MAP:
+  case Type::INT32_KEY_MAP:
   {
-    const auto &map1 = *(this->_field.intKeyMapVal);
-    const auto &map2 = *(v._field.intKeyMapVal);
+    const auto &map1 = *(this->_field.int32KeyMapVal);
+    const auto &map2 = *(v._field.int32KeyMapVal);
     for (const auto &kvp : map1)
     {
       auto it = map2.find(kvp.first);
@@ -458,21 +457,21 @@ bool Variant::operator==(const Variant &v) const
 /// Convert value to a specified type
 unsigned char Variant::asByte() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
 
   if (_type == Type::BYTE)
   {
     return _field.byteVal;
   }
 
-  if (_type == Type::INTEGER)
+  if (_type == Type::INT32)
   {
-    return static_cast<unsigned char>(_field.intVal);
+    return static_cast<unsigned char>(_field.int32Val);
   }
 
-  if (_type == Type::UNSIGNED)
+  if (_type == Type::UINT32)
   {
-    return static_cast<unsigned char>(_field.unsignedVal);
+    return static_cast<unsigned char>(_field.unsigned32Val);
   }
 
   if (_type == Type::STRING)
@@ -498,18 +497,18 @@ unsigned char Variant::asByte() const
   return 0;
 }
 
-int32_t Variant::asInt() const
+int32_t Variant::asInt32() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
-  if (_type == Type::INTEGER)
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  if (_type == Type::INT32)
   {
-    return _field.intVal;
+    return _field.int32Val;
   }
 
-  if (_type == Type::UNSIGNED)
+  if (_type == Type::UINT32)
   {
-    //CCASSERT(_field.unsignedVal < INT_MAX, "Can only convert values < INT_MAX");
-    return (int32_t)_field.unsignedVal;
+    //CCASSERT(_field.unsigned32Val < INT_MAX, "Can only convert values < INT_MAX");
+    return (int32_t)_field.unsigned32Val;
   }
 
   if (_type == Type::BYTE)
@@ -540,18 +539,18 @@ int32_t Variant::asInt() const
   return 0;
 }
 
-uint32_t Variant::asUnsignedInt() const
+uint32_t Variant::asUnsignedInt32() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
-  if (_type == Type::UNSIGNED)
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  if (_type == Type::UINT32)
   {
-    return _field.unsignedVal;
+    return _field.unsigned32Val;
   }
 
-  if (_type == Type::INTEGER)
+  if (_type == Type::INT32)
   {
-    //CCASSERT(_field.intVal >= 0, "Only values >= 0 can be converted to unsigned");
-    return static_cast<uint32_t>(_field.intVal);
+    //CCASSERT(_field.int32Val >= 0, "Only values >= 0 can be converted to unsigned");
+    return static_cast<uint32_t>(_field.int32Val);
   }
 
   if (_type == Type::BYTE)
@@ -585,7 +584,7 @@ uint32_t Variant::asUnsignedInt() const
 
 float Variant::asFloat() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
   if (_type == Type::FLOAT)
   {
     return _field.floatVal;
@@ -601,14 +600,14 @@ float Variant::asFloat() const
     return atof(_field.strVal->c_str());
   }
 
-  if (_type == Type::INTEGER)
+  if (_type == Type::INT32)
   {
-    return static_cast<float>(_field.intVal);
+    return static_cast<float>(_field.int32Val);
   }
 
-  if (_type == Type::UNSIGNED)
+  if (_type == Type::UINT32)
   {
-    return static_cast<float>(_field.unsignedVal);
+    return static_cast<float>(_field.unsigned32Val);
   }
 
   if (_type == Type::DOUBLE)
@@ -626,7 +625,7 @@ float Variant::asFloat() const
 
 double Variant::asDouble() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
   if (_type == Type::DOUBLE)
   {
     return _field.doubleVal;
@@ -642,14 +641,14 @@ double Variant::asDouble() const
     return static_cast<double>(atof(_field.strVal->c_str()));
   }
 
-  if (_type == Type::INTEGER)
+  if (_type == Type::INT32)
   {
-    return static_cast<double>(_field.intVal);
+    return static_cast<double>(_field.int32Val);
   }
 
-  if (_type == Type::UNSIGNED)
+  if (_type == Type::UINT32)
   {
-    return static_cast<double>(_field.unsignedVal);
+    return static_cast<double>(_field.unsigned32Val);
   }
 
   if (_type == Type::FLOAT)
@@ -667,7 +666,7 @@ double Variant::asDouble() const
 
 bool Variant::asBool() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
   if (_type == Type::BOOLEAN)
   {
     return _field.boolVal;
@@ -683,14 +682,14 @@ bool Variant::asBool() const
     return (*_field.strVal == "0" || *_field.strVal == "false") ? false : true;
   }
 
-  if (_type == Type::INTEGER)
+  if (_type == Type::INT32)
   {
-    return _field.intVal == 0 ? false : true;
+    return _field.int32Val == 0 ? false : true;
   }
 
-  if (_type == Type::UNSIGNED)
+  if (_type == Type::UINT32)
   {
-    return _field.unsignedVal == 0 ? false : true;
+    return _field.unsigned32Val == 0 ? false : true;
   }
 
   if (_type == Type::FLOAT)
@@ -708,7 +707,7 @@ bool Variant::asBool() const
 
 string Variant::asString() const
 {
-  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
+  //CCASSERT(_type != Type::VECTOR && _type != Type::MAP && _type != Type::INT32_KEY_MAP, "Only base type (bool, string, float, double, int32_t) could be converted");
 
   if (_type == Type::STRING)
   {
@@ -722,11 +721,11 @@ string Variant::asString() const
   case Type::BYTE:
     ret << _field.byteVal;
     break;
-  case Type::INTEGER:
-    ret << _field.intVal;
+  case Type::INT32:
+    ret << _field.int32Val;
     break;
-  case Type::UNSIGNED:
-    ret << _field.unsignedVal;
+  case Type::UINT32:
+    ret << _field.unsigned32Val;
     break;
   case Type::FLOAT:
     ret << std::fixed << std::setprecision(7) << _field.floatVal;
@@ -767,16 +766,16 @@ const VariantMap &Variant::asVariantMap() const
   return *_field.mapVal;
 }
 
-VariantMapIntKey &Variant::asIntKeyMap()
+VariantMapInt32Key &Variant::asInt32KeyMap() 
 {
-  //CCASSERT(_type == Type::INT_KEY_MAP, "The value type isn't Type::INT_KEY_MAP");
-  return *_field.intKeyMapVal;
+  //CCASSERT(_type == Type::INT32_KEY_MAP, "The value type isn't Type::INT32_KEY_MAP");
+  return *_field.int32KeyMapVal;
 }
 
-const VariantMapIntKey &Variant::asIntKeyMap() const
+const VariantMapInt32Key &Variant::asInt32KeyMap() const
 {
-  //CCASSERT(_type == Type::INT_KEY_MAP, "The value type isn't Type::INT_KEY_MAP");
-  return *_field.intKeyMapVal;
+  //CCASSERT(_type == Type::INT32_KEY_MAP, "The value type isn't Type::INT32_KEY_MAP");
+  return *_field.int32KeyMapVal;
 }
 
 static string getTabs(int32_t depth)
@@ -843,8 +842,8 @@ static string visit(const Variant &v, int32_t depth)
   {
   case Variant::Type::NONE:
   case Variant::Type::BYTE:
-  case Variant::Type::INTEGER:
-  case Variant::Type::UNSIGNED:
+  case Variant::Type::INT32:
+  case Variant::Type::UINT32:
   case Variant::Type::FLOAT:
   case Variant::Type::DOUBLE:
   case Variant::Type::BOOLEAN:
@@ -857,8 +856,8 @@ static string visit(const Variant &v, int32_t depth)
   case Variant::Type::MAP:
     ret << visitMap(v.asVariantMap(), depth);
     break;
-  case Variant::Type::INT_KEY_MAP:
-    ret << visitMap(v.asIntKeyMap(), depth);
+  case Variant::Type::INT32_KEY_MAP:
+    ret << visitMap(v.asInt32KeyMap(), depth);
     break;
   default:
     //CCASSERT(false, "Invalid type!");
@@ -883,11 +882,11 @@ void Variant::clear()
   case Type::BYTE:
     _field.byteVal = 0;
     break;
-  case Type::INTEGER:
-    _field.intVal = 0;
+  case Type::INT32:
+    _field.int32Val = 0;
     break;
-  case Type::UNSIGNED:
-    _field.unsignedVal = 0u;
+  case Type::UINT32:
+    _field.unsigned32Val = 0u;
     break;
   case Type::FLOAT:
     _field.floatVal = 0.0f;
@@ -907,8 +906,8 @@ void Variant::clear()
   case Type::MAP:
     BASE_SAFE_DELETE(_field.mapVal);
     break;
-  case Type::INT_KEY_MAP:
-    BASE_SAFE_DELETE(_field.intKeyMapVal);
+  case Type::INT32_KEY_MAP:
+    BASE_SAFE_DELETE(_field.int32KeyMapVal);
     break;
   default:
     break;
@@ -936,8 +935,8 @@ void Variant::reset(Type type)
   case Type::MAP:
     _field.mapVal = new (std::nothrow) VariantMap();
     break;
-  case Type::INT_KEY_MAP:
-    _field.intKeyMapVal = new (std::nothrow) VariantMapIntKey();
+  case Type::INT32_KEY_MAP:
+    _field.int32KeyMapVal = new (std::nothrow) VariantMapInt32Key();
     break;
   default:
     break;

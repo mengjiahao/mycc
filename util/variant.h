@@ -15,11 +15,11 @@ class Variant;
 
 typedef std::vector<Variant> VariantVector;
 typedef std::unordered_map<string, Variant> VariantMap;
-typedef std::unordered_map<int32_t, Variant> VariantMapIntKey;
+typedef std::unordered_map<int32_t, Variant> VariantMapInt32Key;
 
 extern const VariantVector VariantVectorNull;
 extern const VariantMap VariantMapNull;
-extern const VariantMapIntKey VariantMapIntKeyNull;
+extern const VariantMapInt32Key VariantMapInt32KeyNull;
 
 /*
  * This class is provide as a wrapper of basic types, such as int32_t and bool.
@@ -68,9 +68,9 @@ public:
   explicit Variant(VariantMap &&v);
 
   /** Create a Variant by a VariantMapIntKey object. */
-  explicit Variant(const VariantMapIntKey &v);
+  explicit Variant(const VariantMapInt32Key &v);
   /** Create a Variant by a VariantMapIntKey object. It will use std::move internally. */
-  explicit Variant(VariantMapIntKey &&v);
+  explicit Variant(VariantMapInt32Key &&v);
 
   /** Create a Variant by another Variant object. */
   Variant(const Variant &other);
@@ -113,9 +113,9 @@ public:
   Variant &operator=(VariantMap &&v);
 
   /** Assignment operator, assign from VariantMapIntKey to Variant. */
-  Variant &operator=(const VariantMapIntKey &v);
+  Variant &operator=(const VariantMapInt32Key &v);
   /** Assignment operator, assign from VariantMapIntKey to Variant. It will use std::move internally. */
-  Variant &operator=(VariantMapIntKey &&v);
+  Variant &operator=(VariantMapInt32Key &&v);
 
   /** != operator overloading */
   bool operator!=(const Variant &v);
@@ -129,9 +129,9 @@ public:
   /** Gets as a byte value. Will convert to unsigned char if possible, or will trigger assert error. */
   unsigned char asByte() const;
   /** Gets as an integer value. Will convert to integer if possible, or will trigger assert error. */
-  int32_t asInt() const;
+  int32_t asInt32() const;
   /** Gets as an unsigned value. Will convert to unsigned if possible, or will trigger assert error. */
-  uint32_t asUnsignedInt() const;
+  uint32_t asUnsignedInt32() const;
   /** Gets as a float value. Will convert to float if possible, or will trigger assert error. */
   float asFloat() const;
   /** Gets as a double value. Will convert to double if possible, or will trigger assert error. */
@@ -152,9 +152,9 @@ public:
   const VariantMap &asVariantMap() const;
 
   /** Gets as a VariantMapIntKey reference. Will convert to VariantMapIntKey if possible, or will trigger assert error. */
-  VariantMapIntKey &asIntKeyMap();
+  VariantMapInt32Key &asInt32KeyMap();
   /** Gets as a const VariantMapIntKey reference. Will convert to VariantMapIntKey if possible, or will trigger assert error. */
-  const VariantMapIntKey &asIntKeyMap() const;
+  const VariantMapInt32Key &asInt32KeyMap() const;
 
   /**
      * Checks if the Variant is null.
@@ -170,9 +170,9 @@ public:
     /// wrap byte
     BYTE,
     /// wrap integer32
-    INTEGER,
+    INT32,
     /// wrap unsigned32
-    UNSIGNED,
+    UINT32,
     /// wrap float
     FLOAT,
     /// wrap double
@@ -185,8 +185,8 @@ public:
     VECTOR,
     /// wrap VariantMap
     MAP,
-    /// wrap VariantMapIntKey
-    INT_KEY_MAP
+    /// wrap VariantMapInt32Key
+    INT32_KEY_MAP
   };
 
   /** Gets the value type. */
@@ -201,8 +201,8 @@ private:
 
   union {
     unsigned char byteVal;
-    int32_t intVal;
-    uint32_t unsignedVal;
+    int32_t int32Val;
+    uint32_t unsigned32Val;
     float floatVal;
     double doubleVal;
     bool boolVal;
@@ -210,7 +210,7 @@ private:
     string *strVal;
     VariantVector *vectorVal;
     VariantMap *mapVal;
-    VariantMapIntKey *intKeyMapVal;
+    VariantMapInt32Key *int32KeyMapVal;
   } _field;
 
   Type _type;

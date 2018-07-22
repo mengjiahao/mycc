@@ -169,10 +169,99 @@ string GetLocalHostName()
   char str[kMaxHostNameSize + 1];
   if (0 != gethostname(str, kMaxHostNameSize + 1))
   {
-    return "";
+    return "UnknownHostName";
   }
   string hostname(str);
   return hostname;
+}
+
+// return an available port on local machine
+//    only support IPv4
+//    return 0 on failure
+unsigned short PickupAvailablePort()
+{
+  struct sockaddr_in addr;
+  addr.sin_port = htons(0);                 // have system pick up a random port available for me
+  addr.sin_family = AF_INET;                // IPV4
+  addr.sin_addr.s_addr = htonl(INADDR_ANY); // set our addr to any interface
+
+  int sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (0 != bind(sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)))
+  {
+    perror("bind():");
+    return 0;
+  }
+
+  socklen_t addr_len = sizeof(struct sockaddr_in);
+  if (0 != getsockname(sock, (struct sockaddr *)&addr, &addr_len))
+  {
+    perror("getsockname():");
+    return 0;
+  }
+
+  unsigned short ret_port = ntohs(addr.sin_port);
+  close(sock);
+  return ret_port;
+}
+
+bool IsPortAvailable(int *port, bool is_tcp)
+{
+  const int protocol = is_tcp ? IPPROTO_TCP : 0;
+  const int fd = socket(AF_INET, is_tcp ? SOCK_STREAM : SOCK_DGRAM, protocol);
+
+  struct sockaddr_in addr;
+  socklen_t addr_len = sizeof(addr);
+  int actual_port;
+
+  //CHECK_GE(*port, 0);
+  //CHECK_LE(*port, 65535);
+  if (fd < 0)
+  {
+    //LOG(ERROR) << "socket() failed: " << strerror(errno);
+    return false;
+  }
+
+  // SO_REUSEADDR lets us start up a server immediately after it exists.
+  int one = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) < 0)
+  {
+    //LOG(ERROR) << "setsockopt() failed: " << strerror(errno);
+    close(fd);
+    return false;
+  }
+
+  // Try binding to port.
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = htons(static_cast<uint16_t>(*port));
+  if (bind(fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0)
+  {
+    //LOG(WARNING) << "bind(port=" << *port << ") failed: " << strerror(errno);
+    close(fd);
+    return false;
+  }
+
+  // Get the bound port number.
+  if (getsockname(fd, reinterpret_cast<struct sockaddr *>(&addr), &addr_len) <
+      0)
+  {
+    //LOG(WARNING) << "getsockname() failed: " << strerror(errno);
+    close(fd);
+    return false;
+  }
+  //CHECK_LE(addr_len, sizeof(addr));
+  actual_port = ntohs(addr.sin_port);
+  //CHECK_GT(actual_port, 0);
+  if (*port == 0)
+  {
+    *port = actual_port;
+  }
+  else
+  {
+    //CHECK_EQ(*port, actual_port);
+  }
+  close(fd);
+  return true;
 }
 
 } // namespace util

@@ -3,6 +3,7 @@
 #define MYCC_UTIL_INI_READER_H_
 
 #include <stdio.h>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -73,6 +74,42 @@ private:
   char m_last_error[256];
   std::set<string> m_sections;
   std::map<string, std::map<string, string>> m_fields;
+};
+
+class PropScanner
+{
+public:
+  virtual ~PropScanner();
+
+  PropScanner(const char *file_name)
+  {
+    fs_.open(file_name, std::ifstream::in);
+  }
+
+  PropScanner(const string &file_name)
+  {
+    fs_.open(file_name.c_str(), std::ifstream::in);
+  }
+
+  bool IsOpen()
+  {
+    return fs_.is_open();
+  }
+
+  bool HasNextLine()
+  {
+    return fs_.is_open() && fs_.good();
+  }
+
+  bool NextKeyValue(string *key, string *value);
+
+private:
+  string buf_;
+  std::ifstream fs_;
+
+  // No copy allowed
+  PropScanner(const PropScanner &);
+  PropScanner &operator=(const PropScanner &);
 };
 
 } // namespace util

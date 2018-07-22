@@ -45,6 +45,11 @@ extern int64_t AmountOfPhysicalMemory();
 extern int64_t AmountOfVirtualMemory();
 // Return the number of logical processors/cores on the current machine.
 int NumberOfProcessors();
+bool GetEnvBool(const char *key);
+int GetEnvInt(const char *key);
+string OperatingSystemName();
+string OperatingSystemVersion();
+string OperatingSystemArchitecture();
 
 } // namespace util
 } // namespace mycc

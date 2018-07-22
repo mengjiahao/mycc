@@ -1,6 +1,7 @@
 #ifndef MYCC_UTIL_REGISTRY_UTIL_H_
 #define MYCC_UTIL_REGISTRY_UTIL_H_
 
+#include <functional>
 #include <iostream>
 #include <map>
 #include <string>
@@ -133,6 +134,76 @@ private:
       delete entry_list_[i];
     }
   }
+};
+
+/**
+ * This class is used to keep a set of class types. It can register a
+ * class by a type name and create an instance of a class by type.
+ * Example:
+ *   // Declare the registrar
+ *   ClassRegistrar<Layer, LayerConfig> registar_;
+ *
+ *   // Register a class using its constructor
+ *   registrar_.registerClass<ConvLayer>("conv");
+ *
+ *   // Register a class using a creation function
+ *   registrar_.registerClass("pool", [](LayerConfig& config){
+ *     return PoolLayer::create(config);
+ *   });
+ *
+ *   // create a class instance by type name
+ *   Layer* layer = registrar_.createByType("conv", config);
+ */
+template <class BaseClass, typename... CreateArgs>
+class ClassRegistrar
+{
+public:
+  typedef std::function<BaseClass *(CreateArgs...)> ClassCreator;
+
+  // Register a class using a creation function.
+  // The creation function's arguments are CreateArgs
+  void registerClass(const string &type, ClassCreator creator)
+  {
+    //PANIC_ENFORCE(creatorMap_.count(type) == 0, "Duplicated class type: %s", type.c_str());
+    creatorMap_[type] = creator;
+  }
+
+  // Register a class using its constructor
+  // The constructor's arguments are CreateArgs
+  template <class ClassType>
+  void registerClass(const string &type)
+  {
+    registerClass(type,
+                  [](CreateArgs... args) { return new ClassType(args...); });
+  }
+
+  // Create a class instance of type @type using args
+  BaseClass *createByType(const string &type, CreateArgs... args)
+  {
+    ClassCreator creator;
+    auto it = creatorMap_.find(type);
+    if (it != creatorMap_.end())
+    {
+      creator = it->second;
+    }
+    else
+    {
+      return nullptr;
+    }
+    return creator(args...);
+  }
+
+  template <typename T>
+  inline void forEachType(T callback)
+  {
+    for (auto it = creatorMap_.begin(); it != creatorMap_.end(); ++it)
+    {
+      callback(it->first);
+    }
+  }
+
+protected:
+  std::map<string, ClassCreator> creatorMap_;
 };
 
 /*!

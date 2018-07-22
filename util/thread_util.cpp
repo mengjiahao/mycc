@@ -36,7 +36,15 @@ __thread const char *t_threadName = "unknown";
 
 void *StartPthreadWrapper(void *arg)
 {
+  assert(arg);
+  // pthread_cleanup_push(&cleanup, arg);
   PosixThread *data = reinterpret_cast<PosixThread *>(arg);
+  CountDownLatch *run_latch = data->run_latch();
+  CountDownLatch *stop_latch = data->stop_latch();
+
+  run_latch->countDown();
+  stop_latch->reset(1);
+
   try
   {
     if (data->is_std_func())
@@ -60,7 +68,54 @@ void *StartPthreadWrapper(void *arg)
             (uint64_t)data->thread_id());
     throw; // rethrow
   }
+
   data->setIsRunning(false);
+  stop_latch->countDown();
+  // pthread_cleanup_pop(1);
+  return NULL;
+}
+
+void *StartPthreadPeriodicWrapper(void *arg)
+{
+  assert(arg);
+  // pthread_cleanup_push(&cleanup, arg);
+  PosixThread *data = reinterpret_cast<PosixThread *>(arg);
+  CountDownLatch *run_latch = data->run_latch();
+  CountDownLatch *stop_latch = data->stop_latch();
+
+  run_latch->countDown();
+  stop_latch->reset(1);
+
+  while (data->isRunning())
+  {
+    try
+    {
+      if (data->is_std_func())
+      {
+        PosixThread::UserStdFunctionType user_std_func = data->user_std_func();
+        user_std_func();
+      }
+      else
+      {
+        PosixThread::UserFunctionType user_func = data->user_func();
+        if (user_func)
+        {
+          user_func(data->user_arg());
+        }
+      }
+    }
+    catch (...)
+    {
+      //CurrentThread::t_threadName = "Crashed";
+      fprintf(stderr, "unknown exception caught in Thread " PRIu64_FORMAT "\n",
+              (uint64_t)data->thread_id());
+      throw; // rethrow
+    }
+  }
+
+  data->setIsRunning(false);
+  stop_latch->countDown();
+  // pthread_cleanup_pop(1);
   return NULL;
 }
 
@@ -91,10 +146,17 @@ bool PosixThread::IsPthreadIdEqual(const pthread_t &a, const pthread_t &b)
   return ::pthread_equal(a, b) == 0;
 }
 
+bool PosixThread::IsValidPthreadId(const pthread_t &tid)
+{
+  pthread_t t;
+  ClearPthreadId(&t);
+  return IsPthreadIdEqual(tid, t);
+}
+
 void PosixThread::SetThisThreadName(const string &name)
 {
-  //::prctl(PR_SET_NAME, name.c_str());
-  ::pthread_setname_np(pthread_self(), name.c_str());
+  ::prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
+  //::pthread_setname_np(pthread_self(), name.c_str());
 }
 
 bool PosixThread::DetachThisThread()
@@ -166,21 +228,39 @@ bool PosixThread::SetCpuMask(int32_t cpu_id, cpu_set_t mask)
   return true;
 }
 
+bool PosixThread::IsPthreadRunning(const pthread_t &tid)
+{
+  if (!IsValidPthreadId(tid))
+  {
+    return false;
+  }
+  int ret = pthread_kill(tid, 0);
+  if (0 == ret)
+    return true;
+  return false;
+}
+
 PosixThread::PosixThread(std::function<void()> func)
-    : user_func_(NULL),
+    : is_std_func_(true),
+      user_func_(NULL),
       user_arg_(NULL),
-      is_std_func_(true),
       user_std_func_(func),
-      is_running_(false)
+      joinable_(true),
+      is_running_(false),
+      run_latch_(0),
+      stop_latch_(0)
 {
   ClearPthreadId(&tid_);
 }
 
 PosixThread::PosixThread(void (*func)(void *arg), void *arg)
-    : user_func_(func),
+    : is_std_func_(false),
+      user_func_(func),
       user_arg_(arg),
-      is_std_func_(false),
-      is_running_(false)
+      joinable_(true),
+      is_running_(false),
+      run_latch_(0),
+      stop_latch_(0)
 {
   ClearPthreadId(&tid_);
 }
@@ -201,6 +281,14 @@ bool PosixThread::isRunning()
 void PosixThread::setIsRunning(bool is_running)
 {
   AtomicStoreN<bool>(&is_running_, is_running);
+}
+
+bool PosixThread::isStarted()
+{
+  // Thread IDs are guaranteed to be unique only within a process.
+  // A thread ID may be reused after a terminated thread has been joined,
+  // or a detached thread has terminated.
+  return IsValidPthreadId(tid_);
 }
 
 bool PosixThread::start()
@@ -224,11 +312,38 @@ bool PosixThread::start()
                     pthread_create(&tid_, NULL, &StartPthreadWrapper, this));
   if (ret)
   {
-    // it is hard to know when pthread_create will start new thread.
+    // it is hard to know when pthread_create thread is started to run.
     setIsRunning(true);
+    run_latch_.reset(1);
     return true;
   }
   return false;
+}
+
+bool PosixThread::startPeriodic()
+{
+  bool ret = false;
+  if (isRunning())
+  {
+    return false;
+  }
+
+  ret = PthreadCall("pthread_create",
+                    pthread_create(&tid_, NULL, &StartPthreadPeriodicWrapper, this));
+  if (ret)
+  {
+    // it is hard to know when pthread_create thread is started to run.
+    setIsRunning(true);
+    run_latch_.reset(1);
+    return true;
+  }
+  return false;
+}
+
+bool PosixThread::cancel()
+{
+  setIsRunning(false);
+  return true;
 }
 
 bool PosixThread::join()
@@ -238,27 +353,36 @@ bool PosixThread::join()
   {
     return false;
   }
-  if (!isRunning())
+  if (!isStarted() || !joinable())
   {
     return false;
   }
   ret = PthreadCall("pthread_join", pthread_join(tid_, NULL));
+  if (ret)
+  {
+    joinable_ = false;
+  }
   return ret;
 }
 
 bool PosixThread::detach()
 {
   bool ret = false;
-  if (!isRunning())
+  if (!isStarted() || !joinable())
   {
     return false;
   }
   ret = PthreadCall("pthread_detach", pthread_detach(tid_));
+  if (ret)
+  {
+    joinable_ = false;
+  }
   return ret;
 }
 
 bool PosixThread::kill(int32_t signal_val)
 {
+  // if thread is not running, send signal will cause crash.
   bool ret = false;
   if (!isRunning())
   {
@@ -266,6 +390,21 @@ bool PosixThread::kill(int32_t signal_val)
   }
   ret = PthreadCall("pthread_kill", pthread_kill(tid_, signal_val));
   return ret;
+}
+
+bool PosixThread::unsafeExit()
+{
+  return (0 == pthread_cancel(tid_));
+}
+
+void PosixThread::waitUntilRun()
+{
+  run_latch_.wait();
+}
+
+void PosixThread::waitUntilStop()
+{
+  stop_latch_.wait();
 }
 
 ////////////////////////// BGThread //////////////////////////////

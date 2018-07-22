@@ -4,6 +4,7 @@
 
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -67,17 +68,17 @@ int64_t safe_pread_exact(int fd, void *buf, uint64_t count, int64_t offset);
 /*
  * Safe functions to read and write an entire file.
  */
-int safe_write_file(const char *base, const char *file,
-                    const char *val, uint64_t vallen);
-int safe_read_file(const char *base, const char *file,
-                   char *val, uint64_t vallen);
+int32_t safe_write_file(const char *base, const char *file,
+                        const char *val, uint64_t vallen);
+int32_t safe_read_file(const char *base, const char *file,
+                       char *val, uint64_t vallen);
 
-int make_dir(const string &path);
+int32_t make_dir(const string &path);
 
 /// @brief 创建多级目录，连同父目录一起创建(同mkdir -p)
 /// @param path 要创建的目录
 /// @return 0成功，非0失败
-int make_dir_p(const string &path);
+int32_t make_dir_p(const string &path);
 
 bool GetFileContent(const string &file_name, string *content);
 bool CopyFileContent(const string &from, const string &to);
@@ -647,6 +648,65 @@ private:
   int _fd; // file descriptor
   int _ever_opened;
   char _fname[24]; // name of the file
+};
+
+class RollFile
+{
+public:
+  RollFile();
+  RollFile(const string &path, const string &name);
+  ~RollFile();
+  FILE *GetFile();
+  int32_t SetFileName(const string &name);
+  int32_t SetFilePath(const string &path);
+  int32_t SetFileSize(uint32_t file_size);
+  int32_t SetRollNum(uint32_t roll_num);
+  const char *GetLastError()
+  {
+    return m_last_error;
+  }
+
+  void Close();
+  void Flush();
+
+private:
+  void Roll();
+
+private:
+  char m_last_error[256];
+  string m_path;
+  string m_name;
+  uint32_t m_file_size;
+  uint32_t m_roll_num;
+  FILE *m_file;
+};
+
+// read small file < 64KB
+class ReadSmallFile
+{
+public:
+  ReadSmallFile(const string &filename);
+  ~ReadSmallFile();
+
+  // return errno
+  int readToString(int32_t maxSize,
+                   string *content,
+                   int64_t *fileSize = NULL,
+                   int64_t *modifyTime = NULL,
+                   int64_t *createTime = NULL);
+
+  /// Read at maxium kBufferSize into buf_
+  // return errno
+  int readToBuffer(int32_t *size);
+  const char *buffer() const { return buf_; }
+  static const int32_t kBufferSize = 64 * 1024;
+
+private:
+  int fd_;
+  int err_;
+  char buf_[kBufferSize];
+
+  DISALLOW_COPY_AND_ASSIGN(ReadSmallFile);
 };
 
 } // namespace util

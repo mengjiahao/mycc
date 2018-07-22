@@ -412,6 +412,69 @@ static __inline__ void *atomic_compare_exchange_pointer(volatile void **pv,
 // The definition given in the Intel documentation allows only for
 // the use of the types int, long, long long or their unsigned counterparts.
 
+//! Atomically add 'val' to an uint32_t
+//! "mem": pointer to the object
+//! "val": amount to add
+//! Returns the old value pointed to by mem
+inline uint32_t atomic_sync_add32(volatile uint32_t *mem, uint32_t val)
+{
+  return __sync_fetch_and_add(const_cast<uint32_t *>(mem), val);
+}
+
+//! Atomically increment an apr_uint32_t by 1
+//! "mem": pointer to the object
+//! Returns the old value pointed to by mem
+inline uint32_t atomic_sync_inc32(volatile uint32_t *mem)
+{
+  return atomic_sync_add32(mem, 1);
+}
+
+//! Atomically decrement an uint32_t by 1
+//! "mem": pointer to the atomic value
+//! Returns the old value pointed to by mem
+inline uint32_t atomic_sync_dec32(volatile uint32_t *mem)
+{
+  return atomic_sync_add32(mem, (uint32_t)-1);
+}
+
+//! Atomically read an uint32_t from memory
+inline uint32_t atomic_sync_read32(volatile uint32_t *mem)
+{
+  uint32_t old_val = *mem;
+  __sync_synchronize();
+  return old_val;
+}
+
+//! Compare an uint32_t's value with "cmp".
+//! If they are the same swap the value with "with"
+//! "mem": pointer to the value
+//! "with" what to swap it with
+//! "cmp": the value to compare it to
+//! Returns the old value of *mem
+inline uint32_t atomic_sync_cas32(volatile uint32_t *mem, uint32_t with, uint32_t cmp)
+{
+  return __sync_val_compare_and_swap(const_cast<uint32_t *>(mem), cmp, with);
+}
+
+//! Atomically set an uint32_t in memory
+//! "mem": pointer to the object
+//! "param": val value that the object will assume
+inline void atomic_sync_write32(volatile uint32_t *mem, uint32_t val)
+{
+  __sync_synchronize();
+  *mem = val;
+}
+
+inline bool atomic_sync_add_unless32(volatile uint32_t *mem, uint32_t value, uint32_t unless_this)
+{
+  uint32_t old, c(atomic_sync_read32(mem));
+  while (c != unless_this && (old = atomic_sync_cas32(mem, c + value, c)) != c)
+  {
+    c = old;
+  }
+  return c != unless_this;
+}
+
 inline void AtomicSyncMemoryBarrier()
 {
   __sync_synchronize();

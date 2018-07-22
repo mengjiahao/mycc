@@ -638,7 +638,7 @@ private:
  * For example.
  * @code{.cpp}
  *
- * paddle::SimpleSafeQueue<int32_t> q;
+ * paddle::SimpleBlockingQueue<int32_t> q;
  * END_OF_JOB=-1
  * void thread1() {
  *   while (true) {
@@ -663,18 +663,18 @@ private:
  * @endcode
  */
 template <class T>
-class SimpleSafeQueue
+class SimpleBlockingQueue
 {
 public:
   /**
-   * @brief Construct Function. Default capacity of SimpleSafeQueue is zero.
+   * @brief Construct Function. Default capacity of SimpleBlockingQueue is zero.
    */
-  SimpleSafeQueue() : numElements_(0) {}
+  SimpleBlockingQueue() : numElements_(0) {}
 
-  ~SimpleSafeQueue() {}
+  ~SimpleBlockingQueue() {}
 
   /**
-   * @brief enqueue an element into SimpleSafeQueue.
+   * @brief enqueue an element into SimpleBlockingQueue.
    * @param[in] el The enqueue element.
    * @note This method is thread-safe, and will wake up another blocked thread.
    */
@@ -688,7 +688,7 @@ public:
   }
 
   /**
-   * @brief enqueue an element into SimpleSafeQueue.
+   * @brief enqueue an element into SimpleBlockingQueue.
    * @param[in] el The enqueue element. rvalue reference .
    * @note This method is thread-safe, and will wake up another blocked thread.
    */
@@ -767,6 +767,109 @@ private:
   int32_t numElements_;
   std::mutex queueLock_;
   std::condition_variable queueCV_;
+};
+
+/*
+ * A thread-safe circular queue that
+ * automatically blocking calling thread if capacity reached.
+ *
+ * For example.
+ * @code{.cpp}
+ *
+ * paddle::BlockingQueue<int32_t> q(capacity);
+ * END_OF_JOB=-1
+ * void thread1() {
+ *   while (true) {
+ *     auto job = q.dequeue();
+ *     if (job == END_OF_JOB) {
+ *       break;
+ *     }
+ *     processJob(job);
+ *   }
+ * }
+ *
+ * void thread2() {
+ *   while (true) {
+ *      auto job = getJob();
+ *      q.enqueue(job); //Block until q.size() < capacity .
+ *      if (job == END_OF_JOB) {
+ *        break;
+ *      }
+ *   }
+ * }
+ */
+template <typename T>
+class SimpleCircularQueue
+{
+public:
+  /**
+   * @brief Construct Function.
+   * @param[in] capacity the max numer of elements the queue can have.
+   */
+  explicit SimpleCircularQueue(uint64_t capacity) : capacity_(capacity) {}
+
+  /**
+   * @brief enqueue an element into SimpleBlockingQueue.
+   * @param[in] x The enqueue element, pass by reference .
+   * @note This method is thread-safe, and will wake up another thread
+   * who was blocked because of the queue is empty.
+   * @note If it's size() >= capacity before enqueue,
+   * this method will block and wait until size() < capacity.
+   */
+  void enqueue(const T &x)
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    notFull_.wait(lock, [&] { return queue_.size() < capacity_; });
+    queue_.push_back(x);
+    notEmpty_.notify_one();
+  }
+
+  /**
+   * Dequeue from a queue and return a element.
+   * @note this method will be blocked until not empty.
+   * @note this method will wake up another thread who was blocked because
+   * of the queue is full.
+   */
+  T dequeue()
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    notEmpty_.wait(lock, [&] { return !queue_.empty(); });
+
+    T front(queue_.front());
+    queue_.pop_front();
+    notFull_.notify_one();
+    return front;
+  }
+
+  /**
+   * Return size of queue.
+   *
+   * @note This method is thread safe.
+   * The size of the queue won't change until the method return.
+   */
+  uint64_t size()
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return queue_.size();
+  }
+
+  /**
+   * @brief is empty or not.
+   * @return true if empty.
+   * @note This method is thread safe.
+   */
+  uint64_t empty()
+  {
+    std::lock_guard<std::mutex> guard(mutex_);
+    return queue_.empty();
+  }
+
+private:
+  std::mutex mutex_;
+  std::condition_variable notEmpty_;
+  std::condition_variable notFull_;
+  std::deque<T> queue_;
+  uint64_t capacity_;
 };
 
 /*! \brief type of concurrent queue */
@@ -990,109 +1093,6 @@ uint64_t ConcurrentBlockingQueue<T, type>::Size()
     return priority_queue_.size();
   }
 }
-
-/*
- * A thread-safe circular queue that
- * automatically blocking calling thread if capacity reached.
- *
- * For example.
- * @code{.cpp}
- *
- * paddle::BlockingQueue<int32_t> q(capacity);
- * END_OF_JOB=-1
- * void thread1() {
- *   while (true) {
- *     auto job = q.dequeue();
- *     if (job == END_OF_JOB) {
- *       break;
- *     }
- *     processJob(job);
- *   }
- * }
- *
- * void thread2() {
- *   while (true) {
- *      auto job = getJob();
- *      q.enqueue(job); //Block until q.size() < capacity .
- *      if (job == END_OF_JOB) {
- *        break;
- *      }
- *   }
- * }
- */
-template <typename T>
-class SimpleBlockingQueue
-{
-public:
-  /**
-   * @brief Construct Function.
-   * @param[in] capacity the max numer of elements the queue can have.
-   */
-  explicit SimpleBlockingQueue(uint64_t capacity) : capacity_(capacity) {}
-
-  /**
-   * @brief enqueue an element into SimpleSafeQueue.
-   * @param[in] x The enqueue element, pass by reference .
-   * @note This method is thread-safe, and will wake up another thread
-   * who was blocked because of the queue is empty.
-   * @note If it's size() >= capacity before enqueue,
-   * this method will block and wait until size() < capacity.
-   */
-  void enqueue(const T &x)
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    notFull_.wait(lock, [&] { return queue_.size() < capacity_; });
-    queue_.push_back(x);
-    notEmpty_.notify_one();
-  }
-
-  /**
-   * Dequeue from a queue and return a element.
-   * @note this method will be blocked until not empty.
-   * @note this method will wake up another thread who was blocked because
-   * of the queue is full.
-   */
-  T dequeue()
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    notEmpty_.wait(lock, [&] { return !queue_.empty(); });
-
-    T front(queue_.front());
-    queue_.pop_front();
-    notFull_.notify_one();
-    return front;
-  }
-
-  /**
-   * Return size of queue.
-   *
-   * @note This method is thread safe.
-   * The size of the queue won't change until the method return.
-   */
-  uint64_t size()
-  {
-    std::lock_guard<std::mutex> guard(mutex_);
-    return queue_.size();
-  }
-
-  /**
-   * @brief is empty or not.
-   * @return true if empty.
-   * @note This method is thread safe.
-   */
-  uint64_t empty()
-  {
-    std::lock_guard<std::mutex> guard(mutex_);
-    return queue_.empty();
-  }
-
-private:
-  std::mutex mutex_;
-  std::condition_variable notEmpty_;
-  std::condition_variable notFull_;
-  std::deque<T> queue_;
-  uint64_t capacity_;
-};
 
 template <typename T>
 class BlockingQueue

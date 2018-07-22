@@ -33,6 +33,8 @@ string IPIntToString(uint64_t ipport);
 uint64_t IPStringPortToInt(const char *ip, uint64_t port);
 uint64_t IPIntPortToInt(uint32_t ip, uint64_t port);
 string GetLocalHostName();
+unsigned short PickupAvailablePort();
+bool IsPortAvailable(int *port, bool is_tcp);
 
 } // namespace util
 } // namespace mycc

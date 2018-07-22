@@ -19,6 +19,32 @@ namespace util
 
 #define STR_ERRORNO() (errno == 0 ? "None" : strerror(errno))
 
+/*
+ *
+ * `die`, `usage`, `error`, and `warning` report errors of various
+kinds.
+- `die` is for fatal application errors.  It prints a message to
+  the user and exits with status 128.
+
+- `usage` is for errors in command line usage.  After printing its
+  message, it exits with status 129.  (See also `usage_with_options`
+  in the link:api-parse-options.html[parse-options API].)
+
+- `error` is for non-fatal library errors.  It prints a message
+  to the user and returns -1 for convenience in signaling the error
+  to the caller.
+
+- `warning` is for reporting situations that probably should not
+  occur but which the user can continue to work around
+  without running into too many problems.  Like `error`, it
+  returns -1 after reporting the situation to the caller.
+*/
+extern void vreportf(const char *prefix, const char *err, va_list params);
+extern NORETURN void usagef(const char *err, ...) __attribute__((format(printf, 1, 2)));
+extern NORETURN void panicf(const char *err, ...) __attribute__((format(printf, 1, 2)));
+extern int errorf(const char *err, ...) __attribute__((format(printf, 1, 2)));
+extern void warningf(const char *err, ...) __attribute__((format(printf, 1, 2)));
+
 string CurrentTestTimeString();
 
 #define PANIC(fmt, ...)                                                           \

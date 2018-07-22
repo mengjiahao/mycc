@@ -11,6 +11,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sstream>
@@ -187,12 +188,9 @@ string GetSelfExeName()
 {
   char path[64] = {0};
   char link[PATH_MAX] = {0};
-
   snprintf(path, sizeof(path), "/proc/%d/exe", getpid());
   readlink(path, link, sizeof(link));
-
   string filename(strrchr(link, '/') + 1);
-
   return filename;
 }
 
@@ -200,7 +198,6 @@ string GetCurrentLocationDir()
 {
   char current_path[1024] = {'\0'};
   string current_dir;
-
   if (getcwd(current_path, 1024))
   {
     current_dir = current_path;
@@ -366,6 +363,70 @@ int NumberOfProcessors()
     return 1;
   }
   return static_cast<int>(res);
+}
+
+bool GetEnvBool(const char *key)
+{
+  const char *val = getenv(key);
+  if (!val)
+    return false;
+  if (strcasecmp(val, "off") == 0)
+    return false;
+  if (strcasecmp(val, "no") == 0)
+    return false;
+  if (strcasecmp(val, "false") == 0)
+    return false;
+  if (strcasecmp(val, "0") == 0)
+    return false;
+  return true;
+}
+
+int GetEnvInt(const char *key)
+{
+  const char *val = getenv(key);
+  if (!val)
+    return 0;
+  int v = atoi(val);
+  return v;
+}
+
+string OperatingSystemName()
+{
+  struct utsname info;
+  if (uname(&info) < 0)
+  {
+    return string("UnknownOS");
+  }
+  return string(info.sysname);
+}
+
+string OperatingSystemVersion()
+{
+  struct utsname info;
+  if (uname(&info) < 0)
+  {
+    return string("UnknownOSVersion");
+  }
+  return string(info.release);
+}
+
+string OperatingSystemArchitecture()
+{
+  struct utsname info;
+  if (uname(&info) < 0)
+  {
+    return string("UnknownOSArc");
+  }
+  string arch(info.machine);
+  if (arch == "i386" || arch == "i486" || arch == "i586" || arch == "i686")
+  {
+    arch = "x86";
+  }
+  else if (arch == "amd64")
+  {
+    arch = "x86_64";
+  }
+  return arch;
 }
 
 } // namespace util

@@ -239,5 +239,26 @@ std::set<string> INIReader::GetFields(const string &section)
   return fields;
 }
 
+PropScanner::~PropScanner()
+{
+  if (fs_.is_open())
+  {
+    fs_.close();
+  }
+}
+
+bool PropScanner::NextKeyValue(string *key, string *value)
+{
+  uint64_t idx;
+  std::getline(fs_, buf_);
+  if ((idx = buf_.find('=')) == string::npos)
+  {
+    return false;
+  }
+  key->assign(buf_.substr(0, idx));
+  value->assign(buf_.substr(idx + 1));
+  return true;
+}
+
 } // namespace util
 } // namespace mycc

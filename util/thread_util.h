@@ -36,6 +36,7 @@ public:
   static uint64_t PthreadIdInt();
   static pthread_t ThisPthreadId();
   static bool IsPthreadIdEqual(const pthread_t &a, const pthread_t &b);
+  static bool IsValidPthreadId(const pthread_t &tid);
   static void SetThisThreadName(const string &name);
   static bool DetachThisThread();
   static void ExitThisThread();
@@ -45,6 +46,7 @@ public:
   static cpu_set_t GetThisThreadCpuAffinity();
   static bool SetThisThreadCpuAffinity(cpu_set_t mask);
   static bool SetCpuMask(int32_t cpu_id, cpu_set_t mask);
+  static bool IsPthreadRunning(const pthread_t &tid);
 
   PosixThread(UserStdFunctionType func);
   PosixThread(UserFunctionType func, void *arg);
@@ -52,10 +54,13 @@ public:
 
   string toString();
   pthread_t thread_id() const { return tid_; }
+  bool is_std_func() { return is_std_func_; }
   UserFunctionType user_func() { return user_func_; }
   void *user_arg() { return user_arg_; }
-  bool is_std_func() { return is_std_func_; }
   UserStdFunctionType user_std_func() { return user_std_func_; }
+  bool joinable() { return joinable_; }
+  CountDownLatch *run_latch() { return &run_latch_; }
+  CountDownLatch *stop_latch() { return &stop_latch_; }
   bool amSelf() const
   {
     return (pthread_self() == tid_);
@@ -63,22 +68,30 @@ public:
 
   bool isRunning();
   void setIsRunning(bool is_running);
+  bool isStarted();
   bool start();
+  bool startPeriodic();
+  bool cancel();
   // make sure thread is joinable
   bool join();
   // only use datach() after start() in parent thread
   bool detach();
   bool kill(int32_t signal_val);
+  bool unsafeExit();
+  void waitUntilRun();
+  void waitUntilStop();
 
 private:
+  bool is_std_func_;
   UserFunctionType user_func_;
   void *user_arg_;
-
-  bool is_std_func_;
   UserStdFunctionType user_std_func_; // for c++11
 
   pthread_t tid_;
+  bool joinable_;
   bool is_running_;
+  CountDownLatch run_latch_;
+  CountDownLatch stop_latch_;
 
   DISALLOW_COPY_AND_ASSIGN(PosixThread);
 };
@@ -296,12 +309,12 @@ protected:
 };
 
 /**
- * ThreadWorker maintains a job queue. It executes the jobs in the job queue
+ * StdThreadWorker maintains a job queue. It executes the jobs in the job queue
  * sequentianlly in a separate thread.
  *
  * Use addJob() to add a new job to the job queue.
  */
-class ThreadWorker : protected StdThreadBase
+class StdThreadWorker : protected StdThreadBase
 {
 public:
   typedef std::function<void()> JobFunc;
@@ -309,13 +322,13 @@ public:
   /**
    * @brief Construct Function. Default size of job queue is 0 and not stopping.
    */
-  ThreadWorker() : stopping_(false), empty_(true) { start(); }
+  StdThreadWorker() : stopping_(false), empty_(true) { start(); }
 
   /**
    * @brief Destruct Function.
    * If it's running, wait until all job finish and then stop it.
    */
-  ~ThreadWorker()
+  ~StdThreadWorker()
   {
     if (!stopping_)
     {
@@ -372,7 +385,7 @@ protected:
     }
   }
 
-  SimpleSafeQueue<JobFunc> jobs_;
+  SimpleBlockingQueue<JobFunc> jobs_;
   bool stopping_;
   LockedCondition finishCV_;
   bool empty_;

@@ -527,6 +527,11 @@ public:
     return ret;
   }
 
+  bool tryWait()
+  {
+    return waitFor(0);
+  }
+
   /// Signal one
   void set()
   {
@@ -535,10 +540,83 @@ public:
     cv_.signal();
   }
 
+  void reset()
+  {
+    MutexLock lock(&mutex_);
+    signaled_ = false;
+  }
+
 private:
   Mutex mutex_;
   CondVar cv_;
   bool signaled_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutoResetEvent);
+};
+
+// This class represents a local waitable event object that must be reset
+// manually after it is signaled.
+//
+// ManualResetEvent allows threads to communicate with each other by signaling.
+// Typically, this communication concerns a task which one thread must complete
+// before other threads can proceed.
+//
+// The object remains signaled until its Reset method is called. Any number of
+// waiting threads, or threads that wait on the event after it has been signaled,
+// can be released while the object's state is signaled.
+class ManualResetEvent
+{
+public:
+  // init_state: initial state is signaled or non-signaled
+  explicit ManualResetEvent(bool init_state = false);
+  ~ManualResetEvent();
+
+  // Blocks the current thread until the current WaitHandle receives a signal.
+  void wait()
+  {
+    MutexLock locker(&m_mutex);
+    while (!m_signaled)
+      m_cond.wait();
+  }
+
+  // Wait with timout, in milliseconds.
+  // return true if success, false if timeout
+  bool waitFor(int64_t timeout)
+  {
+    MutexLock locker(&m_mutex);
+    if (!m_signaled)
+      m_cond.waitFor(timeout);
+    return m_signaled;
+  }
+
+  // Try to wait the event.
+  bool tryWait()
+  {
+    return waitFor(0);
+  }
+
+  // Sets the state of the event to signaled, allowing one or more waiting
+  // threads to proceed.
+  void set()
+  {
+    MutexLock locker(&m_mutex);
+    m_signaled = true;
+    m_cond.broadcast();
+  }
+
+  // Sets the state of the event to nonsignaled, causing threads to block.
+  void reset()
+  {
+    MutexLock locker(&m_mutex);
+    m_signaled = false;
+  }
+
+private:
+  Mutex m_mutex;
+  CondVar m_cond;
+  bool m_signaled;
+
+  DISALLOW_COPY_AND_ASSIGN(ManualResetEvent);
 };
 
 // This is a C++ implementation of the Java CountDownLatch
