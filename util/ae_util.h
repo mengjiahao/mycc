@@ -1,3 +1,4 @@
+
 #ifndef MYCC_UTIL_AE_UTIL_H_
 #define MYCC_UTIL_AE_UTIL_H_
 
@@ -8,17 +9,25 @@ namespace mycc
 namespace util
 {
 
+// A simple event-driven network programming library.
+
 #define AE_OK 0
 #define AE_ERR -1
 
-#define AE_NONE 0
-#define AE_READABLE 1
-#define AE_WRITABLE 2
+#define AE_NONE 0     /* No events registered. */
+#define AE_READABLE 1 /* Fire when descriptor is readable. */
+#define AE_WRITABLE 2 /* Fire when descriptor is writable. */
+#define AE_BARRIER 4  /* With WRITABLE, never fire the event if the      \
+                         READABLE event already fired in the same event  \
+                         loop iteration. Useful when you want to persist \
+                         things to disk before sending replies, and want \
+                         to do that in a group fashion. */
 
 #define AE_FILE_EVENTS 1
 #define AE_TIME_EVENTS 2
 #define AE_ALL_EVENTS (AE_FILE_EVENTS | AE_TIME_EVENTS)
 #define AE_DONT_WAIT 4
+#define AE_CALL_AFTER_SLEEP 8
 
 #define AE_NOMORE -1
 #define AE_DELETED_EVENT_ID -1
@@ -37,7 +46,7 @@ typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 /* File event structure */
 typedef struct aeFileEvent
 {
-  int mask; /* one of AE_(READABLE|WRITABLE) */
+  int mask; /* one of AE_(READABLE|WRITABLE|BARRIER) */
   aeFileProc *rfileProc;
   aeFileProc *wfileProc;
   void *clientData;
@@ -52,6 +61,7 @@ typedef struct aeTimeEvent
   aeTimeProc *timeProc;
   aeEventFinalizerProc *finalizerProc;
   void *clientData;
+  struct aeTimeEvent *prev;
   struct aeTimeEvent *next;
 } aeTimeEvent;
 
@@ -75,6 +85,7 @@ typedef struct aeEventLoop
   int stop;
   void *apidata; /* This is used for polling API specific data */
   aeBeforeSleepProc *beforesleep;
+  aeBeforeSleepProc *aftersleep;
 } aeEventLoop;
 
 /* Prototypes */
@@ -94,6 +105,7 @@ int aeWait(int fd, int mask, long long milliseconds);
 void aeMain(aeEventLoop *eventLoop);
 const char *aeGetApiName(void);
 void aeSetBeforeSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *beforesleep);
+void aeSetAfterSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *aftersleep);
 int aeGetSetSize(aeEventLoop *eventLoop);
 int aeResizeSetSize(aeEventLoop *eventLoop, int setsize);
 
