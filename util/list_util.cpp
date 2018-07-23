@@ -7,8 +7,11 @@ namespace mycc
 namespace util
 {
 
+namespace ad_list
+{
+
 /* Directions for iterators */
-static const int ADLIST_START_HEAD = 0; 
+static const int ADLIST_START_HEAD = 0;
 static const int ADLIST_START_TAIL = 1;
 
 /* Create a new Adlist. The created Adlist can be freed with
@@ -381,6 +384,8 @@ void AdlistJoin(Adlist *l, Adlist *o)
   o->head = o->tail = NULL;
   o->len = 0;
 }
+
+} // namespace ad_list
 
 } // namespace util
 } // namespace mycc

@@ -90,17 +90,17 @@ namespace urcu_easy
 
 static const int64_t RCU_GP_CTR_BOTTOM_BIT = 0x80000000;
 static const int64_t RCU_GP_CTR_NEST_MASK = (RCU_GP_CTR_BOTTOM_BIT - 1);
-static const int64_t NR_THREADS = 512;
+static const int64_t RCU_NR_MAX_THREADS = 512; 
 
 static int64_t rcu_gp_ctr = 1;
-static __thread int64_t thread_id = -1;
+static __thread int64_t rcu_per_thread_id = -1;  
 static int32_t rcu_thread_num = 0;
 static pthread_mutex_t rcu_gp_lock;
 
 struct PerThread
 {
   int64_t v __attribute__((__aligned__(CACHE_LINE_SIZE)));
-} rcu_reader_gp[NR_THREADS];
+} rcu_reader_gp[RCU_NR_MAX_THREADS];
 
 void rcu_init()
 {
@@ -110,19 +110,19 @@ void rcu_init()
 static inline void rcu_thread_register()
 {
   pthread_mutex_lock(&rcu_gp_lock);
-  assert(rcu_thread_num < NR_THREADS);
-  thread_id = rcu_thread_num;
+  assert(rcu_thread_num < RCU_NR_MAX_THREADS);
+  rcu_per_thread_id = rcu_thread_num;
   rcu_thread_num++;
   pthread_mutex_unlock(&rcu_gp_lock);
 }
 
 static inline int64_t *per_thread_val()
 {
-  if (UNLIKELY(thread_id == -1))
+  if (UNLIKELY(rcu_per_thread_id == -1))
   {
     rcu_thread_register();
   }
-  return &(rcu_reader_gp[thread_id].v);
+  return &(rcu_reader_gp[rcu_per_thread_id].v);
 }
 
 static inline int64_t *per_thread_val(int32_t id)

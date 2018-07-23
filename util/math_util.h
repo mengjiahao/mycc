@@ -14,11 +14,7 @@ namespace mycc
 {
 namespace util
 {
-
-#define MATH_MIN(a, b) (((a) < (b)) ? (a) : (b))
-#define MATH_MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define MATH_BEWTEEN(v, min_v, max_v) (((min_v) <= (v)) && ((v) <= (max_v))) // [min_v, max_v]
-
+  
 #ifndef FLT_EPSILON
 #define FLT_EPSILON 1.192092896e-07F
 #endif // FLT_EPSILON

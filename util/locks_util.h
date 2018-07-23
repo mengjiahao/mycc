@@ -1132,8 +1132,6 @@ protected:
   key_t _semKey;
 };
 
-//////////////////////////// lock free sync ///////////////////////////////
-
 /*
  * Improves the performance of spin-wait loops. 
  * When executing a “spin-wait loop,” a Pentium 4 or Intel Xeon processor 

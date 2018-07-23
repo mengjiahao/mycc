@@ -100,6 +100,53 @@ private:
   time_t last_fire_time_;
 };
 
+namespace easy_pool
+{
+
+typedef void *(*easy_pool_realloc_pt)(void *ptr, size_t size);
+
+struct easy_pool_large_t
+{
+  easy_pool_large_t *next;
+  uint8_t *data;
+};
+
+struct easy_pool_t
+{
+  uint8_t *last;
+  uint8_t *end;
+  easy_pool_t *next;
+  uint16_t failed;
+  uint16_t flags;
+  uint32_t max;
+
+  // pool header
+  easy_pool_t *current;
+  easy_pool_large_t *large;
+  volatile int32_t ref;   // atomic
+  volatile int32_t tlock; // atomic
+};
+
+static const uint32_t EASY_POOL_ALIGNMENT = 512;
+static const uint32_t EASY_POOL_PAGE_SIZE = 4096;
+extern easy_pool_realloc_pt easy_pool_realloc;
+
+void *easy_pool_alloc_block(easy_pool_t *pool, uint32_t size);
+void *easy_pool_alloc_large(easy_pool_t *pool, easy_pool_large_t *large, uint32_t size);
+void *easy_pool_default_realloc(void *ptr, size_t size);
+easy_pool_t *easy_pool_create(uint32_t size);
+void easy_pool_clear(easy_pool_t *pool);
+void easy_pool_destroy(easy_pool_t *pool);
+void *easy_pool_alloc_ex(easy_pool_t *pool, uint32_t size, uint32_t align);
+void *easy_pool_calloc(easy_pool_t *pool, uint32_t size);
+void easy_pool_set_allocator(easy_pool_realloc_pt alloc);
+void easy_pool_set_lock(easy_pool_t *pool);
+char *easy_pool_strdup(easy_pool_t *pool, const char *str);
+void *easy_pool_alloc(easy_pool_t *pool, uint32_t size);
+void *easy_pool_nalloc(easy_pool_t *pool, uint32_t size);
+
+} // namespace easy_pool
+
 class PageMemPool
 {
 public:
@@ -136,7 +183,7 @@ public:
   static const int32_t MDB_VERSION_INFO_START = 12288;  //12k
   static const int32_t MEM_HASH_METADATA_START = 16384; //16K
   static const int32_t MDB_STATINFO_START = 32768;      //32K
-  static const int32_t MEM_POOL_METADATA_LEN = 524288;  // 512K
+  static const int32_t MEM_POOL_METADATA_LEN = 524288;  //512K
 private:
   void initialize(char *pool, int32_t page_size, int32_t total_pages, int32_t meta_len);
   static const int32_t BITMAP_SIZE = (MAX_PAGES_NO + 7) / 8;

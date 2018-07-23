@@ -2,6 +2,7 @@
 #ifndef MYCC_UTIL_ATOMIC_UTIL_H_
 #define MYCC_UTIL_ATOMIC_UTIL_H_
 
+#include <sched.h>
 #include <atomic>
 #include "macros_util.h"
 
@@ -405,6 +406,55 @@ static __inline__ void *atomic_compare_exchange_pointer(volatile void **pv,
 #else
   return (void *)atomic_compare_exchange((uint32_t *)pv, (uint32_t)nv, (uint32_t)cv);
 #endif
+}
+
+static __inline__ int32_t atomic_cmp_set(volatile int32_t *lock, int32_t old, int32_t set)
+{
+  uint8_t res;
+  __asm__ volatile(
+      LOCK_PREFIX "cmpxchgl %3, %1; sete %0"
+      : "=a"(res)
+      : "m"(*lock), "a"(old), "r"(set)
+      : "cc", "memory");
+  return res;
+}
+
+#define atomic_trylock(lock) (*(lock) == 0 && atomic_cmp_set(lock, 0, 1))
+#define atomic_unlock(lock)  \
+  {                          \
+    __asm__("" ::            \
+                : "memory"); \
+    *(lock) = 0;             \
+  }
+#define atomic_spin_unlock atomic_unlock
+
+static __inline__ void atomic_spin_lock(volatile int32_t *lock)
+{
+  int32_t i, n;
+
+  for (;;)
+  {
+    if (*lock == 0 && atomic_cmp_set(lock, 0, 1))
+    {
+      return;
+    }
+
+    for (n = 1; n < 1024; n <<= 1)
+    {
+
+      for (i = 0; i < n; i++)
+      {
+        __asm__(".byte 0xf3, 0x90");
+      }
+
+      if (*lock == 0 && atomic_cmp_set(lock, 0, 1))
+      {
+        return;
+      }
+    }
+
+    sched_yield();
+  }
 }
 
 // Legacy __sync Built-in Functions for Atomic Memory Access.

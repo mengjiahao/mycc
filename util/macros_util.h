@@ -109,7 +109,7 @@
 #if defined(BASE_CXX11_ENABLED)
 #define BASE_TYPEOF decltype
 #else
-#define BASE_TYPEOF typeof
+#define BASE_TYPEOF __typeof__
 #endif
 #endif // BASE_TYPEOF
 
@@ -395,12 +395,12 @@ private:                                               \
 })
 
 // Round down 'x' to the nearest 'align' boundary
-#define ALIGN_DOWN(x, align) ((x) & (~(align) + 1))
+#define BASE_ALIGN_DOWN(x, align) ((x) & (~(align) + 1))
 
 // Round up 'x' to the nearest 'align' boundary
-#define ALIGN_UP(x, align) (((x) + ((align)-1)) & (~(align) + 1))
+#define BASE_ALIGN_UP(x, align) (((x) + ((align)-1)) & (~(align) + 1))
 
-#define IS_SIGNED_TYPE(type) ((type)-1 < (type)0)
+#define BASE_ALIGN_PTR(p, a) (uint8_t *)(((uintptr_t)(p) + ((uintptr_t)a - 1)) & ~((uintptr_t)a - 1))
 
 #define BASE_SWAP(x, y, type) \
   {                           \
@@ -414,5 +414,12 @@ private:                                               \
 #define BASE_CALLBACK_1(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, ##__VA_ARGS__)
 #define BASE_CALLBACK_2(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, ##__VA_ARGS__)
 #define BASE_CALLBACK_3(__selector__, __target__, ...) std::bind(&__selector__, __target__, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, ##__VA_ARGS__)
+
+#define IS_SIGNED_TYPE(type) ((type)-1 < (type)0)
+
+#define MATH_MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MATH_MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MATH_BEWTEEN(v, min_v, max_v) (((min_v) <= (v)) && ((v) <= (max_v))) // [min_v, max_v]
+#define MATH_DIV(a, b) ((b) ? ((a) / (b)) : 0)
 
 #endif // MYCC_UTIL_MACROS_UTIL_H_
