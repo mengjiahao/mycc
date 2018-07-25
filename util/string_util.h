@@ -568,6 +568,8 @@ int string2l(const char *s, uint64_t slen, long *value);
 int string2ld(const char *s, uint64_t slen, long double *dp);
 int d2string(char *buf, uint64_t len, double value);
 int ld2string(char *buf, uint64_t len, long double value, int humanfriendly);
+uint64_t utf8ToWideString(const char *utf8, unsigned short *utf16, uint64_t sz);
+uint64_t utf8FromWideString(const unsigned short *utf16, char *utf8, uint64_t sz);
 
 // Helper class for building result strings in a character buffer. The
 // purpose of the class is to use safe operations that checks the

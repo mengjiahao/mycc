@@ -100,6 +100,35 @@ private:
   time_t last_fire_time_;
 };
 
+// A simple buddy memory allocation library.
+// http://blog.codingnow.com/2011/12/buddy_memory_allocation.html (in Chinese)
+struct BuddyPool
+{
+  static const int32_t NODE_UNUSED = 0;
+  static const int32_t NODE_USED = 1;
+  static const int32_t NODE_SPLIT = 2;
+  static const int32_t NODE_FULL = 3;
+
+  static BuddyPool *buddy_new(int32_t level);
+  static void buddy_delete(BuddyPool *b);
+  static int32_t buddy_alloc(BuddyPool *b, int32_t size);
+  static void buddy_free(BuddyPool *b, int32_t offset);
+  static int32_t buddy_size(BuddyPool *b, int32_t offset);
+  static void buddy_dump(BuddyPool *b);
+
+private:
+  static inline int32_t _index_offset(int32_t index, int32_t level, int32_t max_level)
+  {
+    return ((index + 1) - (1 << level)) << (max_level - level);
+  }
+  static void _mark_parent(BuddyPool *self, int32_t index);
+  static void _dump(BuddyPool *self, int32_t index, int32_t level);
+  static void _combine(BuddyPool *self, int32_t index);
+
+  int32_t level;
+  uint8_t tree[1];
+};
+
 namespace easy_pool
 {
 

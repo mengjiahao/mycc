@@ -14,7 +14,7 @@ namespace mycc
 {
 namespace util
 {
-  
+
 #ifndef FLT_EPSILON
 #define FLT_EPSILON 1.192092896e-07F
 #endif // FLT_EPSILON
@@ -517,6 +517,23 @@ inline uint64_t CountLeadingZeroes(uint64_t i)
 #else
 #error get a better compiler to CountLeadingZeroes
 #endif
+}
+
+static inline uint32_t is_pow_of_2(uint32_t x)
+{
+  return !(x & (x - 1));
+}
+
+static inline uint32_t next_pow_of_2(uint32_t x)
+{
+  if (is_pow_of_2(x))
+    return x;
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+  return x + 1;
 }
 
 /**

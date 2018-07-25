@@ -5,11 +5,51 @@
 #include <ucontext.h>
 #include "list_util.h"
 #include "memory_pool.h"
+#include "types_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+// It's an asymmetric coroutine library (like lua).
+// You can use coroutine_open to open a schedule first,
+// and then create coroutine in that schedule.
+// You should call coroutine_resume in the thread that you call coroutine_open,
+// and you can't call it in a coroutine in the same schedule.
+// Coroutines in the same schedule share the stack ,
+// so you can create many coroutines without worry about memory.
+// But switching context will copy the stack the coroutine used.
+// Read source for detail:
+// Chinese blog : http://blog.codingnow.com/2012/07/c_coroutine.html
+struct SimpleCoroutine
+{
+  static const int32_t COROUTINE_DEAD = 0;
+  static const int32_t COROUTINE_READY = 1;
+  static const int32_t COROUTINE_RUNNING = 2;
+  static const int32_t COROUTINE_SUSPEND = 3;
+  static const int32_t DEFAULT_STACK_SIZE = (1024 * 1024);
+  static const int32_t DEFAULT_COROUTINE = 16;
+
+  struct coroutine;
+  struct schedule;
+  typedef void (*coroutine_func)(schedule *, void *ud);
+
+public:
+  static schedule *coroutine_open(void);
+  static void coroutine_close(schedule *);
+  static int coroutine_new(schedule *, coroutine_func, void *ud);
+  static void coroutine_resume(schedule *, int id);
+  static int coroutine_status(schedule *, int id);
+  static int coroutine_running(schedule *);
+  static void coroutine_yield(schedule *);
+
+private:
+  static void mainfunc(uint32_t low32, uint32_t hi32);
+  static void _save_stack(coroutine *C, char *top);
+  static coroutine *_co_new(schedule *S, coroutine_func func, void *ud);
+  static void _co_delete(coroutine *co);
+};
 
 namespace easy_uthread
 {

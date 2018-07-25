@@ -74,10 +74,6 @@ int32_t safe_read_file(const char *base, const char *file,
                        char *val, uint64_t vallen);
 
 int32_t make_dir(const string &path);
-
-/// @brief 创建多级目录，连同父目录一起创建(同mkdir -p)
-/// @param path 要创建的目录
-/// @return 0成功，非0失败
 int32_t make_dir_p(const string &path);
 
 bool GetFileContent(const string &file_name, string *content);
