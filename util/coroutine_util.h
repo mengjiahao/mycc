@@ -28,7 +28,7 @@ struct SimpleCoroutine
   static const int32_t COROUTINE_READY = 1;
   static const int32_t COROUTINE_RUNNING = 2;
   static const int32_t COROUTINE_SUSPEND = 3;
-  static const int32_t DEFAULT_STACK_SIZE = (1024 * 1024);
+  static const int32_t DEFAULT_COROUTINE_STACK_SIZE = (1024 * 1024);
   static const int32_t DEFAULT_COROUTINE = 16;
 
   struct coroutine;

@@ -104,10 +104,10 @@ private:
 // http://blog.codingnow.com/2011/12/buddy_memory_allocation.html (in Chinese)
 struct BuddyPool
 {
-  static const int32_t NODE_UNUSED = 0;
-  static const int32_t NODE_USED = 1;
-  static const int32_t NODE_SPLIT = 2;
-  static const int32_t NODE_FULL = 3;
+  static const int32_t BUDDY_NODE_UNUSED = 0;
+  static const int32_t BUDDY_NODE_USED = 1;
+  static const int32_t BUDDY_NODE_SPLIT = 2;
+  static const int32_t BUDDY_NODE_FULL = 3;
 
   static BuddyPool *buddy_new(int32_t level);
   static void buddy_delete(BuddyPool *b);

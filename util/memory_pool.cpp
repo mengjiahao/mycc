@@ -20,7 +20,7 @@ BuddyPool *BuddyPool::buddy_new(int32_t level)
   int32_t size = 1 << level;
   BuddyPool *self = (BuddyPool *)malloc(sizeof(BuddyPool) + sizeof(uint8_t) * (size * 2 - 2));
   self->level = level;
-  memset(self->tree, NODE_UNUSED, size * 2 - 1);
+  memset(self->tree, BUDDY_NODE_UNUSED, size * 2 - 1);
   return self;
 }
 
@@ -34,10 +34,10 @@ void BuddyPool::_mark_parent(BuddyPool *self, int32_t index)
   for (;;)
   {
     int32_t BuddyPool = index - 1 + (index & 1) * 2;
-    if (BuddyPool > 0 && (self->tree[BuddyPool] == NODE_USED || self->tree[BuddyPool] == NODE_FULL))
+    if (BuddyPool > 0 && (self->tree[BuddyPool] == BUDDY_NODE_USED || self->tree[BuddyPool] == BUDDY_NODE_FULL))
     {
       index = (index + 1) / 2 - 1;
-      self->tree[index] = NODE_FULL;
+      self->tree[index] = BUDDY_NODE_FULL;
     }
     else
     {
@@ -69,9 +69,9 @@ int32_t BuddyPool::buddy_alloc(BuddyPool *self, int32_t s)
   {
     if (size == length)
     {
-      if (self->tree[index] == NODE_UNUSED)
+      if (self->tree[index] == BUDDY_NODE_UNUSED)
       {
-        self->tree[index] = NODE_USED;
+        self->tree[index] = BUDDY_NODE_USED;
         _mark_parent(self, index);
         return _index_offset(index, level, self->level);
       }
@@ -81,14 +81,14 @@ int32_t BuddyPool::buddy_alloc(BuddyPool *self, int32_t s)
       // size < length
       switch (self->tree[index])
       {
-      case NODE_USED:
-      case NODE_FULL:
+      case BUDDY_NODE_USED:
+      case BUDDY_NODE_FULL:
         break;
-      case NODE_UNUSED:
+      case BUDDY_NODE_UNUSED:
         // split first
-        self->tree[index] = NODE_SPLIT;
-        self->tree[index * 2 + 1] = NODE_UNUSED;
-        self->tree[index * 2 + 2] = NODE_UNUSED;
+        self->tree[index] = BUDDY_NODE_SPLIT;
+        self->tree[index * 2 + 1] = BUDDY_NODE_UNUSED;
+        self->tree[index * 2 + 2] = BUDDY_NODE_UNUSED;
       default:
         index = index * 2 + 1;
         length /= 2;
@@ -124,12 +124,12 @@ void BuddyPool::_combine(BuddyPool *self, int32_t index)
   for (;;)
   {
     int32_t BuddyPool = index - 1 + (index & 1) * 2;
-    if (BuddyPool < 0 || self->tree[BuddyPool] != NODE_UNUSED)
+    if (BuddyPool < 0 || self->tree[BuddyPool] != BUDDY_NODE_UNUSED)
     {
-      self->tree[index] = NODE_UNUSED;
-      while (((index = (index + 1) / 2 - 1) >= 0) && self->tree[index] == NODE_FULL)
+      self->tree[index] = BUDDY_NODE_UNUSED;
+      while (((index = (index + 1) / 2 - 1) >= 0) && self->tree[index] == BUDDY_NODE_FULL)
       {
-        self->tree[index] = NODE_SPLIT;
+        self->tree[index] = BUDDY_NODE_SPLIT;
       }
       return;
     }
@@ -148,11 +148,11 @@ void BuddyPool::buddy_free(BuddyPool *self, int32_t offset)
   {
     switch (self->tree[index])
     {
-    case NODE_USED:
+    case BUDDY_NODE_USED:
       assert(offset == left);
       _combine(self, index);
       return;
-    case NODE_UNUSED:
+    case BUDDY_NODE_UNUSED:
       assert(0);
       return;
     default:
@@ -182,10 +182,10 @@ int32_t BuddyPool::buddy_size(BuddyPool *self, int32_t offset)
   {
     switch (self->tree[index])
     {
-    case NODE_USED:
+    case BUDDY_NODE_USED:
       assert(offset == left);
       return length;
-    case NODE_UNUSED:
+    case BUDDY_NODE_UNUSED:
       assert(0);
       return length;
     default:
@@ -208,13 +208,13 @@ void BuddyPool::_dump(BuddyPool *self, int32_t index, int32_t level)
 {
   switch (self->tree[index])
   {
-  case NODE_UNUSED:
+  case BUDDY_NODE_UNUSED:
     printf("(%d:%d)", _index_offset(index, level, self->level), 1 << (self->level - level));
     break;
-  case NODE_USED:
+  case BUDDY_NODE_USED:
     printf("[%d:%d]", _index_offset(index, level, self->level), 1 << (self->level - level));
     break;
-  case NODE_FULL:
+  case BUDDY_NODE_FULL:
     printf("{");
     _dump(self, index * 2 + 1, level + 1);
     _dump(self, index * 2 + 2, level + 1);

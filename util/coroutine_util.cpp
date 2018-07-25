@@ -13,7 +13,7 @@ namespace util
 
 struct SimpleCoroutine::schedule
 {
-  char stack[DEFAULT_STACK_SIZE];
+  char stack[DEFAULT_COROUTINE_STACK_SIZE];
   ucontext_t main;
   int nco;
   int cap;
@@ -49,7 +49,7 @@ void SimpleCoroutine::mainfunc(uint32_t low32, uint32_t hi32)
 void SimpleCoroutine::_save_stack(coroutine *C, char *top)
 {
   char dummy = 0;
-  assert(top - &dummy <= DEFAULT_STACK_SIZE);
+  assert(top - &dummy <= DEFAULT_COROUTINE_STACK_SIZE);
   if (C->cap < top - &dummy)
   {
     free(C->stack);
@@ -151,7 +151,7 @@ void SimpleCoroutine::coroutine_resume(schedule *S, int id)
   {
     getcontext(&C->ctx);
     C->ctx.uc_stack.ss_sp = S->stack;
-    C->ctx.uc_stack.ss_size = DEFAULT_STACK_SIZE;
+    C->ctx.uc_stack.ss_size = DEFAULT_COROUTINE_STACK_SIZE;
     C->ctx.uc_link = &S->main;
     S->running = id;
     C->status = COROUTINE_RUNNING;
@@ -162,7 +162,7 @@ void SimpleCoroutine::coroutine_resume(schedule *S, int id)
   break;
   case COROUTINE_SUSPEND:
   {
-    memcpy(S->stack + DEFAULT_STACK_SIZE - C->size, C->stack, C->size);
+    memcpy(S->stack + DEFAULT_COROUTINE_STACK_SIZE - C->size, C->stack, C->size);
     S->running = id;
     C->status = COROUTINE_RUNNING;
     swapcontext(&S->main, &C->ctx);
@@ -179,7 +179,7 @@ void SimpleCoroutine::coroutine_yield(schedule *S)
   assert(id >= 0);
   coroutine *C = S->co[id];
   assert((char *)&C > S->stack);
-  _save_stack(C, S->stack + DEFAULT_STACK_SIZE);
+  _save_stack(C, S->stack + DEFAULT_COROUTINE_STACK_SIZE);
   C->status = COROUTINE_SUSPEND;
   S->running = -1;
   swapcontext(&C->ctx, &S->main);
