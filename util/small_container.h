@@ -10,6 +10,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <list>
+#include <map>
 #include <memory>
 #include <queue>
 #include <stdexcept>
@@ -18,12 +19,15 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "comparator.h"
 #include "types_util.h"
 
 namespace mycc
 {
 namespace util
 {
+
+typedef std::map<string, string, LessOfComparator> KVStringMap;
 
 // unordered_map implemented as a simple array
 /* 

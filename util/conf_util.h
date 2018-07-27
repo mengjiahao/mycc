@@ -1,12 +1,13 @@
 
-#ifndef MYCC_UTIL_INI_READER_H_
-#define MYCC_UTIL_INI_READER_H_
+#ifndef MYCC_UTIL_CONF_UTIL_H_
+#define MYCC_UTIL_CONF_UTIL_H_
 
 #include <stdio.h>
 #include <fstream>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 #include "types_util.h"
 
 namespace mycc
@@ -115,4 +116,4 @@ private:
 } // namespace util
 } // namespace mycc
 
-#endif // MYCC_UTIL_INI_READER_H_
+#endif // MYCC_UTIL_CONF_UTIL_H_

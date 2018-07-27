@@ -87,7 +87,7 @@ private:
   int count_shm_set_bit_num(void *shm_addr);
 
 private:
-  void *shm_addr_; // bit map 共享内存映射地址
+  void *shm_addr_;
   static TCShmBitmapManager *instance_;
   uint32_t max_uin_;
 };

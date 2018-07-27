@@ -79,6 +79,15 @@ int32_t make_dir_p(const string &path);
 bool GetFileContent(const string &file_name, string *content);
 bool CopyFileContent(const string &from, const string &to);
 
+// set nonblock for PollWrite/PollRead
+// pipe(impl_->fds); 
+// fcntl(impl_->fds[i], F_GETFL, 0);
+// fcntl(impl_->fds[i], F_SETFL, flags | O_NONBLOCK);
+// PollWrite(impl_->fds[1]);
+// PollRead(impl_->fds[0]);
+bool PollWrite(int fd, const char *buf, int32_t buf_len);
+bool PollRead(int fd, char *buf, int32_t buf_len);
+
 // RAII file descriptor.
 //
 // Example:

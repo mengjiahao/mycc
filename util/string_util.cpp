@@ -2,6 +2,7 @@
 #include "string_util.h"
 #include <ctype.h>
 #include <float.h>
+#include <iconv.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -1510,6 +1511,16 @@ string StringConcat(const std::vector<string> &elems, char delim)
   return result;
 }
 
+string StringRemoveCharset(const string &src, char *charset)
+{
+  string result(src);
+  for (uint64_t i = 0; i < strlen(charset); i++)
+  {
+    result.erase(std::remove(result.begin(), result.end(), charset[i]), result.end());
+  }
+  return result;
+}
+
 uint64_t StringRemoveLeadingWhitespace(StringPiece *text)
 {
   uint64_t count = 0;
@@ -2479,120 +2490,34 @@ int ld2string(char *buf, uint64_t len, long double value, int humanfriendly)
   return l;
 }
 
-uint64_t utf8ToWideString(const char *utf8, unsigned short *utf16, uint64_t sz)
+bool StringCodeConvert(const char *from_charset, const char *to_charset,
+                       char *inbuf, int32_t inlen, char *outbuf, int32_t outlen)
 {
-  while (((unsigned char)*utf8 & 0xc0) == 0x80)
+  iconv_t cd;
+  char **pin = &inbuf;
+  char **pout = &outbuf;
+
+  if ((cd = iconv_open(to_charset, from_charset)) == (iconv_t)-1)
   {
-    ++utf8;
-  }
-  if (sz == 0)
-  {
-    uint64_t n = 0;
-    while (*utf8)
-    {
-      signed char c = *utf8;
-      if ((c & 0xc0) != 0x80)
-      {
-        ++n;
-      }
-      ++utf8;
-    }
-    return n;
-  }
-  if (*utf8 == '\0')
-  {
-    utf16[0] = 0;
-    return 0;
+    //iconv_close(cd);
+    //char err_buf[256] = {0};
+    //ACE_DEBUG((LM_ERROR,"[%D] iconv_open failed,errno=%d,err=%s\n", errno, strerror_r(errno, err_buf, sizeof(err_buf))));
+    return false;
   }
 
-  unsigned short *ptr = utf16 - 1;
-
-  while (*utf8)
+  uint64_t s_inlen = inlen;
+  uint64_t s_outlen = outlen;
+  memset(outbuf, 0, outlen);
+  if (iconv(cd, pin, &s_inlen, pout, &s_outlen) == (size_t)-1)
   {
-    signed char c = *utf8;
-    if ((c & 0xc0) == 0x80)
-    {
-      *ptr = *ptr << 6 | (c & 0x3f);
-    }
-    else
-    {
-      ++ptr;
-      if ((uint64_t)(ptr - utf16) >= sz)
-      {
-        *(ptr - 1) = 0;
-        return sz - 1;
-      }
-      *ptr = c & (0x0f | (~(c >> 1) & 0x1f) | ~(c >> 7));
-    }
-    ++utf8;
+    iconv_close(cd);
+    //ACE_DEBUG((LM_ERROR,"[%D] iconv failed errno=%d,outlen=%d,inlen=%d,inbuf=%s\n", errno, outlen, inlen, inbuf));
+    return false;
   }
 
-  if ((uint64_t)(ptr - utf16) < sz)
-  {
-    ++ptr;
-  }
-  *ptr = 0;
-  return ptr - utf16;
-}
-
-uint64_t utf8FromWideString(const unsigned short *utf16, char *utf8, uint64_t sz)
-{
-  unsigned char *ptr = (unsigned char *)utf8;
-  if (sz < 3)
-  {
-    while (*utf16)
-    {
-      unsigned short c = *utf16;
-      if (c > 0x7F)
-      {
-        if (c > 0x7ff)
-        {
-          ++ptr;
-        }
-        ++ptr;
-      }
-      ++ptr;
-      ++utf16;
-    }
-    return (char *)ptr - utf8;
-  }
-
-  sz -= 2;
-  unsigned char *last;
-
-  while (*utf16)
-  {
-    unsigned short c = *utf16;
-    last = ptr;
-    if (c <= 0x7F)
-    {
-      *ptr = (unsigned char)c;
-    }
-    else
-    {
-      if (c <= 0x7ff)
-      {
-        *ptr = (unsigned char)((c >> 6) | 0xc0);
-      }
-      else
-      {
-        *ptr = (unsigned char)((c >> 12) | 0xe0);
-        ++ptr;
-        *ptr = (unsigned char)(((c >> 6) & 0x3f) | 0x80);
-      }
-      ++ptr;
-      *ptr = (unsigned char)((c & 0x3f) | 0x80);
-    }
-    ++ptr;
-    if ((uint64_t)((char *)ptr - utf8) >= sz + 2)
-    {
-      ptr = last;
-      break;
-    }
-    ++utf16;
-  }
-  *ptr = 0;
-  return (char *)ptr - utf8;
+  outlen = s_outlen;
+  iconv_close(cd);
+  return true;
 }
 
 } // namespace util

@@ -382,5 +382,35 @@ bool IsInHourRange(int64_t min_hour, int64_t max_hour)
   return in_range;
 }
 
+// get unix time
+uint32_t GetTimedUt(int32_t h, int32_t m, int32_t s, time_t cur_time)
+{
+  if (cur_time == 0)
+    cur_time = time(0);
+
+  struct tm ptm;
+  memset(&ptm, 0x0, sizeof(struct tm));
+  localtime_r((time_t *)&cur_time, &ptm);
+  ptm.tm_hour = h;
+  ptm.tm_min = m;
+  ptm.tm_sec = s;
+  return static_cast<uint32_t>(mktime(&ptm));
+}
+
+uint32_t GetDateFromTime(time_t time)
+{
+  struct tm local_tm;
+  localtime_r(&time, &local_tm);
+  return (uint32_t)((local_tm.tm_year + 1900) * 10000 + (local_tm.tm_mon + 1) * 100 + local_tm.tm_mday);
+}
+
+uint32_t GetMonthFromTime(time_t nowtime)
+{
+  struct tm local_tm;
+  localtime_r(&nowtime, &local_tm);
+  //year * 12 + current month
+  return (uint32_t)(local_tm.tm_year * 12 + local_tm.tm_mon + 1);
+}
+
 } // namespace util
 } // namespace mycc

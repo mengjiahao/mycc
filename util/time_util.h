@@ -364,6 +364,10 @@ void MakeTimeoutUs(struct timespec *pts, int64_t micros);
 void MakeTimeoutMs(struct timespec *pts, int64_t millis);
 bool IsInHourRange(int64_t min_hour, int64_t max_hour);
 
+uint32_t GetTimedUt(int32_t h, int32_t m, int32_t s, time_t cur_time);
+uint32_t GetDateFromTime(time_t time);
+uint32_t GetMonthFromTime(time_t nowtime);
+
 // @brief: UNIX timestamp to GPS timestamp, in seconds.
 inline double Unix2gps(double unix_time)
 {

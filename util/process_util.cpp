@@ -7,9 +7,11 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
 #include <algorithm>
 #include "file_util.h"
 
@@ -50,6 +52,57 @@ int ScanDir(const char *dirpath, int (*filter)(const struct dirent *))
 }
 
 } // namespace
+
+void MultiProc::ForkAndRun(int32_t procs)
+{
+  // start child process
+
+  children_.resize(procs);
+
+  for (int32_t i = 0; procs > i; ++i)
+  {
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+      // send SIGHUP to me if parent dies
+      prctl(PR_SET_PDEATHSIG, SIGHUP);
+      ChildRun(i);
+      exit(0);
+    }
+    children_[i] = pid;
+  }
+
+  while (true)
+  {
+    int st;
+    pid_t pid = waitpid(-1, &st, WNOHANG);
+    if (pid <= 0)
+    {
+      sleep(5);
+      continue;
+    }
+
+    for (int32_t i = 0; procs > i; ++i)
+    {
+
+      if (children_[i] == pid)
+      {
+
+        pid_t pid = fork();
+        if (pid == 0)
+        {
+          prctl(PR_SET_PDEATHSIG, SIGHUP);
+          ChildRun(i);
+          exit(0);
+        }
+        children_[i] = pid;
+        break;
+      }
+    }
+
+    usleep(100000);
+  }
+}
 
 int CProcess::StartDaemon(const char *szPidFile, const char *szLogFile)
 {

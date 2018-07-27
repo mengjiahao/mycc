@@ -37,6 +37,9 @@ enum LogLevel
   FATAL = 32,
 };
 
+typedef int (*LogFunc)(const char* format, ...);
+extern LogFunc gLog;
+
 class DateLogger
 {
 public:

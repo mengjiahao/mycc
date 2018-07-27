@@ -3,6 +3,7 @@
 #define MYCC_UTIL_PROCESS_UTIL_H_
 
 #include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
 #include <string.h>
 #include <stdio.h>
@@ -17,6 +18,22 @@ namespace mycc
 {
 namespace util
 {
+
+class MultiProc
+{
+public:
+  MultiProc() {}
+  virtual ~MultiProc() {}
+
+  // watch and refork the child process if killed/aborted unexpectedly
+  void ForkAndRun(int32_t procs);
+
+protected:
+  virtual void ChildRun(int vpid) = 0;
+
+private:
+  std::vector<pid_t> children_;
+};
 
 class CProcess
 {

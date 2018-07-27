@@ -1,5 +1,5 @@
 
-#include "ini_reader.h"
+#include "conf_util.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdlib.h>

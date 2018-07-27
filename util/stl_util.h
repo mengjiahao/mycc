@@ -27,26 +27,6 @@ namespace mycc
 namespace util
 {
 
-// comparators for stl containers
-// for std::unordered_map:
-//   std::unordered_map<const char*, long, hash<const char*>, eqstr> vals;
-struct EqStr
-{
-  bool operator()(const char *s1, const char *s2) const
-  {
-    return strcmp(s1, s2) == 0;
-  }
-};
-
-// for set, map
-struct LtStr
-{
-  bool operator()(const char *s1, const char *s2) const
-  {
-    return strcmp(s1, s2) < 0;
-  }
-};
-
 /*!
  * \brief safely get the beginning address of a vector
  * \param vec input vector
