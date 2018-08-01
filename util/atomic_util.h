@@ -1311,70 +1311,40 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64 *ptr,
   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
 }
 
+// only support i386 / x86_64 here
+#if defined(__i386__) || defined(__x86_64__)
 template <typename T>
-class AtomicInteger
+class AtomicCount
 {
 public:
-  AtomicInteger()
-      : value_(0)
-  {
-  }
+  explicit AtomicCount(T t) { t_ = t; }
+  ~AtomicCount() {}
 
-  void store(T v)
+  inline T Get() const
   {
-    return AtomicStore(&value_, v);
+    return t_;
   }
-
-  T load()
+  inline void Set(T t)
   {
-    return AtomicLoad(&value_);
+    atomic_exchange(&t_, t);
   }
-
-  T fetch_add(T v)
+  inline T Inc()
   {
-    return AtomicFetchAdd(&value_, v);
+    return atomic_inc(&t_);
   }
-
-  T fetch_sub(T v)
+  inline T Dec()
   {
-    return AtomicFetchSub(&value_, v);
+    return atomic_dec(&t_);
   }
-
-  T fetch_and(T v)
+  inline T GetAndInc()
   {
-    return AtomicFetchAnd(&value_, v);
-  }
-
-  T fetch_or(T v)
-  {
-    return AtomicFetchOr(&value_, v);
-  }
-
-  T fetch_xor(T v)
-  {
-    return AtomicFetchXor(&value_, v);
-  }
-
-  T inc_fetch()
-  {
-    return AtomicIncFetch(&value_);
-  }
-
-  T dec_fetch()
-  {
-    return AtomicDecFetch(&value_);
+    return atomic_add(&t_, 1);
   }
 
 private:
-  volatile T value_;
-
-  DISALLOW_COPY_AND_ASSIGN(AtomicInteger);
+  volatile T t_;
 };
-
-typedef AtomicInteger<int32_t> AtomicInteger32;
-typedef AtomicInteger<int64_t> AtomicInteger64;
-typedef AtomicInteger<uint32_t> AtomicUinteger32;
-typedef AtomicInteger<uint64_t> AtomicUinteger64;
+#endif
 
 // A type that holds a pointer that can be read or written atomically
 // (i.e., without word-tearing.)

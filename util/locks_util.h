@@ -1735,33 +1735,109 @@ public:
     return latch_.count() == 0L;
   }
 
-  T get()
+  bool get(T *r)
   {
     await();
-    return resultOrThrow();
+    return resultOrThrow(r);
   }
 
-  T get(uint64_t timeout_ms)
+  bool get(uint64_t timeout_ms, T *r)
   {
+    assert(r);
     bool occurred = await(timeout_ms);
     if (!occurred)
     {
-      throw std::runtime_error("FutureResult.get(timeout_ms) exception");
+      return false;
     }
-    return resultOrThrow();
+    return resultOrThrow(r);
   }
 
-  T resultOrThrow()
+  bool resultOrThrow(T *r)
   {
+    assert(r);
     if (error() != 0)
     {
-      throw std::runtime_error("FutureResult.resultOrThrow() exception");
+      return false;
+    }
+    *r = result();
+    return true;
+  }
+};
+
+template <class T>
+class FutureSem
+{
+public:
+  FutureSem()
+      : data_()
+  {
+    completed_ = false;
+    sem_init(&sem_, 0, 0);
+  }
+
+  ~FutureSem()
+  {
+    sem_destroy(&sem_);
+  }
+
+  T get(int32_t ms = -1)
+  {
+    if (completed_ == false)
+    {
+      wait(ms);
+    }
+    // close compiler re-order optimizing
+    // x86/x64 architecture guarantee LoadLoad/LoadStore/StoreStore never re-order
+    // so here not need lfence
+    asm volatile("" ::
+                     : "memory");
+
+    assert(completed_ == true);
+    return data_;
+  }
+
+  void set(T t)
+  {
+    assert(completed_ == false);
+    data_ = t;
+    // close compiler re-order optimizing, guarantee data_ = t always before completed_ = true
+    // x86/x64 architecture guarantee LoadLoad/LoadStore/StoreStore never re-order, so here
+    // not need mfence
+    asm volatile("" ::
+                     : "memory");
+    completed_ = true;
+    sem_post(&sem_);
+  }
+
+private:
+  void wait(int32_t ms)
+  {
+    int s;
+
+    if (ms > 0)
+    {
+      struct timespec timeout;
+      timeout.tv_sec = ms / 1000;
+      timeout.tv_sec = (ms % 1000) * 1000000L;
+      while ((s = sem_timedwait(&sem_, &timeout)) == -1 && errno == EINTR)
+        ;
     }
     else
     {
-      return result();
+      while ((s = sem_wait(&sem_) == -1 && errno == EINTR))
+      {
+      }
+    }
+    if (s == -1 && errno != ETIMEDOUT)
+    {
+      abort();
     }
   }
+
+private:
+  volatile bool completed_;
+  T data_;
+  sem_t sem_;
 };
 
 } // namespace util
