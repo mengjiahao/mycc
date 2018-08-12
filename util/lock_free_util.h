@@ -2,6 +2,7 @@
 #ifndef MYCC_UTIL_LOCK_FREE_UTIL_H_
 #define MYCC_UTIL_LOCK_FREE_UTIL_H_
 
+#include <assert.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -577,354 +578,305 @@ private:
   std::atomic<N *> freeListHead;
 };
 
-/**
- * Single Producer Single Consumer Lockless Q
- */
+template <typename T>
+class SPSCBoundedQueue
+{
+
+  typedef typename std::aligned_storage<sizeof(T), std::alignment_of<T>::value>::type aligned_t;
+  typedef char cache_line_pad_t[64];
+
+  cache_line_pad_t pad0;
+  const uint64_t size;
+  const uint64_t mask;
+  T *const buffer;
+  cache_line_pad_t pad1;
+  std::atomic<uint64_t> head{0};
+  cache_line_pad_t pad2;
+  std::atomic<uint64_t> tail{0};
+
+  SPSCBoundedQueue(const SPSCBoundedQueue &) {}
+  void operator=(const SPSCBoundedQueue &) {}
+
+public:
+  SPSCBoundedQueue(uint64_t size = 1024) : size(size), mask(size - 1), buffer(reinterpret_cast<T *>(new aligned_t[size + 1]))
+  {
+    assert((size != 0) && ((size & (~size + 1)) == size));
+  }
+
+  ~SPSCBoundedQueue()
+  {
+    delete[] buffer;
+  }
+
+  bool produce(T &input)
+  {
+    const uint64_t h = head.load(std::memory_order_relaxed);
+
+    if (((tail.load(std::memory_order_acquire) - (h + 1)) & mask) >= 1)
+    {
+      buffer[h & mask] = input;
+      head.store(h + 1, std::memory_order_release);
+      return true;
+    }
+    return false;
+  }
+
+  bool consume(T &output)
+  {
+    const uint64_t t = tail.load(std::memory_order_relaxed);
+
+    if (((head.load(std::memory_order_acquire) - t) & mask) >= 1)
+    {
+      output = buffer[tail & mask];
+      tail.store(t + 1, std::memory_order_release);
+      return true;
+    }
+    return false;
+  }
+};
 
 template <typename T>
-class SpscEasyQueue
+class MPMCBoundedQueue
 {
+
+  struct node_t
+  {
+    T data;
+    std::atomic<uint64_t> next;
+  };
+  typedef typename std::aligned_storage<sizeof(node_t), std::alignment_of<node_t>::value>::type aligned_node_t;
+  typedef char cache_line_pad_t[64];
+
+  cache_line_pad_t pad0;
+  const uint64_t size;
+  const uint64_t mask;
+  node_t *const buffer;
+  cache_line_pad_t pad1;
+  std::atomic<uint64_t> head{0};
+  cache_line_pad_t pad2;
+  std::atomic<uint64_t> tail{0};
+  cache_line_pad_t pad3;
+
+  MPMCBoundedQueue(const MPMCBoundedQueue &) {}
+  void operator=(const MPMCBoundedQueue &) {}
+
 public:
-  SpscEasyQueue()
-      : _head(reinterpret_cast<node_t *>(new node_aligned_t)),
-        _tail(_head)
+  MPMCBoundedQueue(uint64_t size = 1024) : size(size), mask(size - 1), buffer(reinterpret_cast<node_t *>(new aligned_node_t[size]))
   {
-    _head->next = NULL;
+    assert((size != 0) && ((size & (~size + 1)) == size)); // enforce power of 2
+    for (uint64_t i = 0; i < size; ++i)
+      buffer[i].next.store(i, std::memory_order_relaxed);
   }
 
-  ~SpscEasyQueue()
+  ~MPMCBoundedQueue()
   {
-    T output;
-    while (this->dequeue(output))
+    delete[] buffer;
+  }
+
+  bool sp_produce(T const &input)
+  {
+    uint64_t headSequence = head.load(std::memory_order_relaxed);
+
+    node_t *node = &buffer[headSequence & mask];
+    uint64_t nodeSequence = node->node.load(std::memory_order_acquire);
+    intptr_t diff = (intptr_t)nodeSequence - (intptr_t)headSequence;
+
+    if (diff == 0)
     {
-    }
-    delete _head;
-  }
-
-  void enqueue(const T &input)
-  {
-    node_t *node = reinterpret_cast<node_t *>(new node_aligned_t);
-    node->data = input;
-    node->next = NULL;
-
-    std::atomic_thread_fence(std::memory_order_acq_rel);
-    _head->next = node;
-    _head = node;
-  }
-
-  bool dequeue(T &output)
-  {
-    std::atomic_thread_fence(std::memory_order_consume);
-    if (!_tail->next)
-    {
-      return false;
+      ++head;
+      node->data = input;
+      node->next.store(headSequence, std::memory_order_release);
+      return true;
     }
 
-    output = _tail->next->data;
-    std::atomic_thread_fence(std::memory_order_acq_rel);
-    _back = _tail;
-    _tail = _back->next;
-
-    delete _back;
-    return true;
+    assert(diff < 0);
+    return false;
   }
 
-private:
+  bool mp_produce(const T &input)
+  {
+    uint64_t headSequence = head.load(std::memory_order_relaxed);
+
+    while (true)
+    {
+      node_t *node = &buffer[headSequence & mask];
+      uint64_t nodeSequence = node->next.load(std::memory_order_acquire);
+      intptr_t dif = (intptr_t)nodeSequence - (intptr_t)headSequence;
+
+      if (dif == 0)
+      {
+        if (head.compare_exchange_weak(headSequence, headSequence + 1, std::memory_order_relaxed))
+        {
+          node->data = input;
+          node->next.store(headSequence + 1, std::memory_order_release);
+          return true;
+        }
+      }
+      else if (dif < 0)
+      {
+        return false;
+      }
+      else
+      {
+        headSequence = head.load(std::memory_order_relaxed);
+      }
+    }
+
+    return false;
+  }
+
+  bool consume(T &output)
+  {
+    uint64_t tailSequence = tail.load(std::memory_order_relaxed);
+
+    while (true)
+    {
+      node_t *node = &buffer[tailSequence & mask];
+      uint64_t nodeSequence = node->next.load(std::memory_order_acquire);
+      intptr_t dif = (intptr_t)nodeSequence - (intptr_t)(tailSequence + 1);
+      if (dif == 0)
+      {
+        if (tail.compare_exchange_weak(tailSequence, tailSequence + 1, std::memory_order_relaxed))
+        {
+          output = node->data;
+          node->next.store(tailSequence + mask + 1, std::memory_order_release);
+          return true;
+        }
+      }
+      else if (dif < 0)
+      {
+        return false;
+      }
+      else
+      {
+        tailSequence = tail.load(std::memory_order_relaxed);
+      }
+    }
+    return false;
+  }
+};
+
+template <typename T>
+class SPSCQueue
+{
+
   struct node_t
   {
     node_t *next;
     T data;
   };
-
   typedef typename std::aligned_storage<sizeof(node_t), std::alignment_of<node_t>::value>::type node_aligned_t;
 
-  node_t *_head;
-  char _cache_line[64];
-  node_t *_tail;
-  node_t *_back;
+  node_t *head;
+  char cache_line_pad[64];
+  node_t *tail;
+  node_t *back;
 
-  DISALLOW_COPY_AND_ASSIGN(SpscEasyQueue);
+  SPSCQueue(const SPSCQueue &) {}
+  void operator=(const SPSCQueue &) {}
+
+public:
+  SPSCQueue() : head(reinterpret_cast<node_t *>(new node_aligned_t)), tail(head)
+  {
+    head->next = nullptr;
+  }
+
+  ~SPSCQueue()
+  {
+    T output;
+    while (this->consume(output))
+    {
+    }
+    delete head;
+  }
+
+  bool produce(const T &input)
+  {
+    node_t *node = reinterpret_cast<node_t *>(new node_aligned_t);
+    node->data = input;
+    node->next = nullptr;
+
+    std::atomic_thread_fence(std::memory_order_acq_rel);
+    head->next = node;
+    head = node;
+    return true;
+  }
+
+  bool consume(T &output)
+  {
+    std::atomic_thread_fence(std::memory_order_consume);
+    if (!tail->next)
+      return false;
+    output = tail->next->data;
+    std::atomic_thread_fence(std::memory_order_acq_rel);
+    back = tail;
+    tail = back->next;
+    delete back;
+    return true;
+  }
 };
 
 template <typename T>
-class SpscEasyBoundedQueue
+class MPSCQueue
 {
-public:
-  SpscEasyBoundedQueue(uint64_t size)
-      : _size(size),
-        _mask(size - 1),
-        _buffer(reinterpret_cast<T *>(new aligned_t[_size + 1])), // need one extra element for a guard
-        _head(0),
-        _tail(0)
-  {
-    // make sure it's a power of 2
-    assert((_size != 0) && ((_size & (~_size + 1)) == _size));
-  }
-
-  ~SpscEasyBoundedQueue()
-  {
-    delete[] _buffer;
-  }
-
-  bool enqueue(T &input)
-  {
-    const uint64_t head = _head.load(std::memory_order_relaxed);
-
-    if (((_tail.load(std::memory_order_acquire) - (head + 1)) & _mask) >= 1)
-    {
-      _buffer[head & _mask] = input;
-      _head.store(head + 1, std::memory_order_release);
-      return true;
-    }
-    return false;
-  }
-
-  bool dequeue(T &output)
-  {
-    const uint64_t tail = _tail.load(std::memory_order_relaxed);
-
-    if (((_head.load(std::memory_order_acquire) - tail) & _mask) >= 1)
-    {
-      output = _buffer[_tail & _mask];
-      _tail.store(tail + 1, std::memory_order_release);
-      return true;
-    }
-    return false;
-  }
-
-private:
-  typedef typename std::aligned_storage<sizeof(T), std::alignment_of<T>::value>::type aligned_t;
-  typedef char cache_line_pad_t[64];
-
-  cache_line_pad_t _pad0;
-  const uint64_t _size;
-  const uint64_t _mask;
-  T *const _buffer;
-
-  cache_line_pad_t _pad1;
-  std::atomic<uint64_t> _head;
-
-  cache_line_pad_t _pad2;
-  std::atomic<uint64_t> _tail;
-
-  DISALLOW_COPY_AND_ASSIGN(SpscEasyBoundedQueue);
-};
-
-/**
- * Multiple Producer Single Consumer Lockless Q
- */
-
-template <typename T>
-class MpscEasyQueue
-{
-public:
   struct buffer_node_t
   {
     T data;
     std::atomic<buffer_node_t *> next;
   };
+  typedef typename std::aligned_storage<sizeof(buffer_node_t), std::alignment_of<buffer_node_t>::value>::type buffer_node_aligned_t;
 
-  MpscEasyQueue()
-      : _head(reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t)),
-        _tail(_head.load(std::memory_order_relaxed))
+  std::atomic<buffer_node_t *> head;
+  std::atomic<buffer_node_t *> tail;
+
+  MPSCQueue(const MPSCQueue &) {}
+  void operator=(const MPSCQueue &) {}
+
+public:
+  MPSCQueue() : head(reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t)), tail(head.load(std::memory_order_relaxed))
   {
-    buffer_node_t *front = _head.load(std::memory_order_relaxed);
-    front->next.store(NULL, std::memory_order_relaxed);
+    buffer_node_t *front = head.load(std::memory_order_relaxed);
+    front->next.store(nullptr, std::memory_order_relaxed);
   }
 
-  ~MpscEasyQueue()
+  ~MPSCQueue()
   {
     T output;
-    while (this->dequeue(output))
+    while (this->consume(output))
     {
     }
-    buffer_node_t *front = _head.load(std::memory_order_relaxed);
+    buffer_node_t *front = head.load(std::memory_order_relaxed);
     delete front;
   }
 
-  void enqueue(const T &input)
+  bool produce(const T &input)
   {
     buffer_node_t *node = reinterpret_cast<buffer_node_t *>(new buffer_node_aligned_t);
     node->data = input;
-    node->next.store(NULL, std::memory_order_relaxed);
-
-    buffer_node_t *prev_head = _head.exchange(node, std::memory_order_acq_rel);
-    prev_head->next.store(node, std::memory_order_release);
-  }
-
-  bool dequeue(T *output)
-  {
-    buffer_node_t *tail = _tail.load(std::memory_order_relaxed);
-    buffer_node_t *next = tail->next.load(std::memory_order_acquire);
-
-    if (next == NULL)
-    {
-      return false;
-    }
-
-    output = next->data;
-    _tail.store(next, std::memory_order_release);
-    delete tail;
+    node->next.store(nullptr, std::memory_order_relaxed);
+    buffer_node_t *prevhead = head.exchange(node, std::memory_order_acq_rel);
+    prevhead->next.store(node, std::memory_order_release);
     return true;
   }
 
-  // you can only use pop_all if the queue is SPSC
-  buffer_node_t *pop_all()
+  bool consume(T &output)
   {
-    // nobody else can move the tail pointer.
-    buffer_node_t *tptr = _tail.load(std::memory_order_relaxed);
-    buffer_node_t *next =
-        tptr->next.exchange(nullptr, std::memory_order_acquire);
-    _head.exchange(tptr, std::memory_order_acquire);
-
-    // there is a race condition here
-    return next;
+    buffer_node_t *t = tail.load(std::memory_order_relaxed);
+    buffer_node_t *n = t->next.load(std::memory_order_acquire);
+    if (n == nullptr)
+      return false;
+    output = n->data;
+    tail.store(n, std::memory_order_release);
+    delete t;
+    return true;
   }
 
-private:
-  typedef typename std::aligned_storage<
-      sizeof(buffer_node_t), std::alignment_of<buffer_node_t>::value>::type
-      buffer_node_aligned_t;
-
-  std::atomic<buffer_node_t *> _head;
-  std::atomic<buffer_node_t *> _tail;
-
-  DISALLOW_COPY_AND_ASSIGN(MpscEasyQueue);
-};
-
-template <typename T>
-class MpmcEasyBoundedQueue
-{
-public:
-  MpmcEasyBoundedQueue(uint64_t size)
-      : _size(size),
-        _mask(size - 1),
-        _buffer(reinterpret_cast<node_t *>(new aligned_node_t[_size])),
-        _head_seq(0),
-        _tail_seq(0)
+  bool available()
   {
-    // make sure it's a power of 2
-    assert((_size != 0) && ((_size & (~_size + 1)) == _size));
-
-    // populate the sequence initial values
-    for (uint64_t i = 0; i < _size; ++i)
-    {
-      _buffer[i].seq.store(i, std::memory_order_relaxed);
-    }
+    buffer_node_t *tail = tail.load(std::memory_order_relaxed);
+    buffer_node_t *next = tail->next.load(std::memory_order_acquire);
+    return next != nullptr;
   }
-
-  ~MpmcEasyBoundedQueue()
-  {
-    delete[] _buffer;
-  }
-
-  bool enqueue(const T &data)
-  {
-    // _head_seq only wraps at MAX(_head_seq) instead we use a mask to convert the sequence to an array index
-    // this is why the ring buffer must be a size which is a power of 2. this also allows the sequence to double as a ticket/lock.
-    uint64_t head_seq = _head_seq.load(std::memory_order_relaxed);
-
-    for (;;)
-    {
-      node_t *node = &_buffer[head_seq & _mask];
-      uint64_t node_seq = node->seq.load(std::memory_order_acquire);
-      intptr_t dif = (intptr_t)node_seq - (intptr_t)head_seq;
-
-      // if seq and head_seq are the same then it means this slot is empty
-      if (dif == 0)
-      {
-        // claim our spot by moving head
-        // if head isn't the same as we last checked then that means someone beat us to the punch
-        // weak compare is faster, but can return spurious results
-        // which in this instance is OK, because it's in the loop
-        if (_head_seq.compare_exchange_weak(head_seq, head_seq + 1, std::memory_order_relaxed))
-        {
-          // set the data
-          node->data = data;
-          // increment the sequence so that the tail knows it's accessible
-          node->seq.store(head_seq + 1, std::memory_order_release);
-          return true;
-        }
-      }
-      else if (dif < 0)
-      {
-        // if seq is less than head seq then it means this slot is full and therefore the buffer is full
-        return false;
-      }
-      else
-      {
-        // under normal circumstances this branch should never be taken
-        head_seq = _head_seq.load(std::memory_order_relaxed);
-      }
-    }
-
-    // never taken
-    return false;
-  }
-
-  bool dequeue(T &data)
-  {
-    uint64_t tail_seq = _tail_seq.load(std::memory_order_relaxed);
-
-    for (;;)
-    {
-      node_t *node = &_buffer[tail_seq & _mask];
-      uint64_t node_seq = node->seq.load(std::memory_order_acquire);
-      intptr_t dif = (intptr_t)node_seq - (intptr_t)(tail_seq + 1);
-
-      // if seq and head_seq are the same then it means this slot is empty
-      if (dif == 0)
-      {
-        // claim our spot by moving head
-        // if head isn't the same as we last checked then that means someone beat us to the punch
-        // weak compare is faster, but can return spurious results
-        // which in this instance is OK, because it's in the loop
-        if (_tail_seq.compare_exchange_weak(tail_seq, tail_seq + 1, std::memory_order_relaxed))
-        {
-          // set the output
-          data = node->data;
-          // set the sequence to what the head sequence should be next time around
-          node->seq.store(tail_seq + _mask + 1, std::memory_order_release);
-          return true;
-        }
-      }
-      else if (dif < 0)
-      {
-        // if seq is less than head seq then it means this slot is full and therefore the buffer is full
-        return false;
-      }
-      else
-      {
-        // under normal circumstances this branch should never be taken
-        tail_seq = _tail_seq.load(std::memory_order_relaxed);
-      }
-    }
-
-    // never taken
-    return false;
-  }
-
-private:
-  struct node_t
-  {
-    T data;
-    std::atomic<uint64_t> seq;
-  };
-
-  typedef typename std::aligned_storage<sizeof(node_t), std::alignment_of<node_t>::value>::type aligned_node_t;
-  typedef char cache_line_pad_t[64]; // it's either 32 or 64 so 64 is good enough
-
-  cache_line_pad_t _pad0;
-  const uint64_t _size;
-  const uint64_t _mask;
-  node_t *const _buffer;
-  cache_line_pad_t _pad1;
-  std::atomic<uint64_t> _head_seq;
-  cache_line_pad_t _pad2;
-  std::atomic<uint64_t> _tail_seq;
-  cache_line_pad_t _pad3;
-
-  DISALLOW_COPY_AND_ASSIGN(MpmcEasyBoundedQueue);
 };
 
 ///////////////// WorkStealingQueue //////////////////////
