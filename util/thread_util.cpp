@@ -143,14 +143,14 @@ pthread_t PosixThread::ThisPthreadId()
 
 bool PosixThread::IsPthreadIdEqual(const pthread_t &a, const pthread_t &b)
 {
-  return ::pthread_equal(a, b) == 0;
+  return ::pthread_equal(a, b) != 0;
 }
 
 bool PosixThread::IsValidPthreadId(const pthread_t &tid)
 {
   pthread_t t;
   ClearPthreadId(&t);
-  return IsPthreadIdEqual(tid, t);
+  return !IsPthreadIdEqual(tid, t);
 }
 
 void PosixThread::SetThisThreadName(const string &name)
@@ -294,7 +294,7 @@ bool PosixThread::isStarted()
 bool PosixThread::start()
 {
   bool ret = false;
-  if (isRunning())
+  if (isStarted())
   {
     return false;
   }
@@ -307,6 +307,7 @@ bool PosixThread::start()
   // BlockSignals(to_block, &old_sigset);
   // pthread_create()...
   // RestoreSigset(&old_sigset);
+  run_latch_.reset(1);
 
   ret = PthreadCall("pthread_create",
                     pthread_create(&tid_, NULL, &StartPthreadWrapper, this));
@@ -314,8 +315,11 @@ bool PosixThread::start()
   {
     // it is hard to know when pthread_create thread is started to run.
     setIsRunning(true);
-    run_latch_.reset(1);
     return true;
+  }
+  else
+  {
+    run_latch_.reset(0);
   }
   return false;
 }
@@ -323,10 +327,11 @@ bool PosixThread::start()
 bool PosixThread::startPeriodic()
 {
   bool ret = false;
-  if (isRunning())
+  if (isStarted())
   {
     return false;
   }
+  run_latch_.reset(1);
 
   ret = PthreadCall("pthread_create",
                     pthread_create(&tid_, NULL, &StartPthreadPeriodicWrapper, this));
@@ -334,8 +339,11 @@ bool PosixThread::startPeriodic()
   {
     // it is hard to know when pthread_create thread is started to run.
     setIsRunning(true);
-    run_latch_.reset(1);
     return true;
+  }
+  else
+  {
+    run_latch_.reset(0);
   }
   return false;
 }
