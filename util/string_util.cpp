@@ -286,17 +286,67 @@ std::vector<uint8_t> ParseHex(const char *psz)
   return vch;
 }
 
-string StringToHex(const char *str, uint64_t len)
+uint64_t StringBinToHex(const char *str, uint64_t len,
+                        char *ret, uint64_t msize)
 {
-  uint64_t len_size = 3 * len + 1;
-  char tmp[len_size];
   uint64_t n = 0;
-  for (uint64_t i = 0; i < len && n < len_size; ++i)
+  for (uint64_t i = 0; i < len && n < (msize - 4); ++i)
   {
-    n += snprintf(tmp + n, len_size - n, "\\%02x", (uint8_t)str[i]);
+    n += snprintf(ret + n, msize - n, "\\%02x", (uint8_t)str[i]);
   }
-  tmp[len_size] = '\0';
-  return string(tmp, n);
+  ret[n] = '\0';
+  return n;
+}
+
+uint64_t StringBinToAscii(char *str, uint64_t size,
+                          char *ret, uint64_t msize)
+{
+  //msize = size * 3 + 5;
+  char *p = str;
+  uint64_t i = 0;
+  while (size-- > 0 && i < msize - 4)
+  {
+    if (*p >= '!' && *p <= '~')
+    { //~ printable, excluding space
+      i += sprintf(ret + i, "%c", *p++);
+    }
+    else
+    {
+      i += sprintf(ret + i, "\\%02X", *p++);
+    }
+  }
+  ret[i] = '\0';
+  return i;
+}
+
+uint64_t StringAsciiToBin(const char *str, char *result, uint64_t size)
+{
+  uint64_t index = 0;
+  const unsigned char *p = (const unsigned char *)str;
+  while (*p && index < (size - 1))
+  {
+    if (*p == '\\')
+    {
+      unsigned char c1 = *(p + 1);
+      unsigned char c2 = *(p + 2);
+      if (c1 == 0 || c2 == 0)
+        break;
+      if (::isupper(c1))
+        c1 = ::tolower(c1);
+      int32_t value = (c1 >= '0' && c1 <= '9' ? c1 - '0' : c1 - 'a' + 10) * 16;
+      if (::isupper(c2))
+        c2 = ::tolower(c2);
+      value += c2 >= '0' && c2 <= '9' ? c2 - '0' : c2 - 'a' + 10;
+      result[index++] = (char)(value & 0xff);
+      p += 2;
+    }
+    else
+    {
+      result[index++] = *p;
+    }
+    p++;
+  }
+  return index;
 }
 
 void StringToUpper(string *str)
@@ -486,6 +536,51 @@ bool StringParseBoolean(const string &value)
     return false;
   }
   return false;
+}
+
+bool StringParseInt32(const char *s, uint64_t n, int32_t *out)
+{
+  assert(out);
+  const char *end = s + n;
+  int32_t result = 0;
+  while (s != end)
+  {
+    if (*s < '0' || *s > '9')
+    {
+      return false;
+    }
+    result *= 10;
+    result += *s - '0';
+    ++s;
+  }
+  *out = result;
+  return true;
+}
+
+bool StringParseVectorInt32(const char *s, uint64_t n, std::vector<int32_t> &result)
+{
+  bool is_ok = false;
+  int32_t val = 0;
+  const char *e = s + n;
+  const char *p = NULL;
+
+  while (p != e && s < e)
+  {
+    p = strchr(s, ',');
+    if (NULL == p)
+    {
+      p = e;
+    }
+    is_ok = StringParseInt32(s, (uint64_t)(p - s), &val);
+    if (!is_ok)
+    {
+      return false;
+    }
+    result.push_back(val);
+    s = p + 1;
+  }
+
+  return true;
 }
 
 uint32_t StringParseUint32(const string &value)

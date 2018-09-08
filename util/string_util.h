@@ -120,7 +120,11 @@ void Str2Lower(const char *src, char *dest);
 
 bool IsHexNumberString(const string &str);
 std::vector<uint8_t> ParseHex(const char *psz);
-string StringToHex(const char *str, uint64_t len);
+uint64_t StringBinToHex(const char *str, uint64_t len,
+                        char *ret, uint64_t msize);
+uint64_t StringBinToAscii(char *str, uint64_t size,
+                          char *ret, uint64_t msize);
+uint64_t StringAsciiToBin(const char *str, char *result, uint64_t size);
 
 void StringToUpper(string *str);
 void StringToLower(string *str);
@@ -200,6 +204,8 @@ char *FastInt64ToBufferLeft(int64_t i, char *buffer);   // at least 22 bytes
 char *FastUInt64ToBufferLeft(uint64_t i, char *buffer); // at least 22 bytes
 
 bool StringParseBoolean(const string &value);
+bool StringParseInt32(const char *s, uint64_t n, int32_t *out);
+bool StringParseVectorInt32(const char *s, uint64_t n, std::vector<int32_t> &result);
 uint32_t StringParseUint32(const string &value);
 uint64_t StringParseUint64(const string &value);
 int32_t StringParseInt32(const string &value);
