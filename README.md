@@ -1,2 +1,2 @@
 # mycc
-c++ code
+c++ util code
